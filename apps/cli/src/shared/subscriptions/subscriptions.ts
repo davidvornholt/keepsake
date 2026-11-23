@@ -10,6 +10,13 @@ export type Subscription = (typeof subscriptions)[number];
 export const isSubscription = (name: string): name is Subscription =>
   (subscriptions as ReadonlyArray<string>).includes(name);
 
+/** How long a model thinks about an answer, from shortest to longest. */
+export const efforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type Effort = (typeof efforts)[number];
+
+export const isEffort = (name: string): name is Effort =>
+  (efforts as ReadonlyArray<string>).includes(name);
+
 /** With one of these set, the programs would bill an API key instead. */
 export const withoutApiKeys = {
   ANTHROPIC_API_KEY: undefined,

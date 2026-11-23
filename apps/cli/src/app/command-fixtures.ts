@@ -87,15 +87,18 @@ export const shootJson = async (...parts: ReadonlyArray<string>) =>
 /** The folder that is scanned. */
 export const photosFolder = () => join(fake.home, 'photos');
 
+/** The model the test's shoot is judged by, which `fakeModels` stands in for. */
+export const judge = 'azure/gpt-6-astra';
+
 /** Scans four photos: a burst of two, and two more a minute later each. */
-export const scanLisbon = () => {
+export const scanLisbon = async () => {
   fakeTools.files = [
     { file: 'A1.ARW', second: 0 },
     { file: 'A2.ARW', second: 1 },
     { file: 'B.ARW', second: 100 },
     { file: 'C.ARW', second: 200 },
   ];
-  return runOk(
+  const scanned = await runOk(
     'scan',
     photosFolder(),
     '--name',
@@ -103,6 +106,8 @@ export const scanLisbon = () => {
     '--about',
     'Lisbon, May 2026',
   );
+  await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
+  return scanned;
 };
 
 /** Scans, culls and picks the photos of `scanLisbon`. */

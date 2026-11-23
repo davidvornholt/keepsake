@@ -5,7 +5,7 @@ import { judgeMoments } from '../features/cull/cull.ts';
 import { sampleOf } from '../features/rating/sample.ts';
 import { readRatings, serveRatingPage } from '../features/rating/server.ts';
 import { StepMissing } from '../shared/errors/errors.ts';
-import { defaultVisionModel } from '../shared/models.ts';
+import { judgeOf } from '../shared/judge.ts';
 import { Spending } from '../shared/spending.ts';
 import { openShoot } from '../shared/store.ts';
 import { verdicts } from '../shared/verdicts.ts';
@@ -71,7 +71,7 @@ export const rate = Command.make(
       const reachedAt =
         elsewhere === undefined ? undefined : yield* webAddress(elsewhere);
       const open = yield* openShoot(shoot);
-      const judged = yield* verdicts(open, model);
+      const judged = yield* verdicts(open, yield* judgeOf(open, model));
       const sample = sampleOf(open.moments, judged, count);
       const server = yield* serveRatingPage({
         open,
@@ -102,7 +102,7 @@ export const bench = Command.make(
     shoot: shootArgument,
     models: Flag.String('model').pipe(
       Flag.withDescription(
-        `A vision model to measure, with its provider (default ${defaultVisionModel}). Repeat it to compare several.`,
+        'A vision model to measure, with its provider (default: the one that judged the shoot). Repeat it to compare several.',
       ),
       Flag.atLeast(0),
     ),
@@ -120,7 +120,7 @@ export const bench = Command.make(
           });
         }
         const results = yield* Effect.forEach(
-          models.length === 0 ? [defaultVisionModel] : models,
+          models.length === 0 ? [yield* judgeOf(open, Option.none())] : models,
           (model) =>
             Effect.gen(function* () {
               const { verdicts: judged, failed } = yield* judgeMoments(

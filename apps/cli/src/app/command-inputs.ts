@@ -51,5 +51,5 @@ export const shootArgument = Argument.String('shoot').pipe(
 
 export const visionModel = optionalString(
   'model',
-  `The vision model, with its provider (default ${defaultVisionModel})`,
-).pipe(Flag.map(Option.getOrElse(() => defaultVisionModel)));
+  `The vision model, with its provider (default: the one that judged the shoot, or ${defaultVisionModel})`,
+);

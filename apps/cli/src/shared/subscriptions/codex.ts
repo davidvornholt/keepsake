@@ -3,6 +3,7 @@ import { Effect, FileSystem, Path, Schema } from 'effect';
 import { OpenAiStructuredOutput } from 'effect/ai';
 import { ToolFailed } from '../errors/errors.ts';
 import type { Program, ProgramQuestion } from './program-model.ts';
+import type { Effort } from './subscriptions.ts';
 
 const isMessage = Schema.is(
   Schema.Struct({
@@ -43,7 +44,7 @@ const unneeded = [
   'plugins',
 ];
 
-const request = (model: string) =>
+const request = (model: string, effort: Effort) =>
   Effect.fn('codex.request')(
     function* ({ role, pieces, schema, directory }: ProgramQuestion) {
       const fs = yield* FileSystem.FileSystem;
@@ -70,7 +71,7 @@ const request = (model: string) =>
           'exec',
           '--json',
           ...['--model', model],
-          ...['--config', 'model_reasoning_effort="medium"'],
+          ...['--config', `model_reasoning_effort="${effort}"`],
           ...[
             '--config',
             `model_instructions_file=${JSON.stringify(instructions)}`,
@@ -115,9 +116,10 @@ const answer = Effect.fn('codex.answer')(function* (
 /** Asks Codex, which uses the ChatGPT subscription it is signed in to. */
 export const codex = (
   model: string,
+  effort: Effort,
 ): Program<FileSystem.FileSystem | Path.Path> => ({
   subscription: 'codex',
   codecTransformer: OpenAiStructuredOutput.toCodecOpenAI,
-  request: request(model),
+  request: request(model, effort),
   answer,
 });

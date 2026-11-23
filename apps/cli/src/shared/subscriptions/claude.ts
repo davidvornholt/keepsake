@@ -3,6 +3,7 @@ import { Effect, Schema } from 'effect';
 import { AnthropicStructuredOutput } from 'effect/ai';
 import { ToolFailed } from '../errors/errors.ts';
 import type { Program, ProgramQuestion } from './program-model.ts';
+import type { Effort } from './subscriptions.ts';
 
 const Result = Schema.Struct({
   type: Schema.Literal('result'),
@@ -31,13 +32,13 @@ const content = (piece: string | Uint8Array) =>
       };
 
 const request =
-  (model: string) =>
+  (model: string, effort: Effort) =>
   ({ role, pieces, schema }: ProgramQuestion) =>
     Effect.succeed({
       args: [
         '--print',
         ...['--model', model],
-        ...['--effort', 'medium'],
+        ...['--effort', effort],
         ...['--input-format', 'stream-json'],
         ...['--output-format', 'stream-json', '--verbose'],
         ...['--system-prompt', role],
@@ -75,9 +76,9 @@ const answer = Effect.fn('claude.answer')(function* (
 });
 
 /** Asks Claude Code, which uses the Claude subscription it is signed in to. */
-export const claude = (model: string): Program<never> => ({
+export const claude = (model: string, effort: Effort): Program<never> => ({
   subscription: 'claude',
   codecTransformer: AnthropicStructuredOutput.toCodecAnthropic,
-  request: request(model),
+  request: request(model, effort),
   answer,
 });

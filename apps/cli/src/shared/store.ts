@@ -115,6 +115,7 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
   return {
     root,
     shoot: path.join(root, 'shoot.json'),
+    judge: path.join(root, 'judge.json'),
     photos: path.join(root, 'photos.json'),
     moments: path.join(root, 'moments.json'),
     picks: path.join(root, 'picks.json'),
