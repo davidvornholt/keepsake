@@ -1,6 +1,6 @@
 import { Effect, Option } from 'effect';
 import { EditRecord, PickList, Publication } from '../../shared/domain.ts';
-import { InvalidInput } from '../../shared/errors/errors.ts';
+import { photoNamed } from '../../shared/photo-names.ts';
 import { SpendingRecord, totalDollars } from '../../shared/spending.ts';
 import {
   type OpenShoot,
@@ -95,26 +95,13 @@ export const showShoot = Effect.fn('showShoot')(function* (
   };
 });
 
-const lastPart = (id: string) => id.slice(id.lastIndexOf('/') + 1);
-
 /** Everything keepsake knows about one photo. */
 export const showPhoto = Effect.fn('showPhoto')(function* (
   open: OpenShoot,
   model: string,
   name: string,
 ) {
-  const matches = [...open.photos.values()].filter(
-    ({ id }) => id === name || lastPart(id) === name,
-  );
-  const [photo] = matches;
-  if (photo === undefined || matches.length > 1) {
-    return yield* new InvalidInput({
-      message:
-        photo === undefined
-          ? `${open.shoot.name} has no photo called ${name}.`
-          : `${name} names ${matches.length} photos. Use one of their ids: ${matches.map(({ id }) => id).join(', ')}.`,
-    });
-  }
+  const photo = yield* photoNamed(open, name);
   const moment = open.moments.find(({ photos }) => photos.includes(photo.id));
   const verdict =
     moment === undefined

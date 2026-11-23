@@ -1,6 +1,7 @@
 import { Effect, Option, Ref } from 'effect';
 import type { EditRecord, Photo, Pick } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
+import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { Spending, totalDollars } from '../../shared/spending.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
@@ -12,10 +13,6 @@ import { type EditOptions, editOf, editPhoto } from './edit-photo.ts';
 const concurrency = 5;
 
 type Job = { readonly pick: Pick; readonly photo: Photo };
-
-const lastPart = (id: string) => id.slice(id.lastIndexOf('/') + 1);
-const isNamed = (id: string, name: string) =>
-  id === name || lastPart(id) === name;
 
 /**
  * The photos to edit: the picked ones, or those named, which needn't be
@@ -35,32 +32,22 @@ const jobs = Effect.fn('jobs')(function* (
   }
   const { model } = yield* Vision;
   const judged = yield* verdicts(open, model);
-  return yield* Effect.forEach(names, (name) => {
-    const found = judged.flatMap((verdict) =>
-      verdict.photos
-        .filter((id) => isNamed(id, name))
-        .flatMap((photo) =>
-          withPhoto({
-            photo,
-            moment: verdict.moment,
-            score: verdict.score,
-            subject: verdict.subject,
-            description: verdict.description,
-          }),
-        ),
-    );
-    const [job] = found;
-    return job !== undefined && found.length === 1
-      ? Effect.succeed(job)
-      : Effect.fail(
-          new InvalidInput({
-            message:
-              found.length === 0
-                ? `${name} is not a photo of ${open.shoot.name} that was judged.`
-                : `${name} names ${found.length} photos of ${open.shoot.name}. Use the whole id.`,
-          }),
-        );
-  });
+  return yield* Effect.forEach(names, (name) =>
+    Effect.gen(function* () {
+      const photo = yield* photoNamed(open, name);
+      const verdict = judged.find(({ photos }) => photos.includes(photo.id));
+      if (verdict === undefined) {
+        return yield* new InvalidInput({
+          message: `${model} has not judged ${name}. Run \`keepsake cull ${open.shoot.name}\` first.`,
+        });
+      }
+      const { moment, score, subject, description } = verdict;
+      return {
+        photo,
+        pick: { photo: photo.id, moment, score, subject, description },
+      };
+    }),
+  );
 });
 
 type Outcome =
