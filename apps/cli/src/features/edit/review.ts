@@ -1,6 +1,6 @@
 import { Effect, Schema } from 'effect';
 import { coverage } from '../../shared/boxes.ts';
-import type { Box, Person, Pick } from '../../shared/domain.ts';
+import type { Box, Person, Pick, Sign } from '../../shared/domain.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 
@@ -67,6 +67,14 @@ type Shown = {
   readonly people: ReadonlyArray<Person>;
 };
 
+/** What to know about versions that have the original's signs again. */
+const aboutSigns = (signs: ReadonlyArray<Sign>): ReadonlyArray<string> =>
+  signs.length === 0
+    ? []
+    : [
+        `These signs were put back into every version from the original, pixel by pixel, so they still say what they said, however small or soft they look: ${signs.map(({ text }) => `“${text}”`).join(', ')}. Judge only whether they sit naturally where they are, and whether any other text has changed.`,
+      ];
+
 /** A picture, with its subject close up when that is small, and its faces. */
 const looks = Effect.fn('looks')(function* (
   name: string,
@@ -105,6 +113,8 @@ export type Review = {
   /** The file of the best version, or null when each has a fault. */
   readonly best: string | null;
   readonly notes: string;
+  /** Whether a version has a text that says something else. */
+  readonly changesText: boolean;
 };
 
 /** Chooses the best version of an edit. */
@@ -114,6 +124,8 @@ export const review = Effect.fn('review')(function* (
   files: {
     readonly original: string;
     readonly versions: ReadonlyArray<string>;
+    /** The signs of the original that are in the versions. */
+    readonly signs: ReadonlyArray<Sign>;
   },
 ) {
   const vision = yield* Vision;
@@ -129,6 +141,7 @@ export const review = Effect.fn('review')(function* (
       `The photo: ${pick.description}`,
       ...original,
       ...edited.flat(),
+      ...aboutSigns(files.signs),
       question(files.versions.length),
     ],
   });
@@ -140,6 +153,7 @@ export const review = Effect.fn('review')(function* (
     best:
       best === undefined ? null : (files.versions[best.version - 1] ?? null),
     notes: best?.notes ?? known.map(({ notes }) => notes).join(' '),
+    changesText: known.some(({ textUnchanged }) => !textUnchanged),
   };
   return result;
 });

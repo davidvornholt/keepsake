@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { Raster } from '../../../shared/pictures.ts';
-import { lightAt, lightOf, srgbOf } from './raster.ts';
+import { lightAt, lightOf, srgbOf } from '../pixels/raster.ts';
 import { keepPerson } from './relight.ts';
 
 const size = { width: 200, height: 160 };

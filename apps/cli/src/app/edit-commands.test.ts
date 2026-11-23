@@ -228,6 +228,76 @@ describe('keepsake edit, with people', () => {
   });
 });
 
+describe('keepsake edit, with signs', () => {
+  const changesText = assessment(1, {
+    textUnchanged: false,
+    notes: 'The hotel has another name.',
+  });
+  const signs = {
+    signs: [
+      {
+        part: 1,
+        text: 'HOTEL',
+        box: { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 },
+      },
+      // Neither a part that isn't there nor an empty box can be kept.
+      {
+        part: 9,
+        text: 'BAR',
+        box: { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 },
+      },
+      {
+        part: 1,
+        text: 'CAFE',
+        box: { left: 0.2, top: 0.2, right: 0.2, bottom: 0.3 },
+      },
+    ],
+  };
+
+  it('puts the photo’s own signs into versions that change them', async () => {
+    await pickLisbon();
+    fakeModels.answers.signs = signs;
+    fakeModels.answers.assessment = () =>
+      asked('assessment').length === 1
+        ? { assessments: [changesText] }
+        : { assessments: [assessment(1)] };
+    const result = await runOk('edit', 'lisbon', 'B');
+    expect(result.edited).toBe(1);
+    expect(await shootJson('edits', 'B', 'signs.json')).toEqual([
+      { text: 'HOTEL', box: signs.signs[0]?.box },
+    ]);
+    const version = shootFile('edits', 'B', 'version-1-signs.png');
+    expect(existsSync(version)).toBe(true);
+    const assessments = asked('assessment').map(({ texts }) =>
+      texts.some((text) => text.includes('“HOTEL”')),
+    );
+    expect(assessments).toEqual([false, true]);
+    expect(fakeModels.edits).toHaveLength(1);
+  });
+
+  it('tries again when that does not help', async () => {
+    await pickLisbon();
+    fakeModels.answers.signs = signs;
+    fakeModels.answers.assessment = { assessments: [changesText] };
+    const result = await runOk('edit', 'lisbon', 'B');
+    expect(result.keptFromCamera).toEqual([
+      { photo: 'B', reason: 'The hotel has another name.' },
+    ]);
+    expect(asked('signs')).toHaveLength(1);
+    expect(asked('assessment')).toHaveLength(4);
+    expect(fakeModels.edits).toHaveLength(2);
+  });
+
+  it('looks for signs only when a version changes a text', async () => {
+    await pickLisbon();
+    fakeModels.answers.assessment = {
+      assessments: [assessment(1, { samePlace: false })],
+    };
+    await runOk('edit', 'lisbon', 'B');
+    expect(asked('signs')).toHaveLength(0);
+  });
+});
+
 describe('keepsake edit, when something goes wrong', () => {
   it('keeps the camera’s own picture when no version passes', async () => {
     await pickLisbon();

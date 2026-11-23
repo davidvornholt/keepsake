@@ -43,6 +43,7 @@ const usualAnswers = {
   crops: { subject: box, belongings: [], crops: [] },
   choice: { best: 1, reason: 'The whole frame is best.' },
   people: { people: [] },
+  signs: { signs: [] },
   assessment: { assessments: [assessment(1), assessment(2)] },
 };
 

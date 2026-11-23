@@ -1,10 +1,8 @@
 import { clamp } from '../../../shared/boxes.ts';
 import type { Person } from '../../../shared/domain.ts';
 import type { Frame, Raster, Size } from '../../../shared/pictures.ts';
-import { type Fit, guidedFilter } from './guided.ts';
-import { lightChange, relit } from './light.ts';
-import { matteOf } from './matte.ts';
-import { grown, personMask } from './outline.ts';
+import { type Fit, guidedFilter } from '../pixels/guided.ts';
+import { lightChange, relit } from '../pixels/light.ts';
 import {
   brightest,
   channels,
@@ -17,8 +15,10 @@ import {
   readerAt,
   shrunkLight,
   srgbOf,
-} from './raster.ts';
-import { averaging } from './smooth.ts';
+} from '../pixels/raster.ts';
+import { averaging } from '../pixels/smooth.ts';
+import { matteOf } from './matte.ts';
+import { grown, personMask } from './outline.ts';
 
 // Everything is measured in a small view in which the face is this wide, so a
 // large and a small face are treated alike.
