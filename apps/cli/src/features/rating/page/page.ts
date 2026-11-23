@@ -2,6 +2,14 @@
 /// <reference lib="dom.iterable" />
 
 import type { Moment, Rating as StoredRating } from '../../../shared/domain.ts';
+import {
+  focusCompared,
+  moveFocus,
+  previewOf,
+  showCompared,
+} from './compare.ts';
+import { elements } from './elements.ts';
+import { showLarge, toggleZoom, unzoom } from './large.ts';
 
 type Rating = Omit<StoredRating, 'photos'>;
 
@@ -16,174 +24,137 @@ const labels = [
 
 const starKey = /^\d$/u;
 
-const element = <A extends HTMLElement>(id: string, type: new () => A): A => {
-  const found = document.querySelector(`#${id}`);
-  if (!(found instanceof type)) {
-    throw new Error(`The page has no ${id}.`);
-  }
-  return found;
-};
-
-const progress = element('progress', HTMLOutputElement);
-const photo = element('photo', HTMLImageElement);
-const caption = element('caption', HTMLElement);
-const view = element('view', HTMLElement);
-const frames = element('frames', HTMLOListElement);
-const starButtons = element('stars', HTMLDivElement);
-
-const previewOf = (id: string) => `/previews?photo=${encodeURIComponent(id)}`;
-const fullSizeOf = (id: string) => `/full?photo=${encodeURIComponent(id)}`;
+/** The label of the button for no stars. */
+const noStars = document.createElement('span');
 
 const state = {
   sample: [] as ReadonlyArray<Moment>,
   ratings: new Map<string, Rating>(),
   moment: 0,
-  frame: 0,
-  best: [] as ReadonlyArray<string>,
+  /** The photo shown large, or null while the moment's photos are compared. */
+  shown: null as number | null,
   saving: false,
-  zoomed: false,
-  /** Where the pointer is in the view, in fractions. */
-  pointer: { x: 0.5, y: 0.5 },
+  /** The photos of the next moment, held so that they appear at once. */
+  ahead: [] as ReadonlyArray<HTMLImageElement>,
 };
 
 const currentMoment = () => state.sample[state.moment];
 
-/** Shows the part of a zoomed photo that the pointer is at. */
-const followPointer = () => {
-  const { x, y } = state.pointer;
-  view.scrollTo({
-    left: x * (view.scrollWidth - view.clientWidth),
-    top: y * (view.scrollHeight - view.clientHeight),
-  });
+const questionAbout = (moment: Moment | undefined) => {
+  if (moment === undefined) {
+    return `All ${state.sample.length} are rated. You can close this page.`;
+  }
+  const count = moment.photos.length;
+  if (state.shown === null) {
+    return `Which of these ${count} photos is best?`;
+  }
+  return count === 1
+    ? 'How good is this photo?'
+    : `Photo ${state.shown + 1} of ${count} is best. How good is it?`;
 };
 
-const setZoomed = (zoomed: boolean) => {
-  state.zoomed = zoomed;
-  photo.toggleAttribute('data-zoomed', zoomed);
+const showAnswers = (moment: Moment) => {
+  const stars = state.ratings.get(moment.id)?.stars;
+  const isLarge = state.shown !== null;
+  for (const [index, button] of [...elements.stars.children].entries()) {
+    if (button instanceof HTMLButtonElement) {
+      button.hidden = !isLarge && index > 0;
+      button.ariaPressed = String(index === stars);
+    }
+  }
+  noStars.textContent = isLarge ? labels[0] : 'none of them';
+  const hasMore = moment.photos.length > 1;
+  elements.all.hidden = !(isLarge && hasMore);
+  elements.allLabel.textContent = `All ${moment.photos.length} photos`;
+  elements.zoom.hidden = !isLarge;
+  elements.before.hidden = !hasMore;
+  elements.after.hidden = !hasMore;
 };
 
-/** Fits the photo into the page, or shows each of its pixels as one. */
-const sizePhoto = () => {
-  if (state.zoomed) {
-    photo.style.inlineSize = `${photo.naturalWidth / globalThis.devicePixelRatio}px`;
-    followPointer();
+const show = () => {
+  const moment = currentMoment();
+  elements.question.textContent = questionAbout(moment);
+  elements.notice.textContent = '';
+  elements.rated.max = state.sample.length;
+  elements.rated.value = state.ratings.size;
+  elements.count.textContent = `${Math.min(state.moment + 1, state.sample.length)} of ${state.sample.length}`;
+  elements.back.hidden = state.moment === 0;
+  elements.compare.hidden = moment === undefined || state.shown !== null;
+  elements.large.hidden = moment === undefined || state.shown === null;
+  elements.answers.hidden = moment === undefined;
+  if (moment === undefined) {
+    return;
+  }
+  showAnswers(moment);
+  if (state.shown === null) {
+    showCompared({
+      photos: moment.photos,
+      best: state.ratings.get(moment.id)?.best ?? null,
+      choose: (index) => showPhoto(index),
+    });
   } else {
-    photo.style.inlineSize = '';
+    showLarge(
+      moment.photos[state.shown] ?? '',
+      `Photo ${state.shown + 1} of ${moment.photos.length}`,
+    );
   }
 };
 
-const showFrames = () => {
-  const moment = currentMoment();
-  if (moment === undefined) {
-    return;
+/** Shows a photo large, to be rated as the best of its moment. */
+const showPhoto = (index: number) => {
+  unzoom();
+  state.shown = index;
+  show();
+  elements.question.focus();
+};
+
+const compareAgain = () => {
+  const before = state.shown;
+  if (before !== null && (currentMoment()?.photos.length ?? 0) > 1) {
+    state.shown = null;
+    show();
+    focusCompared(before);
   }
-  const { photos } = moment;
-  const id = photos[state.frame] ?? '';
-  photo.hidden = false;
-  photo.src = state.zoomed ? fullSizeOf(id) : previewOf(id);
-  photo.alt = `Frame ${state.frame + 1} of ${photos.length}`;
-  const place = state.best.indexOf(id);
-  caption.textContent = [
-    `Frame ${state.frame + 1} of ${photos.length}`,
-    ...(place === -1
-      ? []
-      : [place === 0 ? 'best' : `kept, number ${place + 1}`]),
-  ].join(', ');
-  frames.replaceChildren(
-    ...photos.map((frame, index) => {
-      const item = document.createElement('li');
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.ariaCurrent = String(index === state.frame);
-      const image = document.createElement('img');
-      image.src = previewOf(frame);
-      image.alt = '';
-      button.append(image);
-      const kept = state.best.indexOf(frame);
-      if (kept === -1) {
-        button.ariaLabel = `Frame ${index + 1}`;
-      } else {
-        button.ariaLabel = `Frame ${index + 1}, kept, number ${kept + 1}`;
-        const badge = document.createElement('span');
-        badge.textContent = String(kept + 1);
-        button.append(badge);
-      }
-      button.addEventListener('click', () => {
-        state.frame = index;
-        showFrames();
-      });
-      item.append(button);
-      return item;
-    }),
-  );
-  frames.querySelector('[aria-current="true"]')?.scrollIntoView({
-    block: 'nearest',
-    inline: 'nearest',
+};
+
+const turnOver = (step: number) => {
+  const count = currentMoment()?.photos.length ?? 0;
+  if (state.shown !== null && count > 1) {
+    state.shown = (state.shown + step + count) % count;
+    show();
+  }
+};
+
+const loadAhead = () => {
+  const next = state.sample[state.moment + 1];
+  state.ahead = (next?.photos ?? []).map((id) => {
+    const picture = new Image();
+    picture.src = previewOf(id);
+    return picture;
   });
 };
 
-const showMoment = () => {
+const goTo = (index: number) => {
+  state.moment = Math.min(Math.max(index, 0), state.sample.length);
   const moment = currentMoment();
-  const done = state.ratings.size;
-  progress.textContent =
-    moment === undefined
-      ? `All ${state.sample.length} moments are rated. You can close this page.`
-      : `Moment ${state.moment + 1} of ${state.sample.length}, ${done} rated`;
-  setZoomed(false);
-  if (moment === undefined) {
-    photo.hidden = true;
-    photo.removeAttribute('src');
-    photo.alt = '';
-    caption.textContent = '';
-    frames.replaceChildren();
-    return;
+  const best = state.ratings.get(moment?.id ?? '')?.best ?? null;
+  const chosen = best === null ? -1 : (moment?.photos.indexOf(best) ?? -1);
+  if (chosen === -1) {
+    state.shown = moment?.photos.length === 1 ? 0 : null;
+  } else {
+    state.shown = chosen;
   }
-  const rating = state.ratings.get(moment.id);
-  state.best = rating?.best ?? [];
-  state.frame = Math.max(0, moment.photos.indexOf(state.best[0] ?? ''));
-  for (const [stars, button] of [...starButtons.children].entries()) {
-    button.ariaPressed = String(rating?.stars === stars);
-  }
-  showFrames();
+  unzoom();
+  show();
+  elements.question.focus();
+  loadAhead();
 };
 
-const moveFrame = (step: number) => {
-  const count = currentMoment()?.photos.length ?? 1;
-  state.frame = (state.frame + step + count) % count;
-  showFrames();
-};
-
-const toggleBest = () => {
-  const id = currentMoment()?.photos[state.frame];
-  if (id !== undefined) {
-    state.best = state.best.includes(id)
-      ? state.best.filter((kept) => kept !== id)
-      : [...state.best, id];
-    showFrames();
-  }
-};
-
-const zoom = () => {
-  if (currentMoment() !== undefined) {
-    setZoomed(!state.zoomed);
-    showFrames();
-  }
-};
-
-const movePointer = (event: PointerEvent) => {
-  const { left, top, width, height } = view.getBoundingClientRect();
-  state.pointer = {
-    x: (event.clientX - left) / width,
-    y: (event.clientY - top) / height,
-  };
-  if (state.zoomed) {
-    followPointer();
-  }
-};
-
-const goTo = (moment: number) => {
-  state.moment = Math.min(Math.max(moment, 0), state.sample.length);
-  showMoment();
+/** Goes on after a moment, or back to one that was skipped. */
+const goOn = () => {
+  const next = state.moment + 1;
+  const skipped = state.sample.findIndex(({ id }) => !state.ratings.has(id));
+  goTo(next < state.sample.length || skipped === -1 ? next : skipped);
 };
 
 const save = async (rating: Rating): Promise<string | undefined> => {
@@ -201,36 +172,52 @@ const save = async (rating: Rating): Promise<string | undefined> => {
   }
 };
 
-/** Goes on after a moment, or back to one that was skipped. */
-const goOn = () => {
-  const isOpen = ({ id }: Moment) => !state.ratings.has(id);
-  const next = state.moment + 1;
-  const skipped = state.sample.findIndex(isOpen);
-  goTo(next < state.sample.length || skipped === -1 ? next : skipped);
-};
-
 const rate = async (stars: number) => {
   const moment = currentMoment();
-  if (moment === undefined || state.saving) {
+  // Stars are for the photo shown; of several, one is chosen first.
+  const isAnswer = state.shown !== null || stars === 0;
+  if (moment === undefined || state.saving || !isAnswer) {
     return;
   }
-  const shown = moment.photos[state.frame];
-  const chosen =
-    state.best.length === 0 && shown !== undefined ? [shown] : state.best;
-  const rating: Rating = {
-    moment: moment.id,
-    best: stars === 0 ? [] : chosen,
-    stars,
-  };
+  const best =
+    stars === 0 || state.shown === null
+      ? null
+      : (moment.photos[state.shown] ?? null);
+  const rating: Rating = { moment: moment.id, best, stars };
   state.saving = true;
   const problem = await save(rating);
   state.saving = false;
   if (problem !== undefined) {
-    progress.textContent = problem;
+    elements.notice.textContent = problem;
     return;
   }
   state.ratings.set(moment.id, rating);
   goOn();
+};
+
+/** What the keys do, depending on whether one photo is shown or several. */
+const actionsNow = (): ReadonlyMap<string, () => unknown> => {
+  const always = [
+    ['Backspace', () => goTo(state.moment - 1)],
+    ...labels.map((_, stars) => [String(stars), () => rate(stars)] as const),
+  ] as const;
+  return new Map<string, () => unknown>(
+    state.shown === null
+      ? [
+          ...always,
+          ['ArrowLeft', () => moveFocus(-1, 0)],
+          ['ArrowRight', () => moveFocus(1, 0)],
+          ['ArrowUp', () => moveFocus(0, -1)],
+          ['ArrowDown', () => moveFocus(0, 1)],
+        ]
+      : [
+          ...always,
+          ['ArrowLeft', () => turnOver(-1)],
+          ['ArrowRight', () => turnOver(1)],
+          ['Escape', compareAgain],
+          ['z', toggleZoom],
+        ],
+  );
 };
 
 const onKey = async (event: KeyboardEvent) => {
@@ -241,19 +228,37 @@ const onKey = async (event: KeyboardEvent) => {
   if (event.repeat && starKey.test(event.key)) {
     return;
   }
-  const actions = new Map<string, () => unknown>([
-    ['ArrowLeft', () => moveFrame(-1)],
-    ['ArrowRight', () => moveFrame(1)],
-    ['Backspace', () => goTo(state.moment - 1)],
-    ['z', zoom],
-    [' ', toggleBest],
-    ...labels.map((_, stars) => [String(stars), () => rate(stars)] as const),
-  ]);
-  const action = actions.get(event.key);
+  const action =
+    currentMoment() === undefined && event.key !== 'Backspace'
+      ? undefined
+      : actionsNow().get(event.key);
   if (action !== undefined) {
     event.preventDefault();
     await action();
   }
+};
+
+const textIn = (tag: string, text: string) => {
+  const part = document.createElement(tag);
+  part.textContent = text;
+  return part;
+};
+
+const starButton = (label: string, stars: number) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  const key = textIn('kbd', String(stars));
+  key.ariaHidden = 'true';
+  if (stars === 0) {
+    button.append(key, noStars);
+  } else {
+    const drawn = textIn('span', '★'.repeat(stars));
+    drawn.role = 'img';
+    drawn.ariaLabel = stars === 1 ? '1 star' : `${stars} stars`;
+    button.append(key, drawn, textIn('span', label));
+  }
+  button.addEventListener('click', () => rate(stars));
+  return button;
 };
 
 const start = async () => {
@@ -271,19 +276,12 @@ const start = async () => {
       .filter(({ moment }) => sampled.has(moment))
       .map((rating) => [rating.moment, rating] as const),
   );
-  starButtons.replaceChildren(
-    ...labels.map((label, stars) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = `${stars} ${label}`;
-      button.addEventListener('click', () => rate(stars));
-      return button;
-    }),
-  );
+  elements.stars.replaceChildren(...labels.map(starButton));
+  elements.back.addEventListener('click', () => goTo(state.moment - 1));
+  elements.all.addEventListener('click', compareAgain);
+  elements.before.addEventListener('click', () => turnOver(-1));
+  elements.after.addEventListener('click', () => turnOver(1));
   document.addEventListener('keydown', onKey);
-  view.addEventListener('pointermove', movePointer);
-  photo.addEventListener('click', zoom);
-  photo.addEventListener('load', sizePhoto);
   const next = state.sample.findIndex(({ id }) => !state.ratings.has(id));
   goTo(next === -1 ? state.sample.length : next);
 };

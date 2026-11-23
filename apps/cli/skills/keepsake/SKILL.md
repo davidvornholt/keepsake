@@ -37,11 +37,11 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 
 ## Comparing vision models
 
-`keepsake rate <shoot>` serves a page where the user chooses the best frames and gives stars, 60 moments unless `--moments` says otherwise. Pass the `--model` that culled the shoot, so that the sample has moments of every score. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
+`keepsake rate <shoot>` serves a page where the user chooses the best photo of each moment and gives it stars, 60 moments of up to 12 photos unless `--moments` says otherwise. Pass the `--model` that culled the shoot, so that the sample has moments of every score. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
 
 `keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them (nothing extra on a subscription):
 
-- `sameBestFrame` is how often the model chose the user's best frame of a burst, and `bestFrameKept` how often it chose one the user kept. `bestFrameByChance` is what guessing would reach.
+- `sameBestFrame` is how often the model chose the user's best frame of a burst, and `bestFrameByChance` how often guessing would.
 - `keepAccuracy` is how often a photo the user would keep (3 stars or more) scored above one they would not; 0.5 is guessing. Use this to choose a model.
 - `rankCorrelation` compares the order of all scores with the order of the stars, from -1 to 1.
 

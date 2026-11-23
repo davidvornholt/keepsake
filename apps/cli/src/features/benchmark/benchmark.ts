@@ -74,11 +74,8 @@ export const compareWithOwner = (
     return verdict === undefined ? [] : [{ rating, verdict }];
   });
   const bursts = both.filter(
-    ({ rating }) => rating.photos.length > 1 && rating.best.length > 0,
+    ({ rating }) => rating.photos.length > 1 && rating.best !== null,
   );
-  const share = (
-    matches: (pair: (typeof bursts)[number]) => boolean,
-  ): number | null => average(bursts.map((pair) => (matches(pair) ? 1 : 0)));
   const pairs = both.map(({ rating, verdict }) => ({
     score: verdict.score,
     stars: rating.stars,
@@ -88,19 +85,15 @@ export const compareWithOwner = (
     bursts: bursts.length,
     /** How often its best frame is the owner's best frame. */
     sameBestFrame: rounded(
-      share(({ rating, verdict }) => verdict.best[0] === rating.best[0]),
-    ),
-    /** How often its best frame is one the owner kept. */
-    bestFrameKept: rounded(
-      share(({ rating, verdict }) =>
-        rating.best.includes(verdict.best[0] ?? ''),
-      ),
-    ),
-    /** How often a frame taken at random is one the owner kept. */
-    bestFrameByChance: rounded(
       average(
-        bursts.map(({ rating }) => rating.best.length / rating.photos.length),
+        bursts.map(({ rating, verdict }) =>
+          verdict.best[0] === rating.best ? 1 : 0,
+        ),
       ),
+    ),
+    /** How often a frame taken at random would be. */
+    bestFrameByChance: rounded(
+      average(bursts.map(({ rating }) => 1 / rating.photos.length)),
     ),
     keepAccuracy: rounded(keepAccuracy(pairs)),
     rankCorrelation: rounded(rankCorrelation(pairs)),

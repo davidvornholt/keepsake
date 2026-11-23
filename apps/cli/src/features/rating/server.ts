@@ -11,7 +11,7 @@ const Ratings = Schema.Array(Rating);
 /** What the owner answers for one moment. */
 const Answer = Schema.Struct({
   moment: Schema.String,
-  best: Schema.Array(Schema.String),
+  best: Schema.NullOr(Schema.String),
   stars: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 5 })),
 });
 
@@ -39,7 +39,8 @@ export const saveRating = Effect.fn('saveRating')(function* (
   const moment = sample.find(({ id }) => id === answer.moment);
   if (
     moment === undefined ||
-    !answer.best.every((photo) => moment.photos.includes(photo))
+    (answer.best === null) !== (answer.stars === 0) ||
+    (answer.best !== null && !moment.photos.includes(answer.best))
   ) {
     return false;
   }

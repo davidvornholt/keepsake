@@ -62,7 +62,7 @@ const post = (address: string, body: unknown, headers = {}) =>
     body: JSON.stringify(body),
   });
 
-const answer = { moment: 'A1', best: ['A2'], stars: 4 };
+const answer = { moment: 'A1', best: 'A2', stars: 4 };
 
 describe('the rating page', () => {
   it('shows the moments without what a model thinks of them', async () => {
@@ -104,7 +104,9 @@ describe('the rating page', () => {
   it.each([
     { ...answer, stars: 6 },
     { ...answer, moment: 'B' },
-    { ...answer, best: ['C'] },
+    { ...answer, best: 'C' },
+    { ...answer, best: null },
+    { ...answer, stars: 0 },
     {},
   ])('refuses %j', async (body) => {
     const { visited, ratings } = await whileServing(async (address) => {
