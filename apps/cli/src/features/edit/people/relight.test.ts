@@ -92,8 +92,11 @@ describe('keepPerson', () => {
       x >= 60 && x < 134 ? skin(x, 2, 2) : brighterWall,
     );
     keepPerson(original, edit, person);
-    const [red, , blue] = at(edit, 132, 80);
-    expect(blue).toBeGreaterThan(red + 20);
+    // No line of the edit's person is left at their edge.
+    for (const x of [132, 133, 134, 135, 136]) {
+      const [red, , blue] = at(edit, x, 80);
+      expect(blue).toBeGreaterThan(red + 40);
+    }
   });
 
   it('changes nothing when the edit changed nothing', () => {
