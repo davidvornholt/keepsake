@@ -18,7 +18,7 @@ keepsake only reads the folder of photos and never changes it. What it makes is 
 
 ## From a folder to an album
 
-`keepsake run <folder> --about "<place, month and year>"` does everything up to the edits, and `--publish` also uploads them. `--about` tells the models where the photos are from, so always give it. Run it in the background: 900 photos take about an hour to cull, and each edit takes a few minutes. When it stops for any reason, run the same command again and it goes on where it stopped.
+`keepsake run <folder> --about "<place, month and year>"` does everything up to the edits, and `--publish` also uploads them. `--about` tells the models where the photos are from, so always give it. When the trip was in another time zone than the camera's clock, which is the usual case when the time on the photos doesn't fit the light in them, give `--time-zone <such as Asia/Tokyo>` too, so the finished photos carry the time there. Run it in the background: 900 photos take about an hour to cull, and each edit takes a few minutes. When it stops for any reason, run the same command again and it goes on where it stopped.
 
 The steps are also commands of their own, for a shoot that `scan` has named:
 

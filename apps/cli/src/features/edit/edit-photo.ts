@@ -26,7 +26,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { chooseCrop } from './crop.ts';
-import { copyCameraData, finish } from './finish.ts';
+import { type CameraData, copyCameraData, finish } from './finish.ts';
 import { exactFrame, outputSize } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
 import { findPeople } from './people/find-people.ts';
@@ -54,8 +54,7 @@ type Job = {
   readonly pick: Pick;
   readonly photo: Photo;
   readonly files: EditFiles;
-  /** The original file, which is only read. */
-  readonly original: string;
+  readonly camera: CameraData;
   readonly versions: number;
 };
 
@@ -73,13 +72,13 @@ const startOver = (files: EditFiles) =>
   });
 
 const cameraPicture = Effect.fn('cameraPicture')(function* (job: Job) {
-  const { files, open, photo, original } = job;
+  const { files, open, photo, camera } = job;
   if (!(yield* exists(files.camera))) {
     const bytes = yield* developed(open.shoot, photo, {
       quality: cameraQuality,
     });
     yield* atomically(files.camera, (draft) =>
-      Effect.andThen(writeBytes(draft, bytes), copyCameraData(original, draft)),
+      Effect.andThen(writeBytes(draft, bytes), copyCameraData(camera, draft)),
     );
   }
 });
@@ -235,7 +234,10 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     pick,
     photo,
     files,
-    original: `${open.shoot.source}/${photo.file}`,
+    camera: {
+      original: `${open.shoot.source}/${photo.file}`,
+      timeZone: open.shoot.timeZone,
+    },
     versions: options.versions,
   };
   yield* cameraPicture(job);
@@ -255,7 +257,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   yield* atomically(files.final, (draft) =>
     Effect.gen(function* () {
       if (best !== null) {
-        yield* finish(best, job.original, draft, caption);
+        yield* finish(best, job.camera, draft, caption);
         return;
       }
       // No version is good enough, so the camera's own picture is cropped.
@@ -265,7 +267,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
         quality: cameraQuality,
       });
       yield* writeBytes(draft, cropped);
-      yield* finish(draft, job.original, draft, caption);
+      yield* finish(draft, job.camera, draft, caption);
     }),
   );
   const record: EditRecord = {

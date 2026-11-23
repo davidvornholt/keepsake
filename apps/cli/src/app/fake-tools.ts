@@ -60,6 +60,9 @@ export const resetTools = () => {
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
+  if (args[0] === '-s3') {
+    return '2026:03:30 10:00:00.000+02:00\n';
+  }
   if (args[0] !== '-json') {
     return '';
   }
