@@ -37,7 +37,7 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 
 ## Comparing vision models
 
-`keepsake rate <shoot>` serves a page where the user chooses the best frames and gives stars, 60 moments unless `--moments` says otherwise. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them.
+`keepsake rate <shoot>` serves a page where the user chooses the best frames and gives stars, 60 moments unless `--moments` says otherwise. Pass the `--model` that culled the shoot, so that the sample has moments of every score. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
 
 `keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them (nothing extra on a subscription):
 

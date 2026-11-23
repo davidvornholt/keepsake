@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/cli';
 import { compareWithOwner } from '../features/benchmark/benchmark.ts';
 import { judgeMoments } from '../features/cull/cull.ts';
@@ -11,12 +11,34 @@ import { openShoot } from '../shared/store.ts';
 import { verdicts } from '../shared/verdicts.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
-import { bounded, flag, optionalInt, shootArgument } from './command-inputs.ts';
+import {
+  bounded,
+  fail,
+  flag,
+  optionalInt,
+  optionalString,
+  shootArgument,
+  visionModel,
+} from './command-inputs.ts';
 import { emit, emitWithCost } from './output.ts';
 
 const defaultSample = 60;
 const mostMoments = 1000;
 const highestPort = 65_535;
+const webProtocols = new Set(['http:', 'https:']);
+
+const webAddress = (text: string) =>
+  Effect.try({
+    try: () => new URL(text),
+    catch: () => undefined,
+  }).pipe(
+    Effect.filterOrFail(({ protocol }) => webProtocols.has(protocol)),
+    Effect.catch(() =>
+      fail(
+        `${JSON.stringify(text)} is not an address of a web page. Write it with https://.`,
+      ),
+    ),
+  );
 
 export const rate = Command.make(
   'rate',
@@ -26,9 +48,14 @@ export const rate = Command.make(
       'moments',
       `How many moments to rate (default ${defaultSample})`,
     ),
+    model: visionModel,
     port: optionalInt('port', 'The port of the page (default: any free one)'),
+    address: optionalString(
+      'address',
+      'Where the page is reached from another machine, when something on this one passes it on to the port, such as https://server.example.ts.net:8443',
+    ),
   },
-  ({ shoot, moments, port }) =>
+  ({ shoot, moments, model, port, address }) =>
     Effect.gen(function* () {
       const count = yield* bounded('moments', moments, {
         fallback: defaultSample,
@@ -40,16 +67,24 @@ export const rate = Command.make(
         min: 0,
         max: highestPort,
       });
+      const elsewhere = Option.getOrUndefined(address);
+      const reachedAt =
+        elsewhere === undefined ? undefined : yield* webAddress(elsewhere);
       const open = yield* openShoot(shoot);
-      const judged = yield* verdicts(open, defaultVisionModel);
+      const judged = yield* verdicts(open, model);
       const sample = sampleOf(open.moments, judged, count);
-      const server = yield* serveRatingPage({ open, sample, port: chosenPort });
+      const server = yield* serveRatingPage({
+        open,
+        sample,
+        port: chosenPort,
+        address: reachedAt,
+      });
       const rated = new Set(
         (yield* readRatings(open)).map(({ moment }) => moment),
       );
       yield* emit({
         shoot,
-        url: `http://127.0.0.1:${server.port}/`,
+        url: reachedAt?.href ?? `http://127.0.0.1:${server.port}/`,
         moments: sample.length,
         rated: sample.filter(({ id }) => rated.has(id)).length,
       });
