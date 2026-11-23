@@ -28,7 +28,8 @@ const margin = 0.6;
 
 /** What is replaced, from how much of a pixel is the person. */
 const slightly = 0.4;
-const softEdge = { grow: 0, edge: 1 };
+/** How far beyond that, so nothing is left of the edit's person. */
+const reach = { grow: 1, edge: 1 };
 /** How closely the full-size picture's edges are followed. */
 const edgeRadius = 1;
 const edgeCalm = 0.0005;
@@ -98,7 +99,7 @@ const viewOf = (original: Raster, edit: Raster, person: Person): View => {
         Math.max(part, inEdit[index] ?? 0) > slightly ? 1 : 0,
       ),
       size,
-      softEdge,
+      reach,
     ),
     inside,
     person: guidedFilter(
