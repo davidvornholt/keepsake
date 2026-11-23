@@ -31,7 +31,7 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 
 ## Changing the result
 
-- Other or more photos: run `pick` with another score or maximum, then `edit` and `publish` again. Photos already edited stay. `edit <shoot> <photo...>` edits photos that weren't picked.
+- Other or more photos: run `pick` with another score or maximum, then `edit` and `publish` again. Photos already edited stay. For photos that weren't picked, such as another frame of a burst, name them: `edit <shoot> <photo...>` and `publish <shoot> <photo...>`.
 - Another attempt at a photo: `edit <shoot> <photo> --again`, then `publish`. The earlier upload stays in Immich and its id is listed under `outdated`; show it to the user and ask before trashing it with the photos command.
 
 ## Comparing vision models

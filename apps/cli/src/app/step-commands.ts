@@ -33,6 +33,12 @@ const mostVersions = 4;
 
 const again = flag('again', 'Start over instead of keeping what is done');
 
+const photosArgument = (description: string) =>
+  Argument.String('photo').pipe(
+    Argument.withDescription(description),
+    Argument.variadic(),
+  );
+
 const pickFlags = {
   minimum: optionalInt(
     'minimum-score',
@@ -136,10 +142,7 @@ export const edit = Command.make(
   'edit',
   {
     shoot: shootArgument,
-    photos: Argument.String('photo').pipe(
-      Argument.withDescription('Photos to edit instead of the picked ones'),
-      Argument.variadic(),
-    ),
+    photos: photosArgument('Photos to edit instead of the picked ones'),
     model: visionModel,
     ...editFlags,
     again,
@@ -169,9 +172,13 @@ const albumFlag = optionalString(
 
 export const publish = Command.make(
   'publish',
-  { shoot: shootArgument, album: albumFlag },
-  ({ shoot, album }) =>
-    workOn(shoot, (open) => publishShoot(open, album)).pipe(
+  {
+    shoot: shootArgument,
+    photos: photosArgument('Photos to publish instead of the picked ones'),
+    album: albumFlag,
+  },
+  ({ shoot, photos, album }) =>
+    workOn(shoot, (open) => publishShoot(open, photos, album)).pipe(
       Effect.flatMap(emit),
       Effect.provide(Spending.layer),
     ),
@@ -207,7 +214,7 @@ export const run = Command.make(
           editShoot(open, [], { ...editing, again: false }),
         );
         const published = flags.publish
-          ? yield* workOn(shoot, (open) => publishShoot(open, flags.album))
+          ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
           : null;
         yield* emitWithCost({ scanned, culled, picked, edited, published });
       }).pipe(

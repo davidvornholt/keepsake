@@ -46,10 +46,20 @@ describe('keepsake publish', () => {
     expect(result).toMatchObject({ published: 1, outdated: ['asset-3'] });
   });
 
+  it('uploads a photo that wasn’t picked when it is named', async () => {
+    await pickLisbon();
+    await runOk('edit', 'lisbon', 'A2');
+    const result = await runOk('publish', 'lisbon', 'A2');
+    expect(result).toMatchObject({ published: 1, outdated: [] });
+    expect(fakeTools.uploads[0]).toEndWith('A2-keepsake.jpg');
+  });
+
   it('needs finished photos', async () => {
     await pickLisbon();
     const failure = await failureOf('publish', 'lisbon');
     expect(failure.message).toContain('keepsake edit lisbon');
+    const named = await failureOf('publish', 'lisbon', 'B');
+    expect(named.message).toContain('keepsake edit lisbon B');
   });
 });
 
