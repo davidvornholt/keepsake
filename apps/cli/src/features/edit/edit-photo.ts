@@ -30,12 +30,11 @@ import { chooseCrop } from './crop.ts';
 import { type CameraData, copyCameraData, finish } from './finish.ts';
 import { exactFrame, outputSize } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
+import { keepOriginals, type Originals } from './keep-originals.ts';
 import { findPeople } from './people/find-people.ts';
-import { keepPeople } from './people/keep-people.ts';
 import { editPrompt } from './prompt.ts';
 import { type Review, review } from './review.ts';
 import { findSigns } from './signs/find-signs.ts';
-import { keepSigns } from './signs/keep-signs.ts';
 
 const cameraQuality = 95;
 const inputQuality = 95;
@@ -149,41 +148,27 @@ const signsOf = Effect.fn('signsOf')(function* ({ files }: Job) {
 type Prepared = {
   readonly crop: Crop;
   readonly size: Size;
-  readonly people: ReadonlyArray<Person>;
+  readonly originals: Originals;
 };
 
-/** A version the image model made, and the file to judge. */
-type Version = { readonly number: number; readonly version: string };
-
-/** A version with the original's people, whom an image model would redraw. */
-const withPeople = Effect.fn('withPeople')(function* (
+/** A version with the original's people and signs. */
+const withOriginals = Effect.fn('withOriginals')(function* (
   { files }: Job,
-  people: ReadonlyArray<Person>,
+  originals: Originals,
   number: number,
 ) {
   const version = files.version(number);
-  if (people.length === 0) {
+  if (originals.people.length + originals.signs.length === 0) {
     return version;
   }
-  const target = files.versionWithPeople(number);
+  const target = files.versionWithOriginals(number);
   if (!(yield* exists(target))) {
     yield* atomically(target, (draft) =>
-      keepPeople(people, { original: files.input, version, target: draft }),
-    );
-  }
-  return target;
-});
-
-/** A version with the original's signs, whose words an image model changes. */
-const withSigns = Effect.fn('withSigns')(function* (
-  { files }: Job,
-  signs: ReadonlyArray<Sign>,
-  { number, version }: Version,
-) {
-  const target = files.versionWithSigns(number);
-  if (!(yield* exists(target))) {
-    yield* atomically(target, (draft) =>
-      keepSigns(signs, { original: files.input, version, target: draft }),
+      keepOriginals(originals, {
+        original: files.input,
+        version,
+        target: draft,
+      }),
     );
   }
   return target;
@@ -192,7 +177,7 @@ const withSigns = Effect.fn('withSigns')(function* (
 /** Makes versions, unless they are there from before, and reviews them. */
 const attempt = Effect.fn('attempt')(function* (
   job: Job,
-  { crop, size, people }: Prepared,
+  { crop, size, originals }: Prepared,
   number: number,
   problems: string | null,
 ) {
@@ -220,41 +205,18 @@ const attempt = Effect.fn('attempt')(function* (
   }
   const made = yield* Effect.filter(numbers, isMade);
   const versions = yield* Effect.forEach(made, (version) =>
-    Effect.map(
-      withPeople(job, people, version),
-      (file): Version => ({ number: version, version: file }),
-    ),
+    withOriginals(job, originals, version),
   );
-  const judge = (
-    candidates: ReadonlyArray<string>,
-    kept: ReadonlyArray<Sign>,
-  ) =>
-    review(
-      pick,
-      { subject: crop.subject, people },
-      { original: files.input, versions: candidates, signs: kept },
-    );
-  const judged = yield* judge(
-    versions.map(({ version }) => version),
-    [],
+  return yield* review(
+    pick,
+    { subject: crop.subject, ...originals },
+    { original: files.input, versions },
   );
-  if (judged.best !== null || !judged.changesText) {
-    return judged;
-  }
-  const signs = yield* signsOf(job);
-  return signs.length === 0
-    ? judged
-    : yield* judge(
-        yield* Effect.forEach(versions, (version) =>
-          withSigns(job, signs, version),
-        ),
-        signs,
-      );
 });
 
 const bestVersion = Effect.fn('bestVersion')(
   function* (job: Job, prepared: Prepared) {
-    let last: Review = { best: null, notes: '', changesText: false };
+    let last: Review = { best: null, notes: '' };
     let problems: string | null = null;
     for (let number = 1; number <= mostAttempts; number += 1) {
       last = yield* attempt(job, prepared, number, problems);
@@ -307,11 +269,14 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   yield* cameraPicture(job);
   const crop = yield* cropOf(job);
   const size = yield* imageInput(job, crop);
-  const people = yield* peopleOf(job);
+  const originals = {
+    people: yield* peopleOf(job),
+    signs: yield* signsOf(job),
+  };
   const { best, notes, attempts } = yield* bestVersion(job, {
     crop,
     size,
-    people,
+    originals,
   });
   const caption = {
     stars: starsFor(pick.score),

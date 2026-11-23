@@ -204,7 +204,7 @@ describe('keepsake edit, with people', () => {
     // A person without a face or an outline can't be kept.
     expect(people).toHaveLength(1);
     expect(people[0].outline[2]).toEqual({ x: 0.7, y: 1 });
-    const version = shootFile('edits', 'B', 'version-1-people.png');
+    const version = shootFile('edits', 'B', 'version-1-kept.png');
     expect(existsSync(version)).toBe(true);
     const sources = fakeTools.runs
       .filter(({ command }) => command === 'magick')
@@ -222,79 +222,44 @@ describe('keepsake edit, with people', () => {
     await runOk('edit', 'lisbon', 'B');
     expect(asked('people')).toHaveLength(1);
     expect(existsSync(shootFile('edits', 'B', 'version-1.png'))).toBe(true);
-    expect(existsSync(shootFile('edits', 'B', 'version-1-people.png'))).toBe(
+    expect(existsSync(shootFile('edits', 'B', 'version-1-kept.png'))).toBe(
       false,
     );
   });
 });
 
 describe('keepsake edit, with signs', () => {
-  const changesText = assessment(1, {
-    textUnchanged: false,
-    notes: 'The hotel has another name.',
-  });
-  const signs = {
-    signs: [
-      {
-        part: 1,
-        text: 'HOTEL',
-        box: { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 },
-      },
-      // Neither a part that isn't there nor an empty box can be kept.
-      {
-        part: 9,
-        text: 'BAR',
-        box: { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 },
-      },
-      {
-        part: 1,
-        text: 'CAFE',
-        box: { left: 0.2, top: 0.2, right: 0.2, bottom: 0.3 },
-      },
-    ],
-  };
-
-  it('puts the photo’s own signs into versions that change them', async () => {
+  it('puts the photo’s own signs into every version', async () => {
     await pickLisbon();
-    fakeModels.answers.signs = signs;
-    fakeModels.answers.assessment = () =>
-      asked('assessment').length === 1
-        ? { assessments: [changesText] }
-        : { assessments: [assessment(1)] };
+    const box = { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 };
+    fakeModels.answers.signs = {
+      signs: [
+        { part: 1, text: 'HOTEL', box },
+        // Neither a part that isn't there nor an empty box can be kept.
+        { part: 9, text: 'BAR', box },
+        { part: 1, text: 'CAFE', box: { ...box, right: 0.2 } },
+      ],
+    };
     const result = await runOk('edit', 'lisbon', 'B');
     expect(result.edited).toBe(1);
     expect(await shootJson('edits', 'B', 'signs.json')).toEqual([
-      { text: 'HOTEL', box: signs.signs[0]?.box },
+      { text: 'HOTEL', box },
     ]);
-    const version = shootFile('edits', 'B', 'version-1-signs.png');
-    expect(existsSync(version)).toBe(true);
-    const assessments = asked('assessment').map(({ texts }) =>
-      texts.some((text) => text.includes('“HOTEL”')),
-    );
-    expect(assessments).toEqual([false, true]);
-    expect(fakeModels.edits).toHaveLength(1);
+    for (const version of ['version-1-kept.png', 'version-2-kept.png']) {
+      expect(existsSync(shootFile('edits', 'B', version))).toBe(true);
+    }
+    expect(
+      asked('assessment')[0]?.texts.some((text) => text.includes('“HOTEL”')),
+    ).toBe(true);
   });
 
-  it('tries again when that does not help', async () => {
+  it('says nothing about signs when there are none', async () => {
     await pickLisbon();
-    fakeModels.answers.signs = signs;
-    fakeModels.answers.assessment = { assessments: [changesText] };
-    const result = await runOk('edit', 'lisbon', 'B');
-    expect(result.keptFromCamera).toEqual([
-      { photo: 'B', reason: 'The hotel has another name.' },
-    ]);
-    expect(asked('signs')).toHaveLength(1);
-    expect(asked('assessment')).toHaveLength(4);
-    expect(fakeModels.edits).toHaveLength(2);
-  });
-
-  it('looks for signs only when a version changes a text', async () => {
-    await pickLisbon();
-    fakeModels.answers.assessment = {
-      assessments: [assessment(1, { samePlace: false })],
-    };
     await runOk('edit', 'lisbon', 'B');
-    expect(asked('signs')).toHaveLength(0);
+    expect(asked('signs')).toHaveLength(1);
+    expect(
+      asked('assessment')[0]?.texts.some((text) => text.includes('signs')),
+    ).toBe(false);
   });
 });
 
