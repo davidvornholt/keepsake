@@ -12,8 +12,9 @@ keepsake only reads the folder of photos and never changes it. What it makes is 
 ## Before starting
 
 - The photos are the user's private life, and keepsake sends them to the provider of the model, so use it only on a folder the user's own message names. Never copy photos or what they show into files, commits or issues.
-- It costs money. With the usual models, culling costs about $2.50 per 100 photos, and editing about $0.75 per photo. Scanning is free, so scan first, tell the user what the rest will cost, and go on when they have agreed to it or named a budget. `--budget` limits the edits of one command and nothing else. keepsake counts a model whose price it doesn't know (`dollars` is 0 under `models` although tokens were used) as free, so there the budget has no effect.
-- If a command reports `NotSignedIn`, ask the user to run `keepsake login <provider>` in their own terminal (for Azure with `--endpoint <address of the resource>`). Never ask for the key in the chat, and never read or print the credentials file.
+- Where the user has a subscription, let it judge the photos: `--model claude/<model>` asks Claude Code and `--model codex/<model>` asks Codex, each on the subscription its program is signed in to. That costs nothing extra but counts towards the limits of the subscription. When one is reached, the rest of the photos are listed as failed; run the same command again later. Whether a provider may train on the photos depends on the account's privacy settings.
+- Everything else costs money. With the usual models, culling costs about $2.50 per 100 photos, and editing about $0.75 per photo. Scanning is free, so scan first, tell the user what the rest will cost, and go on when they have agreed to it or named a budget. `--budget` limits the edits of one command and nothing else. keepsake counts a model whose price it doesn't know (`dollars` is 0 under `models` although tokens were used) as free, so there the budget has no effect.
+- If a command reports `NotSignedIn`, ask the user to run `keepsake login <provider>` in their own terminal (for Azure with `--endpoint <address of the resource>`), or to sign in to Claude Code or Codex. Never ask for the key in the chat, and never read or print the credentials file.
 
 ## From a folder to an album
 
@@ -38,7 +39,7 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 
 `keepsake rate <shoot>` serves a page where the user chooses the best frames and gives stars, 60 moments unless `--moments` says otherwise. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them.
 
-`keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them:
+`keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them (nothing extra on a subscription):
 
 - `sameBestFrame` is how often the model chose the user's best frame of a burst, and `bestFrameKept` how often it chose one the user kept. `bestFrameByChance` is what guessing would reach.
 - `keepAccuracy` is how often a photo the user would keep (3 stars or more) scored above one they would not; 0.5 is guessing. Use this to choose a model.

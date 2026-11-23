@@ -9,6 +9,14 @@ import {
   readCredentials,
 } from './credentials.ts';
 import { InvalidInput, NotSignedIn } from './errors/errors.ts';
+import { claude } from './subscriptions/claude.ts';
+import { codex } from './subscriptions/codex.ts';
+import { programModelLayer } from './subscriptions/program-model.ts';
+import {
+  isSubscription,
+  type Subscription,
+  subscriptions,
+} from './subscriptions/subscriptions.ts';
 
 /** Judges photos unless another model is named. */
 export const defaultVisionModel = 'azure/gpt-6-astra';
@@ -16,7 +24,7 @@ export const defaultVisionModel = 'azure/gpt-6-astra';
 export const defaultImageModel = 'azure/gpt-image-2.5-sunburst';
 
 export type ModelName = {
-  readonly provider: Provider;
+  readonly provider: Provider | Subscription;
   /** The provider's name for it; on Azure, the name of the deployment. */
   readonly model: string;
 };
@@ -28,9 +36,9 @@ const isProvider = (name: string): name is Provider =>
 export const modelName = Effect.fn('modelName')(function* (name: string) {
   const [provider = '', ...rest] = name.split('/');
   const model = rest.join('/');
-  if (!isProvider(provider) || model === '') {
+  if (!(isProvider(provider) || isSubscription(provider)) || model === '') {
     return yield* new InvalidInput({
-      message: `${JSON.stringify(name)} is not a model. Write the provider and the model, such as ${defaultVisionModel}. The providers are ${providers.join(', ')}.`,
+      message: `${JSON.stringify(name)} is not a model. Write the provider and the model, such as ${defaultVisionModel}. The providers are ${[...providers, ...subscriptions].join(', ')}.`,
     });
   }
   return { provider, model } satisfies ModelName;
@@ -65,24 +73,35 @@ export const openAiUrl = (
   }
 };
 
-/** A model that can look at photos, signed in with this machine's key. */
-export const visionLayer = (name: ModelName) =>
+const apiLayer = (provider: Provider, model: string) =>
   Layer.unwrap(
     Effect.gen(function* () {
-      const access = yield* accessTo(name.provider);
+      const access = yield* accessTo(provider);
       const apiKey = Redacted.make(access.apiKey);
-      if (name.provider === 'anthropic') {
-        return AnthropicLanguageModel.layer({ model: name.model }).pipe(
+      if (provider === 'anthropic') {
+        return AnthropicLanguageModel.layer({ model }).pipe(
           Layer.provide(AnthropicClient.layer({ apiKey })),
         );
       }
-      return OpenAiLanguageModel.layer({ model: name.model }).pipe(
+      return OpenAiLanguageModel.layer({ model }).pipe(
         Layer.provide(
-          OpenAiClient.layer({
-            apiKey,
-            apiUrl: openAiUrl(name.provider, access),
-          }),
+          OpenAiClient.layer({ apiKey, apiUrl: openAiUrl(provider, access) }),
         ),
       );
     }),
   ).pipe(Layer.provide(FetchHttpClient.layer));
+
+/**
+ * A model that can look at photos, with this machine's API key or on the
+ * subscription its program is signed in to.
+ */
+export const visionLayer = ({ provider, model }: ModelName) => {
+  switch (provider) {
+    case 'claude':
+      return programModelLayer(claude(model));
+    case 'codex':
+      return programModelLayer(codex(model));
+    default:
+      return apiLayer(provider, model);
+  }
+};

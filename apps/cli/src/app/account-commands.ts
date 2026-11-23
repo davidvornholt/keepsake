@@ -8,6 +8,10 @@ import {
   readCredentials,
   saveAccess,
 } from '../shared/credentials.ts';
+import {
+  isSignedInTo,
+  subscriptions,
+} from '../shared/subscriptions/subscriptions.ts';
 import { fail, optionalString } from './command-inputs.ts';
 import { emit } from './output.ts';
 
@@ -130,10 +134,19 @@ export const status = Command.make('status', {}, () =>
         }),
       { concurrency: 'unbounded' },
     );
-    yield* emit({ providers: accounts });
+    const programs = yield* Effect.forEach(
+      subscriptions,
+      (provider) =>
+        Effect.map(isSignedInTo(provider), (signedIn) => ({
+          provider,
+          signedIn,
+        })),
+      { concurrency: 'unbounded' },
+    );
+    yield* emit({ providers: [...accounts, ...programs] });
   }),
 ).pipe(
   Command.withDescription(
-    'Show which providers this machine has an API key for, and whether they still accept it',
+    'Show which providers this machine has an API key for that they still accept, and whether the claude and codex programs are signed in to a subscription',
   ),
 );

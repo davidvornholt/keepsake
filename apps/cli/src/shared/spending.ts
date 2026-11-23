@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Option, Ref, Schema } from 'effect';
 import { readJson, type ShootFiles, writeJson } from './store.ts';
+import { isSubscription } from './subscriptions/subscriptions.ts';
 
 /** Dollars for a million tokens. */
 type Price = {
@@ -11,7 +12,7 @@ const million = 1_000_000;
 
 // List prices in US dollars for a million tokens, by the model's name without
 // its provider. A model that isn't here counts as free, so its tokens are
-// shown instead.
+// shown instead, and so does every model of a subscription.
 const prices: ReadonlyMap<string, Price> = new Map([
   ['gpt-6-astra', { input: 10, output: 50 }],
   // Image tokens; the few text tokens of the prompt cost less.
@@ -38,14 +39,19 @@ const nothing: ModelSpending = {
   dollars: 0,
 };
 
-const bareName = (model: string) => model.slice(model.indexOf('/') + 1);
+const priceOf = (model: string): Price | undefined => {
+  const slash = model.indexOf('/');
+  return isSubscription(model.slice(0, slash))
+    ? undefined
+    : prices.get(model.slice(slash + 1));
+};
 
 export const costOf = (
   model: string,
   inputTokens: number,
   outputTokens: number,
 ): number => {
-  const price = prices.get(bareName(model));
+  const price = priceOf(model);
   return price === undefined
     ? 0
     : (inputTokens * price.input + outputTokens * price.output) / million;

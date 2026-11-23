@@ -5,7 +5,14 @@ import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
 /** A program that was run. */
-type Run = { readonly command: string; readonly args: ReadonlyArray<string> };
+type Run = {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  /** What it read from its standard input. */
+  readonly input: string;
+  /** The environment variables that were set or removed for it. */
+  readonly env: Readonly<Record<string, unknown>>;
+};
 
 const greyPixels = 72;
 const cameraSize = '7008 4672';
@@ -33,6 +40,10 @@ export const fakeTools = {
   uploads: [] as Array<string>,
   /** RAW files ImageMagick can't read. */
   broken: new Set<string>(),
+  /** Whether the claude and codex programs are signed in to a subscription. */
+  isSubscribed: false,
+  /** What the claude and codex programs answer to a question. */
+  assistant: undefined as ((run: Run) => string) | undefined,
 };
 
 export const resetTools = () => {
@@ -40,6 +51,8 @@ export const resetTools = () => {
   fakeTools.files = [];
   fakeTools.uploads = [];
   fakeTools.broken = new Set();
+  fakeTools.isSubscribed = false;
+  fakeTools.assistant = undefined;
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
@@ -96,8 +109,26 @@ const photos = (args: ReadonlyArray<string>): unknown => {
   }
 };
 
-const answer = ({ command, args }: Run): string | Uint8Array => {
+const claudeStatus = () =>
+  JSON.stringify({
+    loggedIn: fakeTools.isSubscribed,
+    authMethod: fakeTools.isSubscribed ? 'claude.ai' : 'none',
+  });
+
+const codexStatus = () =>
+  fakeTools.isSubscribed ? 'Logged in using ChatGPT' : 'Not logged in';
+
+const answer = (run: Run): string | Uint8Array => {
+  const { command, args } = run;
   switch (command) {
+    case 'claude':
+      return args[0] === 'auth'
+        ? claudeStatus()
+        : (fakeTools.assistant?.(run) ?? '');
+    case 'codex':
+      return args[0] === 'login'
+        ? codexStatus()
+        : (fakeTools.assistant?.(run) ?? '');
     case 'exiftool':
       return exiftool(args);
     case 'magick':
@@ -111,11 +142,24 @@ const answer = ({ command, args }: Run): string | Uint8Array => {
 
 const firstPid = 1000;
 
+const inputOf = (stdin: unknown) =>
+  Stream.isStream(stdin)
+    ? (stdin as Stream.Stream<Uint8Array>).pipe(
+        Stream.decodeText(),
+        Stream.mkString,
+      )
+    : Effect.succeed('');
+
 const spawner = ChildProcessSpawner.make((spawned) =>
-  Effect.sync(() => {
+  Effect.gen(function* () {
     const run: Run = ChildProcess.isStandardCommand(spawned)
-      ? { command: spawned.command, args: spawned.args.map(String) }
-      : { command: '', args: [] };
+      ? {
+          command: spawned.command,
+          args: spawned.args.map(String),
+          input: yield* inputOf(spawned.options.stdin),
+          env: spawned.options.env ?? {},
+        }
+      : { command: '', args: [], input: '', env: {} };
     fakeTools.runs.push(run);
     const isBroken = run.args.some((arg) =>
       [...fakeTools.broken].some((file) => arg.endsWith(file)),

@@ -16,11 +16,11 @@ afterEach(tearDown);
 describe('keepsake bench', () => {
   it('measures a model on the rated moments only', async () => {
     await scanLisbon();
-    let count = 0;
-    fakeModels.answers.judgement = () => {
-      count += 1;
-      return { ...verdictAnswer, score: count === 1 ? 9 : 3 };
-    };
+    // The burst is asked about with two pictures.
+    fakeModels.answers.judgement = ({ images }) => ({
+      ...verdictAnswer,
+      score: images === 2 ? 9 : 3,
+    });
     await writeFile(
       shootFile('ratings.json'),
       JSON.stringify([

@@ -62,7 +62,9 @@ describe('keepsake cull', () => {
     const result = await runOk('cull', 'lisbon');
     expect(result).toMatchObject({ moments: 3, failed: [] });
     expect(result.scores['score 8']).toBe(3);
-    expect(asked('judgement').map(({ images }) => images)).toEqual([2, 1, 1]);
+    const images = asked('judgement').map((question) => question.images);
+    // The moments are asked about at the same time.
+    expect(images.toSorted((a, b) => a - b)).toEqual([1, 1, 2]);
     await runOk('cull', 'lisbon');
     expect(asked('judgement')).toHaveLength(3);
     await runOk('cull', 'lisbon', '--again');
