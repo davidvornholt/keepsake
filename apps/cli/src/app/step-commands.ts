@@ -1,0 +1,223 @@
+import { Effect, Layer, Option } from 'effect';
+import { Argument, Command } from 'effect/cli';
+import { cull as cullShoot } from '../features/cull/cull.ts';
+import { edit as editShoot } from '../features/edit/edit.ts';
+import { ImageModel } from '../features/edit/image-model.ts';
+import { pick as pickShoot } from '../features/pick/pick.ts';
+import { publish as publishShoot } from '../features/publish/publish.ts';
+import { scan } from '../features/scan/scan.ts';
+import { defaultImageModel } from '../shared/models.ts';
+import { Spending } from '../shared/spending.ts';
+import { Vision } from '../shared/vision.ts';
+import { workOn } from '../shared/work.ts';
+import {
+  bounded,
+  flag,
+  optionalInt,
+  optionalNumber,
+  optionalString,
+  shootArgument,
+  visionModel,
+} from './command-inputs.ts';
+import { emit, emitWithCost } from './output.ts';
+import { folderArgument, scanFlags } from './shoot-commands.ts';
+
+const lowestScore = 1;
+const highestScore = 10;
+const defaultMinimum = 7;
+const mostPicks = 10_000;
+const defaultBudget = 25;
+const mostDollars = 10_000;
+const defaultVersions = 2;
+const mostVersions = 4;
+
+const again = flag('again', 'Start over instead of keeping what is done');
+
+const pickFlags = {
+  minimum: optionalInt(
+    'minimum-score',
+    `Pick photos from this score on, 1 to 10 (default ${defaultMinimum})`,
+  ),
+  maximum: optionalInt('maximum', 'Pick at most this many, the best ones'),
+};
+
+const pickInput = (flags: {
+  readonly minimum: Option.Option<number>;
+  readonly maximum: Option.Option<number>;
+}) =>
+  Effect.gen(function* () {
+    return {
+      minimumScore: yield* bounded('minimum-score', flags.minimum, {
+        fallback: defaultMinimum,
+        min: lowestScore,
+        max: highestScore,
+      }),
+      maximum: Option.isSome(flags.maximum)
+        ? Option.some(
+            yield* bounded('maximum', flags.maximum, {
+              fallback: mostPicks,
+              min: 1,
+              max: mostPicks,
+            }),
+          )
+        : Option.none<number>(),
+    };
+  });
+
+const editFlags = {
+  budget: optionalNumber(
+    'budget',
+    `Start no more photos when the edits have cost this many dollars (default ${defaultBudget})`,
+  ),
+  versions: optionalInt(
+    'versions',
+    `How many versions of a photo to make and choose from, 1 to ${mostVersions} (default ${defaultVersions})`,
+  ),
+  imageModel: optionalString(
+    'image-model',
+    `The image model, with its provider (default ${defaultImageModel})`,
+  ),
+};
+
+const editInput = (flags: {
+  readonly budget: Option.Option<number>;
+  readonly versions: Option.Option<number>;
+}) =>
+  Effect.gen(function* () {
+    return {
+      budget: yield* bounded('budget', flags.budget, {
+        fallback: defaultBudget,
+        min: 0,
+        max: mostDollars,
+      }),
+      versions: yield* bounded('versions', flags.versions, {
+        fallback: defaultVersions,
+        min: 1,
+        max: mostVersions,
+      }),
+    };
+  });
+
+const imageLayer = (model: Option.Option<string>) =>
+  ImageModel.layer(Option.getOrElse(model, () => defaultImageModel));
+
+export const cull = Command.make(
+  'cull',
+  { shoot: shootArgument, model: visionModel, again },
+  ({ shoot, model, again: startOver }) =>
+    workOn(shoot, (open) => cullShoot(open, startOver)).pipe(
+      Effect.flatMap(emitWithCost),
+      Effect.provide(Vision.layer(model)),
+      Effect.provide(Spending.layer),
+    ),
+).pipe(
+  Command.withDescription(
+    'Let a vision model find the best frames of every moment and score them. Moments it has judged before are kept.',
+  ),
+);
+
+export const pick = Command.make(
+  'pick',
+  { shoot: shootArgument, model: visionModel, ...pickFlags, again },
+  ({ shoot, model, again: startOver, ...flags }) =>
+    Effect.gen(function* () {
+      const input = yield* pickInput(flags);
+      yield* workOn(shoot, (open) =>
+        pickShoot(open, { ...input, again: startOver }),
+      ).pipe(Effect.flatMap(emitWithCost), Effect.provide(Vision.layer(model)));
+    }).pipe(Effect.provide(Spending.layer)),
+).pipe(
+  Command.withDescription(
+    'Choose the photos worth editing: those with a high score, without repeats of the same subject',
+  ),
+);
+
+export const edit = Command.make(
+  'edit',
+  {
+    shoot: shootArgument,
+    photos: Argument.String('photo').pipe(
+      Argument.withDescription('Photos to edit instead of the picked ones'),
+      Argument.variadic(),
+    ),
+    model: visionModel,
+    ...editFlags,
+    again,
+  },
+  ({ shoot, photos, model, imageModel, again: startOver, ...flags }) =>
+    Effect.gen(function* () {
+      const input = yield* editInput(flags);
+      yield* workOn(shoot, (open) =>
+        editShoot(open, photos, { ...input, again: startOver }),
+      ).pipe(
+        Effect.flatMap(emitWithCost),
+        Effect.provide(
+          Layer.merge(Vision.layer(model), imageLayer(imageModel)),
+        ),
+      );
+    }).pipe(Effect.provide(Spending.layer)),
+).pipe(
+  Command.withDescription(
+    'Crop the picked photos, edit them with an image model, and keep the version that passes a review, or the camera’s own picture when none does. Photos edited before are kept.',
+  ),
+);
+
+const albumFlag = optionalString(
+  'album',
+  'The name of the album (default: what the shoot is about, or its name)',
+);
+
+export const publish = Command.make(
+  'publish',
+  { shoot: shootArgument, album: albumFlag },
+  ({ shoot, album }) =>
+    workOn(shoot, (open) => publishShoot(open, album)).pipe(
+      Effect.flatMap(emit),
+      Effect.provide(Spending.layer),
+    ),
+).pipe(
+  Command.withDescription(
+    'Upload the finished photos to an album in Immich with the photos command, each stacked on top of the camera’s own picture. Photos published before are not sent again.',
+  ),
+);
+
+export const run = Command.make(
+  'run',
+  {
+    folder: folderArgument,
+    ...scanFlags,
+    model: visionModel,
+    ...pickFlags,
+    ...editFlags,
+    publish: flag('publish', 'Also upload the finished photos to Immich'),
+    album: albumFlag,
+  },
+  (flags) =>
+    Effect.gen(function* () {
+      const picking = yield* pickInput(flags);
+      const editing = yield* editInput(flags);
+      yield* Effect.gen(function* () {
+        const scanned = yield* scan(flags);
+        const { shoot } = scanned;
+        const culled = yield* workOn(shoot, (open) => cullShoot(open, false));
+        const picked = yield* workOn(shoot, (open) =>
+          pickShoot(open, { ...picking, again: false }),
+        );
+        const edited = yield* workOn(shoot, (open) =>
+          editShoot(open, [], { ...editing, again: false }),
+        );
+        const published = flags.publish
+          ? yield* workOn(shoot, (open) => publishShoot(open, flags.album))
+          : null;
+        yield* emitWithCost({ scanned, culled, picked, edited, published });
+      }).pipe(
+        Effect.provide(
+          Layer.merge(Vision.layer(flags.model), imageLayer(flags.imageModel)),
+        ),
+      );
+    }).pipe(Effect.provide(Spending.layer)),
+).pipe(
+  Command.withDescription(
+    'Do everything with a folder of photos: scan, cull, pick and edit, and publish if asked. Running it again goes on where it stopped.',
+  ),
+);

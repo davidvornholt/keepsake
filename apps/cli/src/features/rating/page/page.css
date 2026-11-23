@@ -1,0 +1,162 @@
+@layer base, page;
+
+@layer base {
+  :root {
+    --background: oklch(0.2 0 0);
+    --surface: oklch(0.3 0 0);
+    --line: oklch(0.6 0 0);
+    --text: oklch(0.95 0 0);
+    --chosen: oklch(0.87 0.14 85);
+    --focus: oklch(0.78 0.13 220);
+
+    color-scheme: dark;
+    font-family: system-ui, sans-serif;
+    color: var(--text);
+    background: var(--background);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  h1,
+  p {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  kbd {
+    padding-inline: 0.35rem;
+    border: 1px solid var(--line);
+    border-radius: 0.25rem;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+@layer page {
+  body {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: minmax(0, 1fr);
+    block-size: 100vb;
+    margin: 0;
+  }
+
+  header,
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+  }
+
+  main {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    grid-template-columns: minmax(0, 1fr);
+    min-block-size: 0;
+  }
+
+  figure {
+    position: relative;
+    min-block-size: 0;
+    margin: 0;
+  }
+
+  #view {
+    block-size: 100%;
+    overflow: hidden;
+  }
+
+  figcaption {
+    position: absolute;
+    inset-block-start: 0.5rem;
+    inset-inline-start: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--background);
+    border-radius: 0.25rem;
+  }
+
+  #photo {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: contain;
+  }
+
+  #photo[data-zoomed] {
+    block-size: auto;
+    max-inline-size: none;
+  }
+
+  #photo[hidden] {
+    display: none;
+  }
+
+  #frames {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    margin: 0;
+    overflow-x: auto;
+    list-style: none;
+  }
+
+  #frames button {
+    position: relative;
+    padding: 0;
+    background: none;
+    border: 3px solid transparent;
+    border-radius: 0.25rem;
+  }
+
+  #frames button[aria-current="true"] {
+    border-color: var(--text);
+  }
+
+  #frames img {
+    display: block;
+    block-size: 5rem;
+  }
+
+  #frames span {
+    position: absolute;
+    inset-block-start: 0.25rem;
+    inset-inline-start: 0.25rem;
+    padding-inline: 0.4rem;
+    color: var(--background);
+    background: var(--chosen);
+    border-radius: 1rem;
+  }
+
+  fieldset {
+    padding: 0;
+    margin: 0;
+    border: 0;
+  }
+
+  #stars {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  #stars button {
+    padding: 0.4rem 0.75rem;
+    font: inherit;
+    color: inherit;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 0.25rem;
+  }
+
+  #stars button[aria-pressed="true"] {
+    color: var(--background);
+    background: var(--chosen);
+  }
+}
