@@ -1,18 +1,25 @@
-import { Effect, FileSystem, Option } from 'effect';
+import { Effect, FileSystem, Option, Schema } from 'effect';
 import { developed } from '../../shared/develop.ts';
 import {
   Crop,
   EditRecord,
+  Person,
   type Photo,
   type Pick,
 } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import { renderExactly, rendered, sizeOf } from '../../shared/pictures.ts';
+import {
+  renderExactly,
+  rendered,
+  type Size,
+  sizeOf,
+} from '../../shared/pictures.ts';
 import { starsFor } from '../../shared/stars.ts';
 import {
   atomically,
   exists,
   type OpenShoot,
+  readBytes,
   readJson,
   type ShootFiles,
   writeBytes,
@@ -22,6 +29,8 @@ import { chooseCrop } from './crop.ts';
 import { copyCameraData, finish } from './finish.ts';
 import { exactFrame, outputSize } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
+import { findPeople } from './people/find-people.ts';
+import { keepPeople } from './people/keep-people.ts';
 import { editPrompt } from './prompt.ts';
 import { type Review, review } from './review.ts';
 
@@ -103,51 +112,89 @@ const imageInput = Effect.fn('imageInput')(function* (job: Job, crop: Crop) {
   return size;
 });
 
+const peopleOf = Effect.fn('peopleOf')(function* ({ files }: Job) {
+  const people = Schema.Array(Person);
+  const before = yield* readJson(people, files.people);
+  if (Option.isSome(before)) {
+    return before.value;
+  }
+  const found = yield* findPeople(files.input);
+  yield* writeJson(people, files.people, found);
+  return found;
+});
+
+/** What is known about a photo before the image model gets it. */
+type Prepared = {
+  readonly crop: Crop;
+  readonly size: Size;
+  readonly people: ReadonlyArray<Person>;
+};
+
+/** A version with the original's people, whom an image model would redraw. */
+const withPeople = Effect.fn('withPeople')(function* (
+  { files }: Job,
+  people: ReadonlyArray<Person>,
+  number: number,
+) {
+  const version = files.version(number);
+  if (people.length === 0) {
+    return version;
+  }
+  const target = files.versionWithPeople(number);
+  if (!(yield* exists(target))) {
+    yield* atomically(target, (draft) =>
+      keepPeople(people, { original: files.input, version, target: draft }),
+    );
+  }
+  return target;
+});
+
 /** Makes versions, unless they are there from before, and reviews them. */
 const attempt = Effect.fn('attempt')(function* (
   job: Job,
-  crop: Crop,
+  { crop, size, people }: Prepared,
   number: number,
   problems: string | null,
 ) {
   const { files, open, photo, pick } = job;
   const image = yield* ImageModel;
-  const fs = yield* FileSystem.FileSystem;
-  const size = yield* imageInput(job, crop);
-  const targets = Array.from({ length: job.versions }, (_, index) =>
-    files.version((number - 1) * job.versions + index + 1),
+  const numbers = Array.from(
+    { length: job.versions },
+    (_, index) => (number - 1) * job.versions + index + 1,
   );
-  const isThere = yield* Effect.forEach(targets, exists);
+  const isMade = (version: number) => exists(files.version(version));
+  const isThere = yield* Effect.forEach(numbers, isMade);
   if (!isThere.includes(true)) {
-    const picture = yield* fs.readFile(files.input).pipe(
-      Effect.mapError(
-        (error) =>
-          new StoreFailed({
-            message: `Could not read ${files.input}: ${error.message}`,
-          }),
-      ),
-    );
     const versions = yield* image.edit({
-      picture: new Uint8Array(picture),
+      picture: new Uint8Array(yield* readBytes(files.input)),
       prompt: editPrompt(open.shoot, photo, pick, problems),
       size,
       versions: job.versions,
     });
-    yield* Effect.forEach(targets, (target, index) => {
-      const version = versions[index];
-      return version === undefined ? Effect.void : writeBytes(target, version);
+    yield* Effect.forEach(numbers, (version, index) => {
+      const bytes = versions[index];
+      return bytes === undefined
+        ? Effect.void
+        : writeBytes(files.version(version), bytes);
     });
   }
-  const made = yield* Effect.filter(targets, exists);
-  return yield* review(pick, crop, { original: files.input, versions: made });
+  const made = yield* Effect.filter(numbers, isMade);
+  const versions = yield* Effect.forEach(made, (version) =>
+    withPeople(job, people, version),
+  );
+  return yield* review(
+    pick,
+    { subject: crop.subject, people },
+    { original: files.input, versions },
+  );
 });
 
 const bestVersion = Effect.fn('bestVersion')(
-  function* (job: Job, crop: Crop) {
+  function* (job: Job, prepared: Prepared) {
     let last: Review = { best: null, notes: '' };
     let problems: string | null = null;
     for (let number = 1; number <= mostAttempts; number += 1) {
-      last = yield* attempt(job, crop, number, problems);
+      last = yield* attempt(job, prepared, number, problems);
       if (last.best !== null) {
         return { ...last, attempts: number };
       }
@@ -193,7 +240,13 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   };
   yield* cameraPicture(job);
   const crop = yield* cropOf(job);
-  const { best, notes, attempts } = yield* bestVersion(job, crop);
+  const size = yield* imageInput(job, crop);
+  const people = yield* peopleOf(job);
+  const { best, notes, attempts } = yield* bestVersion(job, {
+    crop,
+    size,
+    people,
+  });
   const caption = {
     stars: starsFor(pick.score),
     description: pick.description,
@@ -206,8 +259,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
         return;
       }
       // No version is good enough, so the camera's own picture is cropped.
-      const size = yield* sizeOf(files.camera);
-      const frame = exactFrame(crop.box, size, outputSize(crop.aspect));
+      const frame = exactFrame(crop.box, yield* sizeOf(files.camera), size);
       const cropped = yield* rendered(files.camera, {
         frame,
         quality: cameraQuality,

@@ -140,8 +140,13 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         crop: path.join(directory, 'crop.json'),
         /** The cropped photo the image model gets. */
         input: path.join(directory, 'input.jpg'),
+        people: path.join(directory, 'people.json'),
+        /** What the image model made. */
         version: (number: number) =>
           path.join(directory, `version-${number}.png`),
+        /** The same with the original's people in it. */
+        versionWithPeople: (number: number) =>
+          path.join(directory, `version-${number}-people.png`),
         final: path.join(directory, `${base}-keepsake.jpg`),
         record: path.join(directory, 'edit.json'),
       };

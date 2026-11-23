@@ -41,7 +41,6 @@ describe('keepsake edit', () => {
     await pickLisbon();
     fakeModels.answers.crops = {
       subject: { left: 0.4, top: 0.4, right: 0.5, bottom: 0.5 },
-      faces: [],
       crops: [
         {
           box: { left: 0.3, top: 0.3, right: 0.6, bottom: 0.6 },
@@ -98,6 +97,55 @@ describe('keepsake edit', () => {
     expect(marking?.args).toContain('-XMP-xmp:Rating=4');
     expect(marking?.args).toContain(
       `-XMP-dc:Description=${verdictAnswer.description}`,
+    );
+  });
+});
+
+describe('keepsake edit, with people', () => {
+  it('puts the photo’s own people into every version', async () => {
+    await pickLisbon();
+    fakeModels.answers.people = {
+      people: [
+        {
+          face: { left: 0.4, top: 0.1, right: 0.6, bottom: 0.4 },
+          outline: [
+            { x: 0.3, y: 0 },
+            { x: 0.7, y: 0 },
+            { x: 0.7, y: 1.2 },
+            { x: 0.3, y: 1.2 },
+          ],
+        },
+        {
+          face: { left: 0.4, top: 0.1, right: 0.4, bottom: 0.4 },
+          outline: [{ x: 0.3, y: 0 }],
+        },
+      ],
+    };
+    await runOk('edit', 'lisbon', 'B');
+    const people = await shootJson('edits', 'B', 'people.json');
+    // A person without a face or an outline can't be kept.
+    expect(people).toHaveLength(1);
+    expect(people[0].outline[2]).toEqual({ x: 0.7, y: 1 });
+    const version = shootFile('edits', 'B', 'version-1-people.png');
+    expect(existsSync(version)).toBe(true);
+    const sources = fakeTools.runs
+      .filter(({ command }) => command === 'magick')
+      .map(({ args }) => args[0]);
+    expect(sources).toContain(version);
+    // The original and the two versions, each with the face close up.
+    expect(
+      asked('assessment')[0]?.texts.filter((text) => text.includes('a face')),
+    ).toHaveLength(3);
+    expect(fakeModels.edits).toHaveLength(1);
+  });
+
+  it('finishes what the model made when nobody is in the photo', async () => {
+    await pickLisbon();
+    await runOk('edit', 'lisbon', 'B');
+    expect(asked('people')).toHaveLength(1);
+    expect(existsSync(shootFile('edits', 'B', 'version-1.png'))).toBe(true);
+    expect(existsSync(shootFile('edits', 'B', 'version-1-people.png'))).toBe(
+      false,
     );
   });
 });

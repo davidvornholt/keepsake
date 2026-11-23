@@ -118,14 +118,24 @@ export const ratioOf = (aspect: AspectName): number => {
   return (width ?? 1) / (height ?? 1);
 };
 
+/** A point in fractions of a picture's width and height. */
+export const Point = Schema.Struct({ x: Schema.Finite, y: Schema.Finite });
+export type Point = typeof Point.Type;
+
+/** A person who can be recognised, in fractions of the cropped photo. */
+export const Person = Schema.Struct({
+  face: Box,
+  /** Around everything that belongs to the person. */
+  outline: Schema.Array(Point),
+});
+export type Person = typeof Person.Type;
+
 export const Crop = Schema.Struct({
   /** What stays, in fractions of the whole photo. */
   box: Box,
   aspect: Schema.Literals(aspectNames),
   /** The subject, in fractions of what stays. */
   subject: Box,
-  /** The largest human faces, in fractions of what stays. */
-  faces: Schema.Array(Box),
   reason: Schema.String,
 });
 export type Crop = typeof Crop.Type;

@@ -1,6 +1,6 @@
 import { Effect, Schema } from 'effect';
 import { coverage } from '../../shared/boxes.ts';
-import type { Box, Crop, Pick } from '../../shared/domain.ts';
+import type { Box, Person, Pick } from '../../shared/domain.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 
@@ -9,10 +9,11 @@ const closeUpSide = 1024;
 /** A subject this large is seen well enough in the whole picture. */
 const closeUpBelow = 0.4;
 const closeUpMargin = 0.25;
+const mostFaces = 3;
 
 const role = `You check photos that an image model edited, for the person who took them. They want beautiful photos and like it when the edit improves the light, the colours and an existing sky, calms or blurs the background, removes a small distraction, sharpens what was soft, and invents fine detail such as feathers, fur, leaves or texture. None of that is a fault.
 
-It is a fault when the photo no longer shows the same moment: another subject, pose, expression, number of animals or people, time of day, or weather. It is a fault when the place is no longer the same: the sky, water, trees, walls or buildings are where there were none, or are gone. It is a fault when a person's face, body, hair or clothes look different apart from light and sharpness, so that someone who knows them well would notice. It is a fault when a real text or sign says something else, when something has the wrong anatomy or makes no sense, such as an extra leg or a melted edge, and when the photo looks like a painting or a render, or is garish or overdone.`;
+It is a fault when the photo no longer shows the same moment: another subject, pose, expression, number of animals or people, time of day, or weather. It is a fault when the place is no longer the same: the sky, water, trees, walls or buildings are where there were none, or are gone. It is a fault when a person's face, body, hair or clothes look different apart from light and sharpness, so that someone who knows them well would notice. It is a fault when a real text or sign says something else, when something has the wrong anatomy or makes no sense, such as an extra leg or a melted edge, when a person has a halo, a seam or a second edge around them or looks cut out and pasted in, and when the photo looks like a painting or a render, or is garish or overdone.`;
 
 const Assessment = Schema.Struct({
   assessments: Schema.Array(
@@ -61,19 +62,28 @@ const withMargin = ({ left, top, right, bottom }: Box): Box => {
   };
 };
 
+type Shown = {
+  readonly subject: Box;
+  readonly people: ReadonlyArray<Person>;
+};
+
 /** A picture, with its subject close up when that is small, and its faces. */
 const looks = Effect.fn('looks')(function* (
   name: string,
   file: string,
-  crop: Crop,
+  { subject, people }: Shown,
 ) {
   const size = yield* sizeOf(file);
-  const area = coverage(crop.subject);
+  const area = coverage(subject);
+  const faces = people
+    .map(({ face }) => face)
+    .toSorted((left, right) => coverage(right) - coverage(left))
+    .slice(0, mostFaces);
   const closeUps = [
     ...(area > 0 && area < closeUpBelow
-      ? [{ what: 'the subject', box: crop.subject }]
+      ? [{ what: 'the subject', box: subject }]
       : []),
-    ...crop.faces.map((box) => ({ what: 'a face', box })),
+    ...faces.map((box) => ({ what: 'a face', box })),
   ];
   const pieces = yield* Effect.forEach(closeUps, ({ what, box }) =>
     Effect.gen(function* () {
@@ -100,16 +110,16 @@ export type Review = {
 /** Chooses the best version of an edit. */
 export const review = Effect.fn('review')(function* (
   pick: Pick,
-  crop: Crop,
+  shown: Shown,
   files: {
     readonly original: string;
     readonly versions: ReadonlyArray<string>;
   },
 ) {
   const vision = yield* Vision;
-  const original = yield* looks('The original', files.original, crop);
+  const original = yield* looks('The original', files.original, shown);
   const edited = yield* Effect.forEach(files.versions, (file, index) =>
-    looks(`Version ${index + 1}`, file, crop),
+    looks(`Version ${index + 1}`, file, shown),
   );
   const { assessments } = yield* vision.ask({
     role,

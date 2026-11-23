@@ -24,7 +24,7 @@ export const editPrompt = (
 
 You may freely improve light, colour, contrast, sky, sharpness and detail; invent fine detail; fix soft focus, blur and noise; calm or tidy distracting parts of the background; straighten. Keep the framing.
 
-Keep it recognisably the same moment: the same subject in the same pose, in the same place, at the same time of day and in the same weather. Distracting parts may become softer, calmer and more pleasing, but the background stays what it is: don't open up a sky, water or a view where the photo shows none, and don't replace trees, walls, rocks or buildings with something else. Every person keeps exactly the same face, body, hair and clothes, and every text and sign keeps the same words.
+Keep it recognisably the same moment: the same subject in the same pose, in the same place, at the same time of day and in the same weather. Distracting parts may become softer, calmer and more pleasing, but the background stays what it is: don't open up a sky, water or a view where the photo shows none, and don't replace trees, walls, rocks or buildings with something else. Every person keeps exactly the same face, body, hair and clothes and stays exactly where they are in the frame, and every text and sign keeps the same words.
 
 No added sun rays, no fantasy light, no stylisation. It should look like an exceptional photograph, not a painting or a render.${avoid}`;
 };
