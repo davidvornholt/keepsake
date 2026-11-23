@@ -40,6 +40,8 @@ keepsake login azure --endpoint https://example.openai.azure.com
 
 It asks for the key without showing it, or reads it from stdin, checks it, and saves it to `~/.config/keepsake/credentials.json`, readable only by you. `openai`, `anthropic` and `google` work too: choose models with `--model` and `--image-model`, such as `anthropic/claude-opus-5-5`. Anthropic's and Google's models can judge photos but not edit them here.
 
+A subscription can judge the photos too. `--model claude/claude-opus-5-5` asks [Claude Code](https://code.claude.com), and `--model codex/gpt-6.2-astra` asks [Codex](https://developers.openai.com/codex), each on the subscription its program is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo. `keepsake status` shows what this machine is signed in to.
+
 ## Use
 
 ```bash

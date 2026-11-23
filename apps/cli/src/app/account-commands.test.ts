@@ -11,6 +11,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
+import { fakeTools } from './fake-tools.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -85,8 +86,17 @@ describe('keepsake status and logout', () => {
         { provider: 'openai', signedIn: false },
         { provider: 'anthropic', signedIn: false },
         { provider: 'google', signedIn: false },
+        { provider: 'claude', signedIn: false },
+        { provider: 'codex', signedIn: false },
       ],
     });
+  });
+
+  it('shows which programs are signed in to a subscription', async () => {
+    fakeTools.isSubscribed = true;
+    const { providers } = await runOk('status');
+    expect(providers).toContainEqual({ provider: 'claude', signedIn: true });
+    expect(providers).toContainEqual({ provider: 'codex', signedIn: true });
   });
 
   it('removes a key', async () => {
