@@ -74,30 +74,38 @@ type Serving = {
   readonly open: OpenShoot;
   readonly sample: ReadonlyArray<Moment>;
   readonly port: number;
+  /** Where else the page is reached, when something passes it on from there. */
+  readonly address: URL | undefined;
 };
 
 type Answering = (request: Request) => Response | Promise<Response>;
 
 /** Answers only what comes from the page itself. */
 const toThePage =
-  (answering: Answering) =>
+  (address: URL | undefined, answering: Answering) =>
   (request: Request, server: { readonly port?: number | undefined }) => {
-    const host = `127.0.0.1:${server.port}`;
+    const own = new URL(`http://127.0.0.1:${server.port}`);
+    const places = address === undefined ? [own] : [own, address];
+    const host = request.headers.get('host');
     const origin = request.headers.get('origin');
-    return request.headers.get('host') === host &&
-      (origin === null || origin === `http://${host}`)
+    return places.some(
+      (place) =>
+        place.host === host && (origin === null || origin === place.origin),
+    )
       ? answering(request)
       : new Response(null, { status: forbidden });
   };
 
 /**
- * Serves the rating page to this machine only. Other websites can't read it,
- * since it answers only under its own address.
+ * Serves the rating page to this machine, and to whatever passes it on from
+ * another address. Other websites can't read it, since it answers only under
+ * those two.
  */
 export const serveRatingPage = Effect.fn('serveRatingPage')(function* ({
   open,
   sample,
   port,
+  address,
 }: Serving) {
   const context = yield* Effect.context<
     | Effect.Services<ReturnType<typeof saveRating>>
@@ -108,7 +116,7 @@ export const serveRatingPage = Effect.fn('serveRatingPage')(function* ({
   const ofPhoto = (
     answering: (photo: string) => Response | Promise<Response>,
   ) =>
-    toThePage((request) => {
+    toThePage(address, (request) => {
       const photo = new URL(request.url).searchParams.get('photo') ?? '';
       return shown.has(photo)
         ? answering(photo)
@@ -136,9 +144,9 @@ export const serveRatingPage = Effect.fn('serveRatingPage')(function* ({
           port,
           routes: {
             '/': page,
-            '/moments': toThePage(moments),
+            '/moments': toThePage(address, moments),
             // biome-ignore lint/style/useNamingConvention: Bun's name for the HTTP method
-            '/ratings': { POST: toThePage(save) },
+            '/ratings': { POST: toThePage(address, save) },
             '/previews': ofPhoto(
               (photo) => new Response(Bun.file(open.files.preview(photo))),
             ),

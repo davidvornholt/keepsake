@@ -21,7 +21,11 @@ afterEach(async () => {
 const sample: ReadonlyArray<Moment> = [{ id: 'A1', photos: ['A1', 'A2'] }];
 
 /** Serves the page of a shoot while `visit` runs. */
-const whileServing = <A>(visit: (address: string) => Promise<A>, port = 0) =>
+const whileServing = <A>(
+  visit: (address: string) => Promise<A>,
+  port = 0,
+  address?: URL,
+) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const files = yield* shootFiles('lisbon');
@@ -32,7 +36,12 @@ const whileServing = <A>(visit: (address: string) => Promise<A>, port = 0) =>
         moments: sample,
       };
       yield* Effect.promise(() => Bun.write(files.preview('A1'), 'a picture'));
-      const server = yield* serveRatingPage({ open, sample, port });
+      const server = yield* serveRatingPage({
+        open,
+        sample,
+        port,
+        address,
+      });
       const visited = yield* Effect.promise(() =>
         visit(`http://127.0.0.1:${server.port}`),
       );
@@ -115,6 +124,27 @@ describe('the rating page', () => {
     const served = whileServing(async () => undefined, taken.port);
     await expect(served).rejects.toThrow(`using port ${taken.port}`);
     await taken.stop(true);
+  });
+
+  it('answers under the address it is passed on from', async () => {
+    const elsewhere = new URL('https://server.example.ts.net:8443');
+    const { visited, ratings } = await whileServing(
+      async (address) => {
+        const [own, passedOn, mixed] = await Promise.all([
+          fetch(`${address}/moments`),
+          post(address, answer, {
+            host: elsewhere.host,
+            origin: elsewhere.origin,
+          }),
+          post(address, answer, { origin: elsewhere.origin }),
+        ]);
+        return [own.status, passedOn.status, mixed.status];
+      },
+      0,
+      elsewhere,
+    );
+    expect(visited).toEqual([200, 204, 403]);
+    expect(ratings).toHaveLength(1);
   });
 
   it('answers no other website', async () => {

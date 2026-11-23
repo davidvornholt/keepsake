@@ -55,3 +55,14 @@ describe('keepsake bench', () => {
     expect(failure.message).toContain('keepsake rate lisbon');
   });
 });
+
+describe('keepsake rate', () => {
+  it.each(['server', 'ftp://server.example.ts.net'])(
+    'refuses %s as an address',
+    async (address) => {
+      await scanLisbon();
+      const failure = await failureOf('rate', 'lisbon', '--address', address);
+      expect(failure._tag).toBe('InvalidInput');
+    },
+  );
+});
