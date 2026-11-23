@@ -3,6 +3,8 @@ import type { Moment, Verdict } from '../../shared/domain.ts';
 
 /** Moments with this many photos tell how well a model finds the best one. */
 const burst = 3;
+/** Of more photos than this nobody can say which one is best. */
+const comparable = 12;
 const lowScore = 4;
 const middleScore = 6;
 
@@ -33,7 +35,9 @@ export const sampleOf = (
     verdicts.map(({ moment, score }) => [moment, score] as const),
   );
   const groups = new Map<string, Array<Moment>>();
-  for (const moment of moments) {
+  for (const moment of moments.filter(
+    ({ photos }) => photos.length <= comparable,
+  )) {
     const kind = moment.photos.length >= burst ? 'burst' : 'single';
     const key = `${kind} ${bandOf(scores.get(moment.id))}`;
     groups.set(key, [...(groups.get(key) ?? []), moment]);

@@ -172,9 +172,9 @@ export type Publication = typeof Publication.Type;
 export const Rating = Schema.Struct({
   moment: Schema.String,
   photos: Schema.Array(Schema.String),
-  /** The frames worth keeping, best first. Empty means none is. */
-  best: Schema.Array(Schema.String),
-  /** 0 to throw away, up to 5 stars. */
+  /** The best photo, or null if none is worth keeping. */
+  best: Schema.NullOr(Schema.String),
+  /** How good the best photo is: 0 to throw away, up to 5 stars. */
   stars: Schema.Int,
 });
 export type Rating = typeof Rating.Type;

@@ -37,6 +37,15 @@ describe('sampleOf', () => {
     expect(sample.map(({ id }) => id)).toContain('M39');
   });
 
+  it('leaves out moments with too many photos to compare', () => {
+    const many: Moment = {
+      id: 'many',
+      photos: Array.from({ length: 13 }, (_, index) => `many${index}`),
+    };
+    const sample = sampleOf([...moments, many], [], 100);
+    expect(sample).not.toContain(many);
+  });
+
   it('is the same every time', () => {
     expect(sampleOf(moments, [], 10)).toEqual(sampleOf(moments, [], 10));
   });

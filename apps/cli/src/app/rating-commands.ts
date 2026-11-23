@@ -92,7 +92,7 @@ export const rate = Command.make(
     }).pipe(Effect.scoped),
 ).pipe(
   Command.withDescription(
-    'Serve a page on this machine where the owner of the photos chooses the best frames and gives stars, without seeing what a model thinks. Runs until it is stopped; every rating is saved right away.',
+    'Serve a page on this machine where the owner of the photos chooses the best photo of each moment and gives it stars, without seeing what a model thinks. Runs until it is stopped; every rating is saved right away.',
   ),
 );
 

@@ -24,8 +24,8 @@ describe('keepsake bench', () => {
     await writeFile(
       shootFile('ratings.json'),
       JSON.stringify([
-        { moment: 'A1', photos: ['A1', 'A2'], best: ['A1'], stars: 4 },
-        { moment: 'B', photos: ['B'], best: [], stars: 0 },
+        { moment: 'A1', photos: ['A1', 'A2'], best: 'A1', stars: 4 },
+        { moment: 'B', photos: ['B'], best: null, stars: 0 },
       ]),
     );
     const { results, dollarsSpent, models } = await runOk(

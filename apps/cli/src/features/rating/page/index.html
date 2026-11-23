@@ -8,27 +8,34 @@
   </head>
   <body>
     <header>
-      <h1>Rate photos</h1>
-      <output id="progress"></output>
+      <h1 id="question" tabindex="-1">Rate photos</h1>
+      <output id="notice"></output>
+      <div id="progress">
+        <progress id="rated" aria-labelledby="count"></progress>
+        <span id="count"></span>
+        <button type="button" id="back">
+          <kbd aria-hidden="true">Backspace</kbd> Go back
+        </button>
+      </div>
     </header>
-    <main>
-      <figure>
-        <div id="view"><img id="photo" alt="" hidden /></div>
-        <figcaption id="caption"></figcaption>
-      </figure>
-      <ol id="frames" aria-label="Frames of this moment"></ol>
+    <main id="main">
+      <ol id="compare" aria-labelledby="question" hidden></ol>
+      <div id="large" hidden>
+        <div id="view"><img id="photo" alt="" /></div>
+        <button type="button" id="before" aria-label="Photo before">←</button>
+        <button type="button" id="after" aria-label="Next photo">→</button>
+      </div>
     </main>
-    <footer>
-      <p>
-        <kbd>←</kbd> <kbd>→</kbd> other frames, <kbd>Space</kbd> keep this frame
-        (the first one you keep is the best), <kbd>Z</kbd> full size, at the
-        pointer,
-        <kbd>Backspace</kbd> the moment before
-      </p>
-      <fieldset>
-        <legend>Stars</legend>
-        <div id="stars"></div>
-      </fieldset>
+    <footer id="answers">
+      <fieldset id="stars" aria-labelledby="question"></fieldset>
+      <div id="tools">
+        <button type="button" id="all">
+          <kbd aria-hidden="true">Esc</kbd> <span id="all-label">All photos</span>
+        </button>
+        <button type="button" id="zoom" aria-pressed="false">
+          <kbd aria-hidden="true">Z</kbd> Full size
+        </button>
+      </div>
     </footer>
     <script type="module" src="./page.ts"></script>
   </body>

@@ -37,7 +37,7 @@ describe('rankCorrelation', () => {
 const rating = (moment: string, overrides: Partial<Rating>): Rating => ({
   moment,
   photos: [`${moment}1`, `${moment}2`, `${moment}3`, `${moment}4`],
-  best: [`${moment}1`],
+  best: `${moment}1`,
   stars: 3,
   ...overrides,
 });
@@ -59,8 +59,8 @@ describe('compareWithOwner', () => {
       [verdict('A', 'A1', 8), verdict('B', 'B2', 7), verdict('C', 'C1', 2)],
       [
         rating('A', {}),
-        rating('B', { best: ['B1', 'B2'], stars: 4 }),
-        rating('C', { best: [], stars: 0 }),
+        rating('B', { photos: ['B1', 'B2'], stars: 4 }),
+        rating('C', { best: null, stars: 0 }),
         rating('D', {}),
       ],
     );
@@ -68,7 +68,6 @@ describe('compareWithOwner', () => {
       moments: 3,
       bursts: 2,
       sameBestFrame: 0.5,
-      bestFrameKept: 1,
       bestFrameByChance: 0.375,
       keepAccuracy: 1,
       rankCorrelation: 0.5,
