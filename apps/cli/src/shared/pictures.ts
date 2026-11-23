@@ -5,6 +5,9 @@ import { toolBytes, toolText } from './tools.ts';
 
 export type Size = { readonly width: number; readonly height: number };
 
+/** A picture's pixels: red, green and blue from 0 to 255, row by row. */
+export type Raster = Size & { readonly pixels: Uint8Array };
+
 /** A rectangle in pixels. */
 export type Frame = Size & { readonly left: number; readonly top: number };
 
@@ -94,3 +97,36 @@ export const renderExactly = (
     String(options.quality),
     target,
   ]);
+
+const bitDepth = ['-depth', '8'];
+const samplesPerPixel = 3;
+
+/** The pixels of a picture, scaled to the given size. */
+export const rasterOf = Effect.fn('rasterOf')(function* (
+  file: string,
+  { width, height }: Size,
+) {
+  const pixels = yield* toolBytes('magick', [
+    file,
+    '-resize',
+    `${width}x${height}!`,
+    '-alpha',
+    'off',
+    ...bitDepth,
+    'rgb:-',
+  ]);
+  if (pixels.length !== width * height * samplesPerPixel) {
+    return yield* new ToolFailed({
+      message: `ImageMagick could not read all of ${file}.`,
+    });
+  }
+  return { width, height, pixels } satisfies Raster;
+});
+
+/** Writes pixels as a picture. */
+export const writeRaster = (target: string, raster: Raster) =>
+  toolBytes(
+    'magick',
+    ['-size', `${raster.width}x${raster.height}`, ...bitDepth, 'rgb:-', target],
+    { input: raster.pixels },
+  );

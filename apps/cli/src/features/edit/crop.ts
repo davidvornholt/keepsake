@@ -14,7 +14,6 @@ import { closestAspect, fitAspect, within } from './geometry.ts';
 
 const pictureSide = 1024;
 const mostProposals = 3;
-const mostFaces = 3;
 /** A crop that keeps more than this isn't worth telling from the whole. */
 const almostEverything = 0.97;
 
@@ -24,7 +23,6 @@ Leave room in front of a subject that looks or moves in a direction. Never cut o
 
 const Proposals = Schema.Struct({
   subject: Box,
-  faces: Schema.Array(Box),
   crops: Schema.Array(
     Schema.Struct({
       box: Box,
@@ -34,7 +32,7 @@ const Proposals = Schema.Struct({
   ),
 });
 
-const proposalQuestion = `First give a box around the main subject, all of it, and one around each human face that can be recognised, at most ${mostFaces}, the largest first. Then propose up to ${mostProposals} crops that could make this a stronger photo: one tight, one moderate, and one in another shape if that suits the subject. Propose none if the whole frame can't be improved. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each crop should have.`;
+const proposalQuestion = `First give a box around the main subject, all of it. Then propose up to ${mostProposals} crops that could make this a stronger photo: one tight, one moderate, and one in another shape if that suits the subject. Propose none if the whole frame can't be improved. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each crop should have.`;
 
 const Choice = Schema.Struct({
   best: Schema.Int,
@@ -93,14 +91,10 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
     .filter(({ box }) => coverage(box) < almostEverything);
   const candidates = [whole, ...crops];
   const subject = tidyBox(proposals.subject);
-  const faces = proposals.faces.slice(0, mostFaces).map(tidyBox);
   const asCrop = ({ box, aspect, reason }: Candidate): Crop => ({
     box,
     aspect,
     subject: within(subject, box),
-    faces: faces
-      .map((face) => within(face, box))
-      .filter((face) => coverage(face) > 0),
     reason,
   });
   if (crops.length === 0) {

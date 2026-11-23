@@ -16,6 +16,10 @@ type Run = {
 
 const greyPixels = 72;
 const cameraSize = '7008 4672';
+/** Small, since pixels of it are computed with. */
+const editSize = '48 32';
+const editBytes = 4608;
+const editPattern = /(?:input\.jpg|version-\d+(?:-people)?\.png)$/u;
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -73,7 +77,10 @@ const exiftool = (args: ReadonlyArray<string>): string => {
 const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
   const target = args.at(-1) ?? '';
   if (args[0] === 'identify') {
-    return cameraSize;
+    return editPattern.test(target) ? editSize : cameraSize;
+  }
+  if (target === 'rgb:-') {
+    return new Uint8Array(editBytes);
   }
   if (target === 'gray:-') {
     return new Uint8Array(greyPixels);

@@ -15,7 +15,7 @@ const failed = (command: string, detail: string) =>
 
 type RunOptions = {
   /** What the program reads from its standard input. */
-  readonly input?: string;
+  readonly input?: string | Uint8Array;
   readonly cwd?: string;
   /** Environment variables to set, or to remove if undefined. */
   readonly env?: Readonly<Record<string, string | undefined>>;
@@ -37,7 +37,11 @@ export const runTool = Effect.fn('runTool')(
         stdin:
           input === undefined
             ? 'ignore'
-            : Stream.make(new TextEncoder().encode(input)),
+            : Stream.make(
+                typeof input === 'string'
+                  ? new TextEncoder().encode(input)
+                  : input,
+              ),
         cwd,
         env: { ...env },
         extendEnv: true,
@@ -67,8 +71,9 @@ export const runTool = Effect.fn('runTool')(
 export const toolBytes = Effect.fn('toolBytes')(function* (
   command: string,
   args: ReadonlyArray<string>,
+  options: RunOptions = {},
 ) {
-  const { stdout, stderr, exitCode } = yield* runTool(command, args);
+  const { stdout, stderr, exitCode } = yield* runTool(command, args, options);
   if (exitCode !== 0) {
     return yield* failed(
       command,
