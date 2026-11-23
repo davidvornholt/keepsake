@@ -40,7 +40,7 @@ const usualAnswers = {
   check: { ranking: [1], score: 8, reason: 'Still sharp.' },
   album: { leaveOut: [] },
   ranking: { bestFirst: [] },
-  crops: { subject: box, crops: [] },
+  crops: { subject: box, belongings: [], crops: [] },
   choice: { best: 1, reason: 'The whole frame is best.' },
   people: { people: [] },
   assessment: { assessments: [assessment(1), assessment(2)] },
