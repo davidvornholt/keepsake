@@ -29,6 +29,10 @@ export const scanFlags = {
     'about',
     'Where and when the photos were taken, for the models, such as "Lisbon, May 2026"',
   ),
+  timeZone: optionalString(
+    'time-zone',
+    'The time zone the photos were taken in, such as Europe/Lisbon, if the camera was set to another one. The finished photos carry the time there.',
+  ),
 };
 
 export const scan = Command.make(

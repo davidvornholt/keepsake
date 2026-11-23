@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import {
   asked,
   failureOf,
+  photosFolder,
   pickLisbon,
   runOk,
   setUp,
@@ -98,6 +99,49 @@ describe('keepsake edit', () => {
     expect(marking?.args).toContain(
       `-XMP-dc:Description=${verdictAnswer.description}`,
     );
+  });
+});
+
+const timesWritten = () =>
+  fakeTools.runs
+    .filter(({ command }) => command === 'exiftool')
+    .flatMap(({ args }) =>
+      args.filter((arg) => arg.startsWith('-EXIF:DateTimeOriginal=')),
+    );
+
+describe('keepsake edit, in another time zone', () => {
+  it('writes the time where the photos were taken', async () => {
+    await pickLisbon();
+    await runOk(
+      'scan',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--time-zone',
+      'Europe/Lisbon',
+    );
+    // Scanning again without it keeps it.
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await runOk('edit', 'lisbon', 'B');
+    const time = '-EXIF:DateTimeOriginal=2026:03:30 09:00:00';
+    expect(timesWritten()).toEqual([time, time]);
+  });
+
+  it('leaves the camera’s clock alone otherwise', async () => {
+    await pickLisbon();
+    await runOk('edit', 'lisbon', 'B');
+    expect(timesWritten()).toEqual([]);
+  });
+
+  it('refuses a time zone there isn’t', async () => {
+    const failure = await failureOf(
+      'scan',
+      photosFolder(),
+      '--time-zone',
+      'Lisbon',
+    );
+    expect(failure._tag).toBe('InvalidInput');
+    expect(failure.message).toContain('Europe/Lisbon');
   });
 });
 

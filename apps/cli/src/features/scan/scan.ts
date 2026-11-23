@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Option, Path, Schema } from 'effect';
+import { DateTime, Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { developed } from '../../shared/develop.ts';
 import { Moment, Photo, Shoot } from '../../shared/domain.ts';
 import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
@@ -88,7 +88,17 @@ type ScanOptions = {
   readonly folder: string;
   readonly name: Option.Option<string>;
   readonly about: Option.Option<string>;
+  readonly timeZone: Option.Option<string>;
 };
+
+const checkTimeZone = (zone: string) =>
+  Option.isSome(DateTime.zoneMakeNamed(zone))
+    ? Effect.succeed(zone)
+    : Effect.fail(
+        new InvalidInput({
+          message: `There is no time zone called ${JSON.stringify(zone)}. Use a name such as Europe/Lisbon.`,
+        }),
+      );
 
 /** Finds a folder's photos, makes previews and groups them into moments. */
 export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
@@ -104,9 +114,13 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
       message: `The shoot ${name} is already about ${before.value.source}. Pass another --name.`,
     });
   }
+  const timeZone = Option.isSome(options.timeZone)
+    ? yield* checkTimeZone(options.timeZone.value)
+    : Option.getOrUndefined(before)?.timeZone;
   const shoot: Shoot = {
     name,
     source,
+    ...(timeZone === undefined ? {} : { timeZone }),
     about: Option.getOrElse(options.about, () =>
       Option.isSome(before) ? before.value.about : null,
     ),

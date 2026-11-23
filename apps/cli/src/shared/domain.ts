@@ -16,6 +16,8 @@ export const Shoot = Schema.Struct({
   source: Schema.String,
   /** Where and when, for the models: "Lisbon, May 2026". */
   about: Schema.NullOr(Schema.String),
+  /** Where the photos were taken, if the camera's clock was set elsewhere. */
+  timeZone: Schema.optionalKey(Schema.String),
 });
 export type Shoot = typeof Shoot.Type;
 
