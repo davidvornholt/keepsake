@@ -13,30 +13,58 @@ import { claude } from './subscriptions/claude.ts';
 import { codex } from './subscriptions/codex.ts';
 import { programModelLayer } from './subscriptions/program-model.ts';
 import {
+  type Effort,
+  efforts,
+  isEffort,
   isSubscription,
   type Subscription,
   subscriptions,
 } from './subscriptions/subscriptions.ts';
 
-/** Judges photos unless another model is named. */
-export const defaultVisionModel = 'azure/gpt-6-astra';
+/** Judges photos unless another model is named or has judged them before. */
+export const defaultVisionModel = 'claude/claude-opus-5-5';
 /** Edits photos unless another model is named. */
 export const defaultImageModel = 'azure/gpt-image-2.5-sunburst';
 
-export type ModelName = {
-  readonly provider: Provider | Subscription;
-  /** The provider's name for it; on Azure, the name of the deployment. */
-  readonly model: string;
-};
+/** How long a subscription's model thinks unless its name says otherwise. */
+const usualEffort = 'medium';
+
+export type ModelName =
+  | {
+      readonly provider: Provider;
+      /** The provider's name for it; on Azure, the name of the deployment. */
+      readonly model: string;
+    }
+  | {
+      readonly provider: Subscription;
+      readonly model: string;
+      readonly effort: Effort;
+    };
 
 const isProvider = (name: string): name is Provider =>
   (providers as ReadonlyArray<string>).includes(name);
+
+const subscriptionModel = Effect.fn('subscriptionModel')(function* (
+  provider: Subscription,
+  name: string,
+) {
+  const [model = '', effort = usualEffort] = name.split('@', 2);
+  if (model === '' || !isEffort(effort)) {
+    return yield* new InvalidInput({
+      message: `${JSON.stringify(`${provider}/${name}`)} is not a model. Write the model, and @ with an effort if it should be another one than ${usualEffort}. The efforts are ${efforts.join(', ')}.`,
+    });
+  }
+  return { provider, model, effort } satisfies ModelName;
+});
 
 /** Reads a model's name, such as `azure/gpt-6-astra`. */
 export const modelName = Effect.fn('modelName')(function* (name: string) {
   const [provider = '', ...rest] = name.split('/');
   const model = rest.join('/');
-  if (!(isProvider(provider) || isSubscription(provider)) || model === '') {
+  if (isSubscription(provider)) {
+    return yield* subscriptionModel(provider, model);
+  }
+  if (!isProvider(provider) || model === '') {
     return yield* new InvalidInput({
       message: `${JSON.stringify(name)} is not a model. Write the provider and the model, such as ${defaultVisionModel}. The providers are ${[...providers, ...subscriptions].join(', ')}.`,
     });
@@ -95,13 +123,13 @@ const apiLayer = (provider: Provider, model: string) =>
  * A model that can look at photos, with this machine's API key or on the
  * subscription its program is signed in to.
  */
-export const visionLayer = ({ provider, model }: ModelName) => {
-  switch (provider) {
+export const visionLayer = (name: ModelName) => {
+  switch (name.provider) {
     case 'claude':
-      return programModelLayer(claude(model));
+      return programModelLayer(claude(name.model, name.effort));
     case 'codex':
-      return programModelLayer(codex(model));
+      return programModelLayer(codex(name.model, name.effort));
     default:
-      return apiLayer(provider, model);
+      return apiLayer(name.provider, name.model);
   }
 };

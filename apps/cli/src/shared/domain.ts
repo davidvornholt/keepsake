@@ -62,6 +62,10 @@ export const subjects = [
   'other',
 ] as const;
 
+/** The model that was last asked to judge the whole shoot. */
+export const Judge = Schema.Struct({ model: Schema.String });
+export type Judge = typeof Judge.Type;
+
 /** What a vision model thinks of one moment. */
 export const Verdict = Schema.Struct({
   moment: Schema.String,

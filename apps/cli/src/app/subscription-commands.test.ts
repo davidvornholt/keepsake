@@ -1,10 +1,12 @@
 // biome-ignore-all lint/style/useNamingConvention: the programs' names
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { rm } from 'node:fs/promises';
 import {
   failureOf,
   runOk,
   scanLisbon,
   setUp,
+  shootFile,
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
@@ -83,6 +85,13 @@ describe('claude models', () => {
     expect(verdict).toMatchObject({ best: ['B'], score: 8, model: opus });
   });
 
+  it('judge photos unless another model has judged them before', async () => {
+    await rm(shootFile('judge.json'));
+    fakeTools.assistant = () =>
+      claudeAnswer({ is_error: false, structured_output: verdictAnswer });
+    expect((await runOk('cull', 'lisbon')).model).toBe(opus);
+  });
+
   it('see the photos and nothing else of this machine', async () => {
     fakeTools.assistant = () =>
       claudeAnswer({ is_error: false, structured_output: verdictAnswer });
@@ -98,6 +107,23 @@ describe('claude models', () => {
     );
     expect(images).toHaveLength(2);
     expect(content[0].text).toContain('Lisbon, May 2026');
+  });
+
+  it('think as long as their name says', async () => {
+    fakeTools.assistant = () =>
+      claudeAnswer({ is_error: false, structured_output: verdictAnswer });
+    const effort = () => {
+      const { args } = aboutBurst('claude');
+      return args[args.indexOf('--effort') + 1];
+    };
+    await cull(opus);
+    expect(effort()).toBe('medium');
+    fakeTools.runs.length = 0;
+    await cull(`${opus}@high`);
+    expect(effort()).toBe('high');
+    const failure = await failureOf('cull', 'lisbon', '--model', `${opus}@big`);
+    expect(failure._tag).toBe('InvalidInput');
+    expect(failure.message).toContain('low, medium, high, xhigh, max');
   });
 
   it('report what the program says when it can’t answer', async () => {
@@ -136,7 +162,14 @@ describe('codex models', () => {
     const { args, env, input } = aboutBurst('codex');
     expect(args.filter((arg) => arg === '--image')).toHaveLength(2);
     expect(input).toContain('(the attached picture number 2)');
+    expect(args).toContain('model_reasoning_effort="medium"');
     expect(env).toHaveProperty('OPENAI_API_KEY', undefined);
+  });
+
+  it('think as long as their name says', async () => {
+    fakeTools.assistant = () => codexAnswer(verdictAnswer);
+    await cull(`${astra}@high`);
+    expect(aboutBurst('codex').args).toContain('model_reasoning_effort="high"');
   });
 
   it.each([

@@ -2,6 +2,7 @@ import { Effect, Option } from 'effect';
 import { developed } from '../../shared/develop.ts';
 import { type Box, type Moment, Verdict } from '../../shared/domain.ts';
 import { ModelFailed } from '../../shared/errors/errors.ts';
+import { saveJudge } from '../../shared/judge.ts';
 import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
@@ -244,6 +245,7 @@ export const cull = Effect.fn('cull')(function* (
   again: boolean,
 ) {
   const { model } = yield* Vision;
+  yield* saveJudge(open, model);
   const { verdicts, failed } = yield* judgeMoments(open, open.moments, again);
   return {
     shoot: open.shoot.name,

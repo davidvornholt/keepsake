@@ -1,4 +1,4 @@
-import { Effect, Layer, Option } from 'effect';
+import { Effect, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
 import { edit as editShoot } from '../features/edit/edit.ts';
@@ -6,8 +6,10 @@ import { ImageModel } from '../features/edit/image-model.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
+import { judgeOf } from '../shared/judge.ts';
 import { defaultImageModel } from '../shared/models.ts';
 import { Spending } from '../shared/spending.ts';
+import { openShoot } from '../shared/store.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
 import {
@@ -107,13 +109,22 @@ const editInput = (flags: {
 const imageLayer = (model: Option.Option<string>) =>
   ImageModel.layer(Option.getOrElse(model, () => defaultImageModel));
 
+/** Runs steps with the vision model asked for, or the shoot's own. */
+const withVision =
+  (shoot: string, asked: Option.Option<string>) =>
+  <A, E, R>(steps: Effect.Effect<A, E, R>) =>
+    Effect.gen(function* () {
+      const model = yield* judgeOf(yield* openShoot(shoot), asked);
+      return yield* steps.pipe(Effect.provide(Vision.layer(model)));
+    });
+
 export const cull = Command.make(
   'cull',
   { shoot: shootArgument, model: visionModel, again },
   ({ shoot, model, again: startOver }) =>
     workOn(shoot, (open) => cullShoot(open, startOver)).pipe(
       Effect.flatMap(emitWithCost),
-      Effect.provide(Vision.layer(model)),
+      withVision(shoot, model),
       Effect.provide(Spending.layer),
     ),
 ).pipe(
@@ -130,7 +141,7 @@ export const pick = Command.make(
       const input = yield* pickInput(flags);
       yield* workOn(shoot, (open) =>
         pickShoot(open, { ...input, again: startOver }),
-      ).pipe(Effect.flatMap(emitWithCost), Effect.provide(Vision.layer(model)));
+      ).pipe(Effect.flatMap(emitWithCost), withVision(shoot, model));
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(
@@ -154,9 +165,8 @@ export const edit = Command.make(
         editShoot(open, photos, { ...input, again: startOver }),
       ).pipe(
         Effect.flatMap(emitWithCost),
-        Effect.provide(
-          Layer.merge(Vision.layer(model), imageLayer(imageModel)),
-        ),
+        Effect.provide(imageLayer(imageModel)),
+        withVision(shoot, model),
       );
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
@@ -203,9 +213,9 @@ export const run = Command.make(
     Effect.gen(function* () {
       const picking = yield* pickInput(flags);
       const editing = yield* editInput(flags);
+      const scanned = yield* scan(flags);
+      const { shoot } = scanned;
       yield* Effect.gen(function* () {
-        const scanned = yield* scan(flags);
-        const { shoot } = scanned;
         const culled = yield* workOn(shoot, (open) => cullShoot(open, false));
         const picked = yield* workOn(shoot, (open) =>
           pickShoot(open, { ...picking, again: false }),
@@ -218,9 +228,8 @@ export const run = Command.make(
           : null;
         yield* emitWithCost({ scanned, culled, picked, edited, published });
       }).pipe(
-        Effect.provide(
-          Layer.merge(Vision.layer(flags.model), imageLayer(flags.imageModel)),
-        ),
+        Effect.provide(imageLayer(flags.imageModel)),
+        withVision(shoot, flags.model),
       );
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(

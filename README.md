@@ -33,15 +33,17 @@ Publishing needs the [photos](https://github.com/davidvornholt/photos) command, 
 
 ## Sign in
 
-keepsake uses your own API key. With Azure, deploy `gpt-6-astra` and `gpt-image-2.5-sunburst` under those names, then:
+Claude Opus 5.5 judges the photos through [Claude Code](https://code.claude.com), on the subscription it is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo.
+
+Edits use your own API key. With Azure, deploy `gpt-image-2.5-sunburst` under that name, then:
 
 ```bash
 keepsake login azure --endpoint https://example.openai.azure.com
 ```
 
-It asks for the key without showing it, or reads it from stdin, checks it, and saves it to `~/.config/keepsake/credentials.json`, readable only by you. `openai`, `anthropic` and `google` work too: choose models with `--model` and `--image-model`, such as `anthropic/claude-opus-5-5`. Anthropic's and Google's models can judge photos but not edit them here.
+It asks for the key without showing it, or reads it from stdin, checks it, and saves it to `~/.config/keepsake/credentials.json`, readable only by you. `openai` works too, with `--image-model openai/<model>`. `keepsake status` shows what this machine is signed in to.
 
-A subscription can judge the photos too. `--model claude/claude-opus-5-5` asks [Claude Code](https://code.claude.com), and `--model codex/gpt-6.2-astra` asks [Codex](https://developers.openai.com/codex), each on the subscription its program is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo. `keepsake status` shows what this machine is signed in to.
+Other models can judge with `--model`: `codex/gpt-6.2-sol` asks [Codex](https://developers.openai.com/codex) on its subscription the same way, and `azure`, `openai`, `anthropic` and `google` use an API key, such as `azure/gpt-6-astra`. A subscription's model thinks with medium effort unless its name ends with another one, such as `claude/claude-opus-5-5@high`. The model that culled a shoot is used for its later steps.
 
 ## Use
 
@@ -49,7 +51,7 @@ A subscription can judge the photos too. `--model claude/claude-opus-5-5` asks [
 keepsake run ~/photos/lisbon --about "Lisbon, May 2026" --maximum 40 --budget 30 --publish
 ```
 
-It can take hours. When it stops, run it again and it goes on where it stopped. With the models above, culling costs about $2.50 per 100 photos and editing about $0.75 per photo. `--budget` limits what the edits cost.
+It can take hours. When it stops, run it again and it goes on where it stopped. Editing costs about $0.75 per photo. Culling costs nothing extra on a subscription, and about $2.50 per 100 photos with `azure/gpt-6-astra`. `--budget` limits what the edits cost.
 
 `keepsake rate` and `keepsake bench` measure which vision model agrees best with your own taste: you rate some moments on a local page, and each model is compared with your ratings.
 

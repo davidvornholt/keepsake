@@ -1,0 +1,52 @@
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { writeFile } from 'node:fs/promises';
+import {
+  judge,
+  runOk,
+  scanLisbon,
+  setUp,
+  shootFile,
+  tearDown,
+} from './command-fixtures.ts';
+import { fakeModels } from './fake-models.ts';
+
+beforeEach(() => setUp(spyOn));
+afterEach(tearDown);
+
+describe('the model that judged a shoot', () => {
+  const other = 'azure/other-model';
+
+  it('is used for every later step', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon', '--model', other);
+    expect((await runOk('show', 'lisbon')).judgedBy).toEqual({
+      model: other,
+      moments: 3,
+    });
+    expect(await runOk('cull', 'lisbon')).toMatchObject({ model: other });
+    expect(await runOk('pick', 'lisbon')).toMatchObject({ picked: 3 });
+    expect(new Set(fakeModels.asked.map(({ model }) => model))).toEqual(
+      new Set(['other-model']),
+    );
+  });
+
+  it('gives way to one that is asked for', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon', '--model', other);
+    const { judgedBy } = await runOk('show', 'lisbon', '--model', judge);
+    expect(judgedBy).toEqual({ model: judge, moments: 0 });
+    await runOk('cull', 'lisbon', '--model', judge);
+    expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(judge);
+  });
+
+  it('is not changed by a benchmark', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    await writeFile(
+      shootFile('ratings.json'),
+      JSON.stringify([{ moment: 'B', photos: ['B'], best: null, stars: 0 }]),
+    );
+    await runOk('bench', 'lisbon', '--model', other);
+    expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(judge);
+  });
+});

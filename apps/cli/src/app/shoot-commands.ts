@@ -6,6 +6,7 @@ import {
   showShoot,
 } from '../features/overview/overview.ts';
 import { scan as scanFolder } from '../features/scan/scan.ts';
+import { judgeOf } from '../shared/judge.ts';
 import { openShoot } from '../shared/store.ts';
 import {
   optionalString,
@@ -62,10 +63,11 @@ export const show = Command.make(
   ({ shoot, photo, model }) =>
     Effect.gen(function* () {
       const open = yield* openShoot(shoot);
+      const judge = yield* judgeOf(open, model);
       yield* emit(
         Option.isSome(photo)
-          ? yield* showPhoto(open, model, photo.value)
-          : yield* showShoot(open, model),
+          ? yield* showPhoto(open, judge, photo.value)
+          : yield* showShoot(open, judge),
       );
     }),
 ).pipe(

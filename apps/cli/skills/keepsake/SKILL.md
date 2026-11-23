@@ -12,8 +12,9 @@ keepsake only reads the folder of photos and never changes it. What it makes is 
 ## Before starting
 
 - The photos are the user's private life, and keepsake sends them to the provider of the model, so use it only on a folder the user's own message names. Never copy photos or what they show into files, commits or issues.
-- Where the user has a subscription, let it judge the photos: `--model claude/<model>` asks Claude Code and `--model codex/<model>` asks Codex, each on the subscription its program is signed in to. That costs nothing extra but counts towards the limits of the subscription. When one is reached, the rest of the photos are listed as failed; run the same command again later. Whether a provider may train on the photos depends on the account's privacy settings.
-- Everything else costs money. With the usual models, culling costs about $2.50 per 100 photos, and editing about $0.75 per photo. Scanning is free, so scan first, tell the user what the rest will cost, and go on when they have agreed to it or named a budget. `--budget` limits the edits of one command and nothing else. keepsake counts a model whose price it doesn't know (`dollars` is 0 under `models` although tokens were used) as free, so there the budget has no effect.
+- Claude Opus 5.5 judges the photos through Claude Code, on the subscription it is signed in to. `--model claude/<model>` chooses another of its models, and `--model codex/<model>` asks Codex the same way. That costs nothing extra but counts towards the limits of the subscription. When one is reached, the rest of the photos are listed as failed; run the same command again later. Both think with medium effort unless the name ends with another one, such as `claude/claude-opus-5-5@high`; it makes little difference. Whether a provider may train on the photos depends on the account's privacy settings.
+- `--model` is needed only for `cull` or `run`, and only when another model than the usual one should judge. The later steps use the model that culled the shoot.
+- Everything else costs money. Editing costs about $0.75 per photo, and culling with an API key such as `azure/gpt-6-astra` about $2.50 per 100 photos. Scanning is free, so scan first, tell the user what the rest will cost, and go on when they have agreed to it or named a budget. `--budget` limits the edits of one command and nothing else. keepsake counts a model whose price it doesn't know (`dollars` is 0 under `models` although tokens were used) as free, so there the budget has no effect.
 - If a command reports `NotSignedIn`, ask the user to run `keepsake login <provider>` in their own terminal (for Azure with `--endpoint <address of the resource>`), or to sign in to Claude Code or Codex. Never ask for the key in the chat, and never read or print the credentials file.
 
 ## From a folder to an album
@@ -37,7 +38,7 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 
 ## Comparing vision models
 
-`keepsake rate <shoot>` serves a page where the user chooses the best photo of each moment and gives it stars, 60 moments of up to 12 photos unless `--moments` says otherwise. Pass the `--model` that culled the shoot, so that the sample has moments of every score. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
+`keepsake rate <shoot>` serves a page where the user chooses the best photo of each moment and gives it stars, 60 moments of up to 12 photos unless `--moments` says otherwise. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
 
 `keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them (nothing extra on a subscription):
 
@@ -45,4 +46,4 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 - `keepAccuracy` is how often a photo the user would keep (3 stars or more) scored above one they would not; 0.5 is guessing. Use this to choose a model.
 - `rankCorrelation` compares the order of all scores with the order of the stars, from -1 to 1.
 
-Below 30 rated moments a small difference between models means nothing.
+With 60 rated moments, the same model's numbers differ by up to 0.1 from run to run, so a smaller difference between models means nothing.
