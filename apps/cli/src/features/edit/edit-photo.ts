@@ -6,6 +6,7 @@ import {
   Person,
   type Photo,
   type Pick,
+  Sign,
 } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import {
@@ -33,6 +34,8 @@ import { findPeople } from './people/find-people.ts';
 import { keepPeople } from './people/keep-people.ts';
 import { editPrompt } from './prompt.ts';
 import { type Review, review } from './review.ts';
+import { findSigns } from './signs/find-signs.ts';
+import { keepSigns } from './signs/keep-signs.ts';
 
 const cameraQuality = 95;
 const inputQuality = 95;
@@ -131,12 +134,26 @@ const peopleOf = Effect.fn('peopleOf')(function* ({ files }: Job) {
   return found;
 });
 
+const signsOf = Effect.fn('signsOf')(function* ({ files }: Job) {
+  const signs = Schema.Array(Sign);
+  const before = yield* readJson(signs, files.signs);
+  if (Option.isSome(before)) {
+    return before.value;
+  }
+  const found = yield* findSigns(files.input);
+  yield* writeJson(signs, files.signs, found);
+  return found;
+});
+
 /** What is known about a photo before the image model gets it. */
 type Prepared = {
   readonly crop: Crop;
   readonly size: Size;
   readonly people: ReadonlyArray<Person>;
 };
+
+/** A version the image model made, and the file to judge. */
+type Version = { readonly number: number; readonly version: string };
 
 /** A version with the original's people, whom an image model would redraw. */
 const withPeople = Effect.fn('withPeople')(function* (
@@ -152,6 +169,21 @@ const withPeople = Effect.fn('withPeople')(function* (
   if (!(yield* exists(target))) {
     yield* atomically(target, (draft) =>
       keepPeople(people, { original: files.input, version, target: draft }),
+    );
+  }
+  return target;
+});
+
+/** A version with the original's signs, whose words an image model changes. */
+const withSigns = Effect.fn('withSigns')(function* (
+  { files }: Job,
+  signs: ReadonlyArray<Sign>,
+  { number, version }: Version,
+) {
+  const target = files.versionWithSigns(number);
+  if (!(yield* exists(target))) {
+    yield* atomically(target, (draft) =>
+      keepSigns(signs, { original: files.input, version, target: draft }),
     );
   }
   return target;
@@ -188,18 +220,41 @@ const attempt = Effect.fn('attempt')(function* (
   }
   const made = yield* Effect.filter(numbers, isMade);
   const versions = yield* Effect.forEach(made, (version) =>
-    withPeople(job, people, version),
+    Effect.map(
+      withPeople(job, people, version),
+      (file): Version => ({ number: version, version: file }),
+    ),
   );
-  return yield* review(
-    pick,
-    { subject: crop.subject, people },
-    { original: files.input, versions },
+  const judge = (
+    candidates: ReadonlyArray<string>,
+    kept: ReadonlyArray<Sign>,
+  ) =>
+    review(
+      pick,
+      { subject: crop.subject, people },
+      { original: files.input, versions: candidates, signs: kept },
+    );
+  const judged = yield* judge(
+    versions.map(({ version }) => version),
+    [],
   );
+  if (judged.best !== null || !judged.changesText) {
+    return judged;
+  }
+  const signs = yield* signsOf(job);
+  return signs.length === 0
+    ? judged
+    : yield* judge(
+        yield* Effect.forEach(versions, (version) =>
+          withSigns(job, signs, version),
+        ),
+        signs,
+      );
 });
 
 const bestVersion = Effect.fn('bestVersion')(
   function* (job: Job, prepared: Prepared) {
-    let last: Review = { best: null, notes: '' };
+    let last: Review = { best: null, notes: '', changesText: false };
     let problems: string | null = null;
     for (let number = 1; number <= mostAttempts; number += 1) {
       last = yield* attempt(job, prepared, number, problems);

@@ -1,7 +1,7 @@
 import type { Person, Point } from '../../../shared/domain.ts';
 import type { Frame, Size } from '../../../shared/pictures.ts';
-import type { Plane } from './raster.ts';
-import { averaging, gathered } from './smooth.ts';
+import type { Plane } from '../pixels/raster.ts';
+import { averaging, gathered } from '../pixels/smooth.ts';
 
 const half = 0.5;
 

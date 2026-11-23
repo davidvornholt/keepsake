@@ -1,7 +1,7 @@
 import type { Size } from '../../../shared/pictures.ts';
+import type { Plane, Planes } from '../pixels/raster.ts';
+import { averaging } from '../pixels/smooth.ts';
 import { inner } from './outline.ts';
-import type { Plane, Planes } from './raster.ts';
-import { averaging } from './smooth.ts';
 
 // In pixels of the small view.
 /** How far an outline may be off the real edge. */

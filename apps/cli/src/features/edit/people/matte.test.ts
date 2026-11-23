@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import type { Planes } from '../pixels/raster.ts';
 import { matteOf } from './matte.ts';
-import type { Planes } from './raster.ts';
 
 const size = { width: 80, height: 60 };
 

@@ -132,6 +132,10 @@ export const Person = Schema.Struct({
 });
 export type Person = typeof Person.Type;
 
+/** A text or a logo in a photo, in fractions of the cropped photo. */
+export const Sign = Schema.Struct({ text: Schema.String, box: Box });
+export type Sign = typeof Sign.Type;
+
 export const Crop = Schema.Struct({
   /** What stays, in fractions of the whole photo. */
   box: Box,

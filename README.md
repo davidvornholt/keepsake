@@ -9,7 +9,7 @@
 3. It leaves out repeats and, when there are too many, compares the photos with each other and keeps the best.
 4. It crops each one where that makes it stronger, and an image model edits it.
 5. Image models redraw faces, so keepsake takes everyone who can be recognised from the photo itself. The vision model outlines them, keepsake puts their own pixels back into the edit, and only their light follows the edit: brighter, darker, warmer or cooler over areas too large to change a feature.
-6. The vision model reviews every edit against the original. Where the subject, its pose, the people or the place changed, or the edit isn't better, keepsake asks for another, and in the end falls back to the camera's own picture.
+6. The vision model reviews every edit against the original. Where a sign says something else, keepsake puts the photo's own signs back and has the edit reviewed again. Where the subject, its pose, the people or the place changed, or the edit isn't better, keepsake asks for another, and in the end falls back to the camera's own picture.
 7. It publishes the result to an album in [Immich](https://immich.app), each photo stacked on the camera's own picture.
 
 keepsake never changes the photos themselves. Models see re-encoded pictures without metadata. The finished photos keep the camera's data, get a caption and a star rating, and carry IPTC's mark for photos edited with AI.
