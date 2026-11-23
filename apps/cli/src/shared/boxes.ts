@@ -18,3 +18,31 @@ export const tidyBox = (box: Box): Box => {
 /** How much of a picture's area a box covers, from 0 to 1. */
 export const coverage = ({ left, top, right, bottom }: Box): number =>
   (right - left) * (bottom - top);
+
+/** The smallest box around all of the boxes. */
+export const around = (boxes: readonly [Box, ...ReadonlyArray<Box>]): Box => ({
+  left: Math.min(...boxes.map(({ left }) => left)),
+  top: Math.min(...boxes.map(({ top }) => top)),
+  right: Math.max(...boxes.map(({ right }) => right)),
+  bottom: Math.max(...boxes.map(({ bottom }) => bottom)),
+});
+
+/** A box with room on every side, as far as the picture goes. */
+export const widened = (
+  { left, top, right, bottom }: Box,
+  room: number,
+): Box => ({
+  left: Math.max(left - room, 0),
+  top: Math.max(top - room, 0),
+  right: Math.min(right + room, 1),
+  bottom: Math.min(bottom + room, 1),
+});
+
+/** Boxes from a model are never exact. */
+const tolerance = 0.005;
+
+export const holds = (outer: Box, inner: Box): boolean =>
+  inner.left >= outer.left - tolerance &&
+  inner.top >= outer.top - tolerance &&
+  inner.right <= outer.right + tolerance &&
+  inner.bottom <= outer.bottom + tolerance;

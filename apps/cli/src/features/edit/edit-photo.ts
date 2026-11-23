@@ -58,18 +58,27 @@ type Job = {
   readonly versions: number;
 };
 
+/** Removes what was made of the camera's picture, but not the picture. */
 const startOver = (files: EditFiles) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    yield* fs.remove(files.directory, { recursive: true, force: true }).pipe(
-      Effect.mapError(
-        (error) =>
-          new StoreFailed({
-            message: `Could not remove ${files.directory}: ${error.message}`,
-          }),
-      ),
-    );
-  });
+    if (!(yield* fs.exists(files.directory))) {
+      return;
+    }
+    for (const name of yield* fs.readDirectory(files.directory)) {
+      const file = `${files.directory}/${name}`;
+      if (file !== files.camera) {
+        yield* fs.remove(file, { recursive: true, force: true });
+      }
+    }
+  }).pipe(
+    Effect.mapError(
+      (error) =>
+        new StoreFailed({
+          message: `Could not empty ${files.directory}: ${error.message}`,
+        }),
+    ),
+  );
 
 const cameraPicture = Effect.fn('cameraPicture')(function* (job: Job) {
   const { files, open, photo, camera } = job;

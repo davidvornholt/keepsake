@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import {
   asked,
   failureOf,
@@ -42,6 +42,7 @@ describe('keepsake edit', () => {
     await pickLisbon();
     fakeModels.answers.crops = {
       subject: { left: 0.4, top: 0.4, right: 0.5, bottom: 0.5 },
+      belongings: [],
       crops: [
         {
           box: { left: 0.3, top: 0.3, right: 0.6, bottom: 0.6 },
@@ -59,13 +60,46 @@ describe('keepsake edit', () => {
     });
   });
 
+  it('keeps in a crop what belongs to the photo, however tight it is', async () => {
+    await pickLisbon();
+    const tight = (shape: string, reason: string) => ({
+      box: { left: 0.4, top: 0.6, right: 0.5, bottom: 0.7 },
+      aspect: shape,
+      reason,
+    });
+    fakeModels.answers.crops = {
+      subject: { left: 0.4, top: 0.6, right: 0.5, bottom: 0.7 },
+      belongings: [
+        {
+          what: 'The tower behind the flower',
+          box: { left: 0.2, top: 0.2, right: 0.8, bottom: 0.5 },
+        },
+      ],
+      // The first one can't show the tower, so nobody is asked about it.
+      crops: [tight('9:16', 'Tall.'), tight('3:2', 'Tight.')],
+    };
+    fakeModels.answers.choice = { best: 2, reason: 'Closer is better.' };
+    await runOk('edit', 'lisbon', 'B');
+    expect(asked('choice')[0]?.images).toBe(2);
+    const { aspect, box } = await shootJson('edits', 'B', 'crop.json');
+    expect(aspect).toBe('3:2');
+    expect(box.left).toBeLessThan(0.2);
+    expect(box.top).toBeLessThan(0.2);
+    expect(box.right).toBeGreaterThan(0.8);
+    expect(box.bottom).toBeGreaterThan(0.7);
+  });
+
   it('edits nothing twice, unless told to start over', async () => {
     await pickLisbon();
     await runOk('edit', 'lisbon');
     await runOk('edit', 'lisbon');
     expect(fakeModels.edits).toHaveLength(3);
+    const camera = shootFile('edits', 'B', 'B.jpg');
+    const { mtimeMs } = statSync(camera);
     await runOk('edit', 'lisbon', 'B', '--again');
     expect(fakeModels.edits).toHaveLength(4);
+    // Immich would show it twice if it were made anew.
+    expect(statSync(camera).mtimeMs).toBe(mtimeMs);
   });
 
   it('tries once more with what was wrong', async () => {
