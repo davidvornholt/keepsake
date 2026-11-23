@@ -64,10 +64,12 @@ const withMargin = ({ left, top, right, bottom }: Box): Box => {
 
 type Shown = {
   readonly subject: Box;
+  /** The people and signs of the original, which are in every version. */
   readonly people: ReadonlyArray<Person>;
+  readonly signs: ReadonlyArray<Sign>;
 };
 
-/** What to know about versions that have the original's signs again. */
+/** What to know about versions that have the original's signs. */
 const aboutSigns = (signs: ReadonlyArray<Sign>): ReadonlyArray<string> =>
   signs.length === 0
     ? []
@@ -113,8 +115,6 @@ export type Review = {
   /** The file of the best version, or null when each has a fault. */
   readonly best: string | null;
   readonly notes: string;
-  /** Whether a version has a text that says something else. */
-  readonly changesText: boolean;
 };
 
 /** Chooses the best version of an edit. */
@@ -124,8 +124,6 @@ export const review = Effect.fn('review')(function* (
   files: {
     readonly original: string;
     readonly versions: ReadonlyArray<string>;
-    /** The signs of the original that are in the versions. */
-    readonly signs: ReadonlyArray<Sign>;
   },
 ) {
   const vision = yield* Vision;
@@ -141,7 +139,7 @@ export const review = Effect.fn('review')(function* (
       `The photo: ${pick.description}`,
       ...original,
       ...edited.flat(),
-      ...aboutSigns(files.signs),
+      ...aboutSigns(shown.signs),
       question(files.versions.length),
     ],
   });
@@ -153,7 +151,6 @@ export const review = Effect.fn('review')(function* (
     best:
       best === undefined ? null : (files.versions[best.version - 1] ?? null),
     notes: best?.notes ?? known.map(({ notes }) => notes).join(' '),
-    changesText: known.some(({ textUnchanged }) => !textUnchanged),
   };
   return result;
 });

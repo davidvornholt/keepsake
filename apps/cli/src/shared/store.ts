@@ -144,13 +144,10 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         /** What the image model made. */
         version: (number: number) =>
           path.join(directory, `version-${number}.png`),
-        /** The same with the original's people in it. */
-        versionWithPeople: (number: number) =>
-          path.join(directory, `version-${number}-people.png`),
         signs: path.join(directory, 'signs.json'),
-        /** The same with the original's signs in it as well. */
-        versionWithSigns: (number: number) =>
-          path.join(directory, `version-${number}-signs.png`),
+        /** The same with the original's people and signs in it. */
+        versionWithOriginals: (number: number) =>
+          path.join(directory, `version-${number}-kept.png`),
         final: path.join(directory, `${base}-keepsake.jpg`),
         record: path.join(directory, 'edit.json'),
       };
