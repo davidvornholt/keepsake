@@ -51,6 +51,13 @@ const unneeded = [
   'computer_use',
 ];
 
+/**
+ * Codex has a tool left that can't be turned off. Models otherwise spend two
+ * more requests on looking around with it before they answer.
+ */
+const withoutTools =
+  'Everything you need is in the question, so answer it right away and call no tools.';
+
 const request = (model: string, effort: Effort) =>
   Effect.fn('codex.request')(
     function* ({ role, pieces, schema, directory }: ProgramQuestion) {
@@ -58,7 +65,7 @@ const request = (model: string, effort: Effort) =>
       const path = yield* Path.Path;
       const instructions = path.join(directory, 'role.md');
       const schemaFile = path.join(directory, 'schema.json');
-      yield* fs.writeFileString(instructions, role);
+      yield* fs.writeFileString(instructions, `${role}\n\n${withoutTools}\n`);
       yield* fs.writeFileString(schemaFile, JSON.stringify(schema));
       const pictures: Array<string> = [];
       const texts: Array<string> = [];
