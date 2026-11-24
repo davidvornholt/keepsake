@@ -91,4 +91,16 @@ describe('putBack', () => {
       expect(Math.min(...of(true))).toBeGreaterThan(Math.max(...of(false)));
     }
   });
+
+  it('leaves what is written on a person to the person', () => {
+    const edits = [
+      [],
+      [{ text: 'A', box: { ...box, bottom: box.top + 0.05 } }],
+    ].map((signs) => {
+      const edit = editWith(skin);
+      putBack({ ...person, signs }, photoWith(skin), edit, wholePicture);
+      return edit.pixels;
+    });
+    expect(edits[1]).toEqual(edits[0]);
+  });
 });

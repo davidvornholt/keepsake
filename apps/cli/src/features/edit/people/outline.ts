@@ -1,4 +1,4 @@
-import type { Person, Point } from '../../../shared/domain.ts';
+import type { Box, Person, Point } from '../../../shared/domain.ts';
 import type { Frame, Size } from '../../../shared/pictures.ts';
 import type { Plane } from '../pixels/raster.ts';
 import { averaging, gathered } from '../pixels/smooth.ts';
@@ -6,6 +6,9 @@ import { averaging, gathered } from '../pixels/smooth.ts';
 const half = 0.5;
 /** How much of a face shows its features and not its edge. */
 const features = 0.9;
+/** How closely a box is looked at. */
+const perSide = 5;
+const samples = perSide ** 2;
 
 /** Whether a point is inside an outline. */
 export const isInside = (
@@ -36,6 +39,24 @@ const fromFace = ({ face }: Person, { x, y }: Point): number => {
   return Math.hypot(across, down) / half;
 };
 
+/** Whether a point is on a person. An outline may leave out the face. */
+const isOn = (person: Person, point: Point): boolean =>
+  isInside(person.outline, point) || fromFace(person, point) <= 1;
+
+/** Whether most of a box is on a person, such as one around a cap's logo. */
+export const isMostlyOn = (person: Person, box: Box): boolean => {
+  const places = Array.from({ length: samples }, (_, place) => ({
+    x:
+      box.left +
+      (((place % perSide) + half) / perSide) * (box.right - box.left),
+    y:
+      box.top +
+      ((Math.floor(place / perSide) + half) / perSide) * (box.bottom - box.top),
+  }));
+  const on = places.filter((place) => isOn(person, place));
+  return on.length > half * samples;
+};
+
 /** A small view of a frame of a picture. */
 export type SmallView = {
   readonly picture: Size;
@@ -64,10 +85,7 @@ const maskOf = (
 
 /** 1 where a person is and 0 elsewhere. */
 export const personMask = (person: Person, view: SmallView): Plane =>
-  maskOf(
-    view,
-    (point) => isInside(person.outline, point) || fromFace(person, point) <= 1,
-  );
+  maskOf(view, (point) => isOn(person, point));
 
 /** 1 where the features of a face are and 0 elsewhere. */
 export const featuresMask = (person: Person, view: SmallView): Plane =>

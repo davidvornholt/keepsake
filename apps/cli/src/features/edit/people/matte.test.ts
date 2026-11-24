@@ -40,6 +40,18 @@ describe('matteOf', () => {
     expect(at(matte, 27)).toBeGreaterThan(0.95);
   });
 
+  it('takes the closer side where both have the same colours', () => {
+    // A pocket in the colour of the wall.
+    const value = plane((x) => {
+      const isPocket = x >= 32 && x < 48;
+      return isPerson(x) && !isPocket ? 0.8 : 0.3;
+    });
+    const mask = plane((x) => (x >= 21 && x < 59 ? 1 : 0));
+    const { matte } = matteOf([value, value, value], mask, size);
+    expect(at(matte, 22)).toBeLessThan(0.05);
+    expect(at(matte, 27)).toBeGreaterThan(0.95);
+  });
+
   it('follows the outline where the colours don’t tell', () => {
     const value = plane(() => 0.5);
     const mask = plane((x) => (isPerson(x) ? 1 : 0));

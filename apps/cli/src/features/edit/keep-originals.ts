@@ -11,6 +11,7 @@ import {
 } from '../../shared/pictures.ts';
 import { edgesBeyond } from './beyond.ts';
 import { within } from './geometry.ts';
+import { isMostlyOn } from './people/outline.ts';
 import { keepPerson } from './people/relight.ts';
 import { findPlacement } from './placement/find-placement.ts';
 import {
@@ -64,27 +65,30 @@ const keepMoved = (
 
 /**
  * Puts the people and signs of a photo back into an edit of it, where the edit
- * shows them. Changes `edit`.
+ * shows them. What is written on a person comes back with them. Changes `edit`.
  */
 export const putBack = (
-  originals: Originals,
+  { people, signs: everySign }: Originals,
   original: Raster,
   edit: Raster,
   crop: Box,
 ): void => {
+  const signs = everySign.filter(
+    ({ box }) => !people.some((person) => isMostlyOn(person, box)),
+  );
   const photo = frameOf(within(wholePicture, crop), original);
   const placement = findPlacement(original, edit, photo);
   if (placement !== null || edgesBeyond(crop) !== null) {
-    keepMoved(originals, original, edit, {
+    keepMoved({ people, signs }, original, edit, {
       photo,
       placement: placement ?? unmoved,
     });
     return;
   }
-  for (const person of originals.people) {
+  for (const person of people) {
     keepPerson(original, edit, person);
   }
-  for (const sign of originals.signs) {
+  for (const sign of signs) {
     keepSign(original, edit, sign);
   }
 };

@@ -2,6 +2,7 @@ import type { Size } from '../../../shared/pictures.ts';
 import { channels, type Plane, type Planes } from '../pixels/raster.ts';
 import { averaging } from '../pixels/smooth.ts';
 import { grown } from './outline.ts';
+import { pixelsWhere, spread } from './spread.ts';
 
 // In pixels of the small view.
 /** Light that changes over a shorter distance than this is texture. */
@@ -22,47 +23,13 @@ const softness = { grow: 0, edge: 1 };
 
 const half = 0.5;
 
-const neighboursOf = (index: number, { width, height }: Size) => {
-  const column = index % width;
-  const row = Math.floor(index / width);
-  return [
-    ...(column > 0 ? [index - 1] : []),
-    ...(column < width - 1 ? [index + 1] : []),
-    ...(row > 0 ? [index - width] : []),
-    ...(row < height - 1 ? [index + width] : []),
-  ];
-};
-
-/** Goes from pixel to pixel, as far as it may. */
-const spread = (
-  start: ReadonlyArray<number>,
-  size: Size,
-  enters: (pixel: number, step: number) => boolean,
-): void => {
-  let front = start;
-  for (let step = 1; front.length > 0; step += 1) {
-    const next: Array<number> = [];
-    for (const pixel of front) {
-      for (const neighbour of neighboursOf(pixel, size)) {
-        if (enters(neighbour, step)) {
-          next.push(neighbour);
-        }
-      }
-    }
-    front = next;
-  }
-};
-
-const pixelsWhere = (plane: Plane, isWanted: (value: number) => boolean) =>
-  Array.from(plane.keys()).filter((pixel) => isWanted(plane[pixel] ?? 0));
-
 /** How many pixels it is from each one to the edge of a region. */
 const depthsOf = (region: Plane, size: Size): Plane => {
   const outside = pixelsWhere(region, (part) => part <= half);
   const depths = region.map((part) =>
     part <= half ? 0 : Number.POSITIVE_INFINITY,
   );
-  spread(outside, size, (pixel, step) => {
+  spread(outside, size, (pixel, { step }) => {
     const isNew = (depths[pixel] ?? 0) > step;
     if (isNew) {
       depths[pixel] = step;
