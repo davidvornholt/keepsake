@@ -1,5 +1,5 @@
 import { clamp } from '../../../shared/boxes.ts';
-import type { Person } from '../../../shared/domain.ts';
+import type { Box, Person } from '../../../shared/domain.ts';
 import type { Frame, Raster, Size } from '../../../shared/pictures.ts';
 import { type Fit, guidedFilter } from '../pixels/guided.ts';
 import { lightChange, relit } from '../pixels/light.ts';
@@ -71,7 +71,12 @@ type View = {
   readonly backgroundLight: Planes;
 };
 
-const viewOf = (original: Raster, edit: Raster, person: Person): View => {
+const viewOf = (
+  original: Raster,
+  edit: Raster,
+  person: Person,
+  written: ReadonlyArray<Box>,
+): View => {
   const frame = frameAround(person, original);
   const facePixels = (person.face.right - person.face.left) * original.width;
   const scale = Math.max(1, facePixels / faceWidth);
@@ -116,7 +121,7 @@ const viewOf = (original: Raster, edit: Raster, person: Person): View => {
     size,
     replaced: replacedPart(
       matte,
-      featuresMask(person, view),
+      featuresMask(person, written, view),
       {
         edit: after,
         relit: relitWith((index) => matte[index] ?? 0),
@@ -151,14 +156,16 @@ const personPart = (
 /**
  * Puts a person from the original photo into an edit of it, in the light the
  * edit gave them: every pixel is the original's, made brighter, darker, warmer
- * or cooler over areas too large to change a feature. Changes `edit`.
+ * or cooler over areas too large to change a feature. `written` are the texts
+ * and logos on the person, which are kept up to the edge. Changes `edit`.
  */
 export const keepPerson = (
   original: Raster,
   edit: Raster,
   person: Person,
+  written: ReadonlyArray<Box>,
 ): void => {
-  const view = viewOf(original, edit, person);
+  const view = viewOf(original, edit, person, written);
   const { frame, size } = view;
   for (let y = 0; y < frame.height; y += 1) {
     for (let x = 0; x < frame.width; x += 1) {
