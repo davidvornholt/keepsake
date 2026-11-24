@@ -4,7 +4,7 @@ import type { Moment, Verdict } from '../../shared/domain.ts';
 /** Moments with this many photos tell how well a model finds the best one. */
 const burst = 3;
 /** Of more photos than this nobody can say which one is best. */
-const comparable = 12;
+export const comparable = 12;
 const lowScore = 4;
 const middleScore = 6;
 
@@ -18,8 +18,28 @@ const bandOf = (score: number | undefined) => {
   return score <= middleScore ? 'middle' : 'high';
 };
 
-const shuffled = (moment: Moment) =>
+const shuffleKey = (moment: Moment) =>
   createHash('sha256').update(moment.id).digest('hex');
+
+/** In an order that gives nothing away, the same every time. */
+export const shuffled = (
+  moments: ReadonlyArray<Moment>,
+): ReadonlyArray<Moment> =>
+  moments.toSorted((left, right) =>
+    shuffleKey(left).localeCompare(shuffleKey(right)),
+  );
+
+/** The first of each queue, then the second of each, and so on; each once. */
+export const inTurns = <A>(
+  queues: ReadonlyArray<ReadonlyArray<A>>,
+  count: number,
+): ReadonlyArray<A> => {
+  const longest = Math.max(0, ...queues.map(({ length }) => length));
+  const all = Array.from({ length: longest }, (_, index) =>
+    queues.flatMap((queue) => queue.slice(index, index + 1)),
+  ).flat();
+  return [...new Set(all)].slice(0, count);
+};
 
 /**
  * Chooses moments that tell the most about a model: bursts and single photos,
@@ -42,21 +62,5 @@ export const sampleOf = (
     const key = `${kind} ${bandOf(scores.get(moment.id))}`;
     groups.set(key, [...(groups.get(key) ?? []), moment]);
   }
-  const queues = [...groups.values()].map((group) =>
-    group.toSorted((left, right) =>
-      shuffled(left).localeCompare(shuffled(right)),
-    ),
-  );
-  const chosen: Array<Moment> = [];
-  while (chosen.length < count && queues.some((queue) => queue.length > 0)) {
-    for (const queue of queues) {
-      const next = queue.shift();
-      if (next !== undefined && chosen.length < count) {
-        chosen.push(next);
-      }
-    }
-  }
-  return chosen.toSorted((left, right) =>
-    shuffled(left).localeCompare(shuffled(right)),
-  );
+  return shuffled(inTurns([...groups.values()].map(shuffled), count));
 };

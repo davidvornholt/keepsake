@@ -7,6 +7,7 @@ import {
   moveFocus,
   previewOf,
   showCompared,
+  toggleFocused,
 } from './compare.ts';
 import { elements } from './elements.ts';
 import { showLarge, toggleZoom, unzoom } from './large.ts';
@@ -22,7 +23,8 @@ const labels = [
   'best of the year',
 ] as const;
 
-const starKey = /^\d$/u;
+/** Keys that do something once, however long they are held down. */
+const onceKey = /^[\dk]$/u;
 
 /** The label of the button for no stars. */
 const noStars = document.createElement('span');
@@ -30,15 +32,28 @@ const noStars = document.createElement('span');
 const state = {
   sample: [] as ReadonlyArray<Moment>,
   ratings: new Map<string, Rating>(),
-  moment: 0,
+  /** Before the first one until the page is loaded. */
+  moment: -1,
   /** The photo shown large, or null while the moment's photos are compared. */
   shown: null as number | null,
+  /** The photos of the moment to keep next to the best one. */
+  kept: new Set<string>(),
   saving: false,
   /** The photos of the next moment, held so that they appear at once. */
   ahead: [] as ReadonlyArray<HTMLImageElement>,
 };
 
 const currentMoment = () => state.sample[state.moment];
+
+/** The photo shown large. */
+const shownPhoto = () =>
+  state.shown === null ? undefined : currentMoment()?.photos[state.shown];
+
+const toggleKept = (id: string) => {
+  if (!state.kept.delete(id)) {
+    state.kept.add(id);
+  }
+};
 
 const questionAbout = (moment: Moment | undefined) => {
   if (moment === undefined) {
@@ -67,6 +82,8 @@ const showAnswers = (moment: Moment) => {
   elements.all.hidden = !(isLarge && hasMore);
   elements.allLabel.textContent = `All ${moment.photos.length} photos`;
   elements.zoom.hidden = !isLarge;
+  elements.keep.hidden = !(isLarge && hasMore);
+  elements.keep.ariaPressed = String(state.kept.has(shownPhoto() ?? ''));
   elements.before.hidden = !hasMore;
   elements.after.hidden = !hasMore;
 };
@@ -90,11 +107,13 @@ const show = () => {
     showCompared({
       photos: moment.photos,
       best: state.ratings.get(moment.id)?.best ?? null,
+      isKept: (id) => state.kept.has(id),
       choose: (index) => showPhoto(index),
+      toggleKept,
     });
   } else {
     showLarge(
-      moment.photos[state.shown] ?? '',
+      shownPhoto() ?? '',
       `Photo ${state.shown + 1} of ${moment.photos.length}`,
     );
   }
@@ -114,6 +133,14 @@ const compareAgain = () => {
     state.shown = null;
     show();
     focusCompared(before);
+  }
+};
+
+const toggleShown = () => {
+  const photo = shownPhoto();
+  if (photo !== undefined && !elements.keep.hidden) {
+    toggleKept(photo);
+    elements.keep.ariaPressed = String(state.kept.has(photo));
   }
 };
 
@@ -137,7 +164,9 @@ const loadAhead = () => {
 const goTo = (index: number) => {
   state.moment = Math.min(Math.max(index, 0), state.sample.length);
   const moment = currentMoment();
-  const best = state.ratings.get(moment?.id ?? '')?.best ?? null;
+  const rating = state.ratings.get(moment?.id ?? '');
+  state.kept = new Set(rating?.further);
+  const best = rating?.best ?? null;
   const chosen = best === null ? -1 : (moment?.photos.indexOf(best) ?? -1);
   if (chosen === -1) {
     state.shown = moment?.photos.length === 1 ? 0 : null;
@@ -150,11 +179,14 @@ const goTo = (index: number) => {
   loadAhead();
 };
 
-/** Goes on after a moment, or back to one that was skipped. */
+/** Goes on to the next moment without a rating, or back to a skipped one. */
 const goOn = () => {
-  const next = state.moment + 1;
-  const skipped = state.sample.findIndex(({ id }) => !state.ratings.has(id));
-  goTo(next < state.sample.length || skipped === -1 ? next : skipped);
+  const isOpen = ({ id }: Moment) => !state.ratings.has(id);
+  const next = state.sample.findIndex(
+    (moment, index) => index > state.moment && isOpen(moment),
+  );
+  const open = next === -1 ? state.sample.findIndex(isOpen) : next;
+  goTo(open === -1 ? state.sample.length : open);
 };
 
 const save = async (rating: Rating): Promise<string | undefined> => {
@@ -179,11 +211,12 @@ const rate = async (stars: number) => {
   if (moment === undefined || state.saving || !isAnswer) {
     return;
   }
-  const best =
-    stars === 0 || state.shown === null
-      ? null
-      : (moment.photos[state.shown] ?? null);
-  const rating: Rating = { moment: moment.id, best, stars };
+  const best = stars === 0 ? null : (shownPhoto() ?? null);
+  const further =
+    best === null
+      ? []
+      : moment.photos.filter((id) => id !== best && state.kept.has(id));
+  const rating: Rating = { moment: moment.id, best, stars, further };
   state.saving = true;
   const problem = await save(rating);
   state.saving = false;
@@ -209,12 +242,14 @@ const actionsNow = (): ReadonlyMap<string, () => unknown> => {
           ['ArrowRight', () => moveFocus(1, 0)],
           ['ArrowUp', () => moveFocus(0, -1)],
           ['ArrowDown', () => moveFocus(0, 1)],
+          ['k', toggleFocused],
         ]
       : [
           ...always,
           ['ArrowLeft', () => turnOver(-1)],
           ['ArrowRight', () => turnOver(1)],
           ['Escape', compareAgain],
+          ['k', toggleShown],
           ['z', toggleZoom],
         ],
   );
@@ -224,8 +259,7 @@ const onKey = async (event: KeyboardEvent) => {
   if (event.ctrlKey || event.metaKey || event.altKey) {
     return;
   }
-  // A key held down rates one moment, not the next ones too.
-  if (event.repeat && starKey.test(event.key)) {
+  if (event.repeat && onceKey.test(event.key)) {
     return;
   }
   const action =
@@ -281,9 +315,9 @@ const start = async () => {
   elements.all.addEventListener('click', compareAgain);
   elements.before.addEventListener('click', () => turnOver(-1));
   elements.after.addEventListener('click', () => turnOver(1));
+  elements.keep.addEventListener('click', toggleShown);
   document.addEventListener('keydown', onKey);
-  const next = state.sample.findIndex(({ id }) => !state.ratings.has(id));
-  goTo(next === -1 ? state.sample.length : next);
+  goOn();
 };
 
 await start();

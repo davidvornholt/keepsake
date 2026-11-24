@@ -20,6 +20,7 @@ const verdict = (moment: string, score: number): Verdict => ({
   subject: 'other',
   description: '',
   reason: '',
+  further: [],
 });
 
 describe('sampleOf', () => {

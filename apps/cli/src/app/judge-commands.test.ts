@@ -44,7 +44,9 @@ describe('the model that judged a shoot', () => {
     await runOk('cull', 'lisbon');
     await writeFile(
       shootFile('ratings.json'),
-      JSON.stringify([{ moment: 'B', photos: ['B'], best: null, stars: 0 }]),
+      JSON.stringify([
+        { moment: 'B', photos: ['B'], best: null, stars: 0, further: [] },
+      ]),
     );
     await runOk('bench', 'lisbon', '--model', other);
     expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(judge);

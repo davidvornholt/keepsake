@@ -61,6 +61,9 @@ export const rankCorrelation = (
   return scale === 0 ? null : covariance / scale;
 };
 
+/** The photos of a moment the owner would keep. */
+const liked = ({ best, further }: Rating) => [best, ...further];
+
 /** Compares a model's verdicts with what the owner chose. */
 export const compareWithOwner = (
   verdicts: ReadonlyArray<Verdict>,
@@ -83,17 +86,23 @@ export const compareWithOwner = (
   return {
     moments: both.length,
     bursts: bursts.length,
-    /** How often its best frame is the owner's best frame. */
+    /** How often its best frame is one the owner would keep. */
     sameBestFrame: rounded(
       average(
         bursts.map(({ rating, verdict }) =>
-          verdict.best[0] === rating.best ? 1 : 0,
+          verdict.best
+            .slice(0, 1)
+            .some((photo) => liked(rating).includes(photo))
+            ? 1
+            : 0,
         ),
       ),
     ),
     /** How often a frame taken at random would be. */
     bestFrameByChance: rounded(
-      average(bursts.map(({ rating }) => 1 / rating.photos.length)),
+      average(
+        bursts.map(({ rating }) => liked(rating).length / rating.photos.length),
+      ),
     ),
     keepAccuracy: rounded(keepAccuracy(pairs)),
     rankCorrelation: rounded(rankCorrelation(pairs)),

@@ -13,7 +13,19 @@ const Answer = Schema.Struct({
   moment: Schema.String,
   best: Schema.NullOr(Schema.String),
   stars: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 5 })),
+  further: Schema.Array(Schema.String),
 });
+
+/** Whether an answer fits its moment and doesn't contradict itself. */
+const isPossible = (
+  { best, stars, further }: typeof Answer.Type,
+  { photos }: Moment,
+) =>
+  best === null
+    ? stars === 0 && further.length === 0
+    : stars > 0 &&
+      new Set([best, ...further]).size === further.length + 1 &&
+      [best, ...further].every((photo) => photos.includes(photo));
 
 export const readRatings = Effect.fn('readRatings')(function* (
   open: OpenShoot,
@@ -37,11 +49,7 @@ export const saveRating = Effect.fn('saveRating')(function* (
 ) {
   const answer = yield* Schema.decodeUnknownEffect(Answer)(body);
   const moment = sample.find(({ id }) => id === answer.moment);
-  if (
-    moment === undefined ||
-    (answer.best === null) !== (answer.stars === 0) ||
-    (answer.best !== null && !moment.photos.includes(answer.best))
-  ) {
+  if (moment === undefined || !isPossible(answer, moment)) {
     return false;
   }
   const before = yield* readRatings(open);

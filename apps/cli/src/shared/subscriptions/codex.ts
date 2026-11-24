@@ -42,6 +42,13 @@ const unneeded = [
   'multi_agent',
   'apps',
   'plugins',
+  'goals',
+  'hooks',
+  'sleep_tool',
+  'skill_search',
+  'tool_suggest',
+  'browser_use',
+  'computer_use',
 ];
 
 const request = (model: string, effort: Effort) =>

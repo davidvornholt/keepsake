@@ -2,12 +2,13 @@ import { Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/cli';
 import { compareWithOwner } from '../features/benchmark/benchmark.ts';
 import { judgeMoments } from '../features/cull/cull.ts';
+import { disputedBetween } from '../features/rating/disputed.ts';
 import { sampleOf } from '../features/rating/sample.ts';
 import { readRatings, serveRatingPage } from '../features/rating/server.ts';
 import { StepMissing } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { Spending } from '../shared/spending.ts';
-import { openShoot } from '../shared/store.ts';
+import { type OpenShoot, openShoot } from '../shared/store.ts';
 import { verdicts } from '../shared/verdicts.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
@@ -40,6 +41,46 @@ const webAddress = (text: string) =>
     ),
   );
 
+/** What a model that is to be compared thinks of the shoot. */
+const verdictsToCompare = Effect.fn('verdictsToCompare')(function* (
+  open: OpenShoot,
+  model: string,
+) {
+  const judged = yield* verdicts(open, model);
+  if (judged.length === 0) {
+    const { name } = open.shoot;
+    return yield* new StepMissing({
+      message: `${model} has judged no photos of ${name} yet. Run \`keepsake cull ${name} --model ${model}\` first.`,
+    });
+  }
+  return judged;
+});
+
+/** The moments to rate: a mix, or those two models judged differently. */
+const momentsToRate = Effect.fn('momentsToRate')(function* (
+  open: OpenShoot,
+  model: Option.Option<string>,
+  between: ReadonlyArray<string>,
+  count: number,
+) {
+  const [left, right, ...more] = between;
+  if (left === undefined) {
+    const judged = yield* verdicts(open, yield* judgeOf(open, model));
+    return sampleOf(open.moments, judged, count);
+  }
+  if (right === undefined || more.length > 0) {
+    return yield* fail('Give --between two times, once for each model.');
+  }
+  return disputedBetween(
+    open.moments,
+    [
+      yield* verdictsToCompare(open, left),
+      yield* verdictsToCompare(open, right),
+    ],
+    count,
+  );
+});
+
 export const rate = Command.make(
   'rate',
   {
@@ -49,13 +90,19 @@ export const rate = Command.make(
       `How many moments to rate (default ${defaultSample})`,
     ),
     model: visionModel,
+    between: Flag.String('between').pipe(
+      Flag.withDescription(
+        'Ask about the moments that two models judged most differently, instead of a mix. Give it two times, once for each model.',
+      ),
+      Flag.atLeast(0),
+    ),
     port: optionalInt('port', 'The port of the page (default: any free one)'),
     address: optionalString(
       'address',
       'Where the page is reached from another machine, when something on this one passes it on to the port, such as https://server.example.ts.net:8443',
     ),
   },
-  ({ shoot, moments, model, port, address }) =>
+  ({ shoot, moments, model, between, port, address }) =>
     Effect.gen(function* () {
       const count = yield* bounded('moments', moments, {
         fallback: defaultSample,
@@ -71,8 +118,7 @@ export const rate = Command.make(
       const reachedAt =
         elsewhere === undefined ? undefined : yield* webAddress(elsewhere);
       const open = yield* openShoot(shoot);
-      const judged = yield* verdicts(open, yield* judgeOf(open, model));
-      const sample = sampleOf(open.moments, judged, count);
+      const sample = yield* momentsToRate(open, model, between, count);
       const server = yield* serveRatingPage({
         open,
         sample,
@@ -92,7 +138,7 @@ export const rate = Command.make(
     }).pipe(Effect.scoped),
 ).pipe(
   Command.withDescription(
-    'Serve a page on this machine where the owner of the photos chooses the best photo of each moment and gives it stars, without seeing what a model thinks. Runs until it is stopped; every rating is saved right away.',
+    'Serve a page on this machine where the owner of the photos chooses the best photo of each moment, gives it stars and marks others worth keeping, without seeing what a model thinks. Runs until it is stopped; every rating is saved right away.',
   ),
 );
 

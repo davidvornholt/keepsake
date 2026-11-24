@@ -32,19 +32,17 @@ const question = (before: number, total: number) =>
     ? `Which of these ${total} photos, in the order they were taken, should be left out because another one of them shows the same and is better? Give the number of each photo to leave out, and of the one that stays instead. Leave out none if all of them belong in the album.`
     : `Photos 1 to ${before} are in the album already. Which of photos ${before + 1} to ${total}, in the order they were taken, should be left out because an earlier one, or another one of them that is better, shows the same? Give the number of each photo to leave out, and of the one that stays instead. Leave out none if all of them belong in the album.`;
 
-const asPick = (verdict: Verdict): ReadonlyArray<Pick> => {
-  const [photo] = verdict.best;
-  return photo === undefined
-    ? []
-    : [
-        {
-          photo,
-          moment: verdict.moment,
-          score: verdict.score,
-          subject: verdict.subject,
-          description: verdict.description,
-        },
-      ];
+/** The best photo of a moment and those that belong next to it, in order. */
+const asPicks = (verdict: Verdict): ReadonlyArray<Pick> => {
+  const { moment, photos, best, score, subject, description } = verdict;
+  return best
+    .slice(0, 1)
+    .map((photo) => ({ photo, score, description }))
+    .concat(verdict.further)
+    .map((one) => ({ ...one, moment, subject }))
+    .toSorted(
+      (left, right) => photos.indexOf(left.photo) - photos.indexOf(right.photo),
+    );
 };
 
 /** The numbers, counted from 1, of the photos to leave out. */
@@ -113,7 +111,7 @@ const withoutRepeats = Effect.fn('withoutRepeats')(function* (
       const out = leftOut(answer, before.length, shown.length);
       for (const [index, candidate] of round.entries()) {
         if (out.has(before.length + index + 1)) {
-          redundant.push(candidate.moment);
+          redundant.push(candidate.photo);
         } else {
           kept.push(candidate);
         }
@@ -146,8 +144,8 @@ export const pick = Effect.fn('pick')(function* (
     });
   }
   const candidates = judged
-    .filter(({ score }) => score >= options.minimumScore)
-    .flatMap(asPick);
+    .flatMap(asPicks)
+    .filter(({ score }) => score >= options.minimumScore);
   const maximum = Option.getOrNull(options.maximum);
   const before = yield* readJson(PickList, open.files.picks);
   const isSame =
