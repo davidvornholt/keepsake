@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { isBlock, picture, valueAt } from '../pixels/test-pictures.ts';
 import { keepSign } from './keep-sign.ts';
-import { isBlock, picture, valueAt } from './test-pictures.ts';
 
 const size = { width: 900, height: 600 };
 const place = { left: 300, top: 200, right: 420, bottom: 240 };

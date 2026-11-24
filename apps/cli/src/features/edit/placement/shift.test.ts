@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { isBlock, picture } from '../pixels/test-pictures.ts';
 import { shiftOf } from './shift.ts';
-import { isBlock, picture } from './test-pictures.ts';
 
 const size = { width: 900, height: 600 };
 const frame = { left: 300, top: 200, width: 120, height: 80 };

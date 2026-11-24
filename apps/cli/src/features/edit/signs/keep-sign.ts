@@ -15,7 +15,7 @@ import {
   srgbOf,
 } from '../pixels/raster.ts';
 import { averaging } from '../pixels/smooth.ts';
-import { type Shift, shiftOf } from './shift.ts';
+import { type Shift, shiftOf } from '../placement/shift.ts';
 
 /** How far around a sign its pixels are kept, as a box is never exact. */
 const spare = { pixels: 8, height: 0.35 };

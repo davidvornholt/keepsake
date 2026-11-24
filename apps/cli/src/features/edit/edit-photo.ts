@@ -167,7 +167,7 @@ type Prepared = {
 /** A version with the original's people and signs. */
 const withOriginals = Effect.fn('withOriginals')(function* (
   { files }: Job,
-  originals: Originals,
+  { crop: { box: crop }, originals }: Prepared,
   number: number,
 ) {
   const version = files.version(number);
@@ -177,7 +177,7 @@ const withOriginals = Effect.fn('withOriginals')(function* (
   const target = files.versionWithOriginals(number);
   if (!(yield* exists(target))) {
     yield* atomically(target, (draft) =>
-      keepOriginals(originals, {
+      keepOriginals(originals, crop, {
         original: files.input,
         version,
         target: draft,
@@ -190,10 +190,11 @@ const withOriginals = Effect.fn('withOriginals')(function* (
 /** Makes versions, unless they are there from before, and reviews them. */
 const attempt = Effect.fn('attempt')(function* (
   job: Job,
-  { crop, size, originals }: Prepared,
+  prepared: Prepared,
   number: number,
   problems: string | null,
 ) {
+  const { crop, size, originals } = prepared;
   const { files, open, photo, pick } = job;
   const image = yield* ImageModel;
   const numbers = Array.from(
@@ -224,7 +225,7 @@ const attempt = Effect.fn('attempt')(function* (
   }
   const made = yield* Effect.filter(numbers, isMade);
   const versions = yield* Effect.forEach(made, (version) =>
-    withOriginals(job, originals, version),
+    withOriginals(job, prepared, version),
   );
   return yield* review(
     pick,
