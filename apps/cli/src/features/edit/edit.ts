@@ -3,7 +3,6 @@ import type { EditRecord } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
-import { ReviewVision } from '../../shared/review-vision.ts';
 import { Spending, totalDollars } from '../../shared/spending.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
@@ -26,13 +25,11 @@ const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
 ) {
-  const reviewer = yield* ReviewVision;
   if (names.length === 0) {
     const list = yield* readPicks(open.files, open.shoot.name);
-    const isDescribed = list.model === reviewer.model;
     return list.picks.flatMap((pick): ReadonlyArray<ToEdit> => {
       const photo = open.photos.get(pick.photo);
-      return photo === undefined ? [] : [{ pick, photo, isDescribed }];
+      return photo === undefined ? [] : [{ pick, photo }];
     });
   }
   const { model } = yield* Vision;
@@ -46,15 +43,12 @@ const jobs = Effect.fn('jobs')(function* (
           message: `${model} has not judged ${name}. Run \`keepsake cull ${open.shoot.name}\` first.`,
         });
       }
-      const { moment, subject, best, further } = verdict;
+      const { moment, subject, further } = verdict;
       const own = further.find((one) => one.photo === photo.id);
       const { score, description } = own ?? verdict;
       return {
         photo,
         pick: { photo: photo.id, moment, score, subject, description },
-        isDescribed:
-          model === reviewer.model &&
-          (own !== undefined || best[0] === photo.id),
       } satisfies ToEdit;
     }),
   );

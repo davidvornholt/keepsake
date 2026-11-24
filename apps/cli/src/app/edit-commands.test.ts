@@ -13,7 +13,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { assessment, fakeModels, verdictAnswer } from './fake-models.ts';
+import { assessment, fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
 beforeEach(() => setUp(spyOn));
@@ -32,7 +32,7 @@ describe('keepsake edit', () => {
     expect(fakeModels.edits).toHaveLength(3);
     expect(fakeModels.edits[0]?.size).toBe('3520x2352');
     expect(fakeModels.edits[0]?.prompt).toContain('from Lisbon, May 2026');
-    expect(fakeModels.edits[0]?.prompt).toContain(verdictAnswer.description);
+    expect(fakeModels.edits[0]?.prompt).toContain('A heron takes off.');
     for (const photo of ['A1', 'B', 'C']) {
       expect(
         existsSync(shootFile('edits', photo, `${photo}-keepsake.jpg`)),
@@ -132,9 +132,7 @@ describe('keepsake edit', () => {
         args.some((arg) => arg.includes('DigitalSourceType')),
     );
     expect(marking?.args).toContain('-XMP-xmp:Rating=4');
-    expect(marking?.args).toContain(
-      `-XMP-dc:Description=${verdictAnswer.description}`,
-    );
+    expect(marking?.args).toContain('-XMP-dc:Description=A heron takes off.');
   });
 });
 
@@ -182,17 +180,10 @@ describe('keepsake edit, in another time zone', () => {
 });
 
 describe('keepsake edit, with named photos', () => {
-  it('asks what a photo shows that isn’t the best of its moment', async () => {
+  it('edits one that isn’t the best of its moment', async () => {
     await pickLisbon();
-    await editLisbon('B', 'A2');
+    expect((await editLisbon('A2')).edited).toBe(1);
     expect(asked('description')).toHaveLength(1);
-    const prompts = fakeModels.edits.map(({ prompt }) => prompt);
-    expect(
-      prompts.filter((prompt) => prompt.includes('A heron takes off.')),
-    ).toHaveLength(1);
-    expect(
-      prompts.filter((prompt) => prompt.includes(verdictAnswer.description)),
-    ).toHaveLength(1);
   });
 });
 

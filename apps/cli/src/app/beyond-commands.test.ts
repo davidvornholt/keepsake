@@ -36,6 +36,9 @@ describe('a crop beyond the photo', () => {
     beyond();
     await editLisbon('B');
     expect(fakeModels.edits[0]?.prompt).toContain('grey area at the left edge');
+    expect(asked('description')[0]?.texts[0]).toContain(
+      'grey area at the left edge is not part of it',
+    );
     expect(asked('assessment')[0]?.texts.join()).toContain(
       'grey area at the left edge',
     );

@@ -59,8 +59,6 @@ export type EditOptions = {
 export type ToEdit = {
   readonly pick: Pick;
   readonly photo: Photo;
-  /** Whether the model that looks after the edit has described this photo. */
-  readonly isDescribed: boolean;
 };
 
 /** A picked photo with everything needed to edit it. */
@@ -266,21 +264,15 @@ export const editOf = Effect.fn('editOf')(function* (
 /** Crops, edits and reviews one photo and writes the finished file. */
 export const editPhoto = Effect.fn('editPhoto')(function* (
   open: OpenShoot,
-  { pick: picked, photo, isDescribed }: ToEdit,
+  { pick, photo }: ToEdit,
   options: EditOptions,
 ) {
   const files = open.files.edit(photo.id);
   if (options.again) {
     yield* startOver(files);
   }
-  const pick = isDescribed
-    ? picked
-    : {
-        ...picked,
-        description: yield* askReviewer(descriptionOf(open, picked)),
-      };
   const image = yield* ImageModel;
-  const job: Job = {
+  const chosen: Job = {
     open,
     pick,
     photo,
@@ -291,9 +283,13 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     },
     versions: options.versions,
   };
-  yield* cameraPicture(job);
-  const crop = yield* cropOf(job);
-  const size = yield* imageInput(job, crop);
+  yield* cameraPicture(chosen);
+  const crop = yield* cropOf(chosen);
+  const size = yield* imageInput(chosen, crop);
+  const description = yield* askReviewer(
+    descriptionOf(open, photo.id, crop.box),
+  );
+  const job: Job = { ...chosen, pick: { ...pick, description } };
   const originals = yield* askReviewer(
     Effect.all({ people: peopleOf(job, crop), signs: signsOf(job) }),
   );
@@ -302,7 +298,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   );
   const caption = {
     stars: starsFor(pick.score),
-    description: pick.description,
+    description,
     ai: best !== null,
   };
   yield* atomically(files.final, (draft) =>

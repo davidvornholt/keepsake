@@ -21,8 +21,8 @@ describe('the model that looks after the edits', () => {
     await edit();
     const models = fakeModels.asked.map(({ name, model }) => [name, model]);
     expect(models).toEqual([
-      ['description', 'reviewer'],
       ['crops', 'gpt-6-astra'],
+      ['description', 'reviewer'],
       ['people', 'reviewer'],
       ['signs', 'reviewer'],
       ['assessment', 'reviewer'],
