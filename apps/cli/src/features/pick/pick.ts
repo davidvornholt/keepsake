@@ -6,6 +6,7 @@ import { inSteps } from '../../shared/progress.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
+import { withoutSameMotifs } from './motifs.ts';
 import { bestOf } from './ranking.ts';
 
 /** How many new photos one question asks about. */
@@ -157,10 +158,17 @@ export const pick = Effect.fn('pick')(function* (
   const list = isSame
     ? before.value
     : yield* Effect.gen(function* () {
-        const { kept, redundant } = yield* withoutRepeats(open, candidates);
+        const first = yield* withoutRepeats(open, candidates);
+        const { kept, redundant } = yield* withoutSameMotifs(open, first.kept);
         const picks =
           maximum === null ? kept : yield* bestOf(open, kept, maximum);
-        return { model, maximum, candidates, picks, redundant };
+        return {
+          model,
+          maximum,
+          candidates,
+          picks,
+          redundant: [...first.redundant, ...redundant],
+        };
       });
   yield* writeJson(PickList, open.files.picks, list);
   return {

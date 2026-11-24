@@ -98,11 +98,12 @@ export const edit = Effect.fn('edit')(function* (
   options: EditOptions & { readonly budget: number },
 ) {
   const todo = yield* jobs(open, names);
+  const isAnew = options.again || options.wish !== null;
   const withinBudget = yield* makeBudget(options.budget);
   const outcomes = yield* inSteps('edit', todo, concurrency, (toEdit) =>
     Effect.gen(function* () {
       const before = yield* editOf(open, toEdit.photo.id);
-      if (Option.isSome(before) && !options.again) {
+      if (Option.isSome(before) && !isAnew) {
         return { kind: 'done', record: before.value } satisfies Outcome;
       }
       const record = yield* withinBudget(editPhoto(open, toEdit, options));

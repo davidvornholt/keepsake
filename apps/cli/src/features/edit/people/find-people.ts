@@ -3,6 +3,7 @@ import { clamp, coverage, tidyBox } from '../../../shared/boxes.ts';
 import { Box, type Person, Point } from '../../../shared/domain.ts';
 import { rendered } from '../../../shared/pictures.ts';
 import { Vision } from '../../../shared/vision.ts';
+import { withoutRemoved } from '../removals.ts';
 
 const pictureSide = 1536;
 const fewestPoints = 3;
@@ -34,13 +35,18 @@ const question =
 export const findPeople = Effect.fn('findPeople')(function* (
   file: string,
   photo: Box,
+  removed: ReadonlyArray<string>,
 ) {
   const vision = yield* Vision;
   const { people } = yield* vision.ask({
     role,
     name: 'people',
     schema: People,
-    pieces: [yield* rendered(file, { longSide: pictureSide }), question],
+    pieces: [
+      yield* rendered(file, { longSide: pictureSide }),
+      ...withoutRemoved(removed),
+      question,
+    ],
   });
   return people
     .map(

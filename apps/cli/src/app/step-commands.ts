@@ -6,6 +6,7 @@ import { ImageModel } from '../features/edit/image-model.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
+import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
 import { ReviewVision } from '../shared/review-vision.ts';
@@ -172,13 +173,26 @@ export const edit = Command.make(
     photos: photosArgument('Photos to edit instead of the picked ones'),
     model: visionModel,
     ...editFlags,
+    wish: optionalString(
+      'wish',
+      'What you want to be done with the named photos, such as what to remove. Edits them anew in the frame they have; with --again, the frame follows it too',
+    ),
     again,
   },
-  ({ shoot, photos, model, again: startOver, ...flags }) =>
+  ({ shoot, photos, model, wish, again: startOver, ...flags }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
+      if (Option.isSome(wish) && photos.length === 0) {
+        return yield* new InvalidInput({
+          message: 'Name the photos the wish is for.',
+        });
+      }
       yield* workOn(shoot, (open) =>
-        editShoot(open, photos, { ...input, again: startOver }),
+        editShoot(open, photos, {
+          ...input,
+          again: startOver,
+          wish: Option.getOrNull(wish),
+        }),
       ).pipe(
         Effect.flatMap(emitWithCost),
         Effect.provide(editLayer(flags)),
@@ -237,7 +251,7 @@ export const run = Command.make(
           pickShoot(open, { ...picking, again: false }),
         );
         const edited = yield* workOn(shoot, (open) =>
-          editShoot(open, [], { ...editing, again: false }),
+          editShoot(open, [], { ...editing, again: false, wish: null }),
         );
         const published = flags.publish
           ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))

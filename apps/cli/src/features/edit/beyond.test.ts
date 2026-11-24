@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { wholePicture } from '../../shared/boxes.ts';
-import { edgesBeyond, frameBox, isMostlyPhoto } from './beyond.ts';
+import { edgesBeyond, frameBox, isCompleted, isMostlyPhoto } from './beyond.ts';
 
 describe('frameBox', () => {
   it('lets a frame reach beyond the photo', () => {
@@ -58,5 +58,26 @@ describe('edgesBeyond', () => {
     expect(edgesBeyond({ left: -0.1, top: 0, right: 1.1, bottom: 1.2 })).toBe(
       'left, right and bottom edges',
     );
+  });
+});
+
+describe('isCompleted', () => {
+  // The photo ends at 0.9 of the crop's width.
+  const crop = { left: 0.1, top: 0, right: 1.1, bottom: 1 };
+
+  it('is what the edge of the photo cuts off', () => {
+    const box = { left: 0.8, top: 0.4, right: 0.899, bottom: 0.6 };
+    expect(isCompleted(box, crop)).toBe(true);
+  });
+
+  it('is nothing that the photo shows whole', () => {
+    const box = { left: 0.6, top: 0.4, right: 0.8, bottom: 0.6 };
+    expect(isCompleted(box, crop)).toBe(false);
+  });
+
+  it('is nothing at an edge the crop stays inside', () => {
+    const box = { left: 0, top: 0, right: 0.2, bottom: 1 };
+    expect(isCompleted(box, crop)).toBe(false);
+    expect(isCompleted(wholePicture, wholePicture)).toBe(false);
   });
 });

@@ -138,17 +138,25 @@ export const ratioOf = (aspect: AspectName): number => {
 export const Point = Schema.Struct({ x: Schema.Finite, y: Schema.Finite });
 export type Point = typeof Point.Type;
 
+/** Points along an outline, in order. */
+export const Outline = Schema.Array(Point);
+export type Outline = typeof Outline.Type;
+
 /** A person who can be recognised, in fractions of the cropped photo. */
 export const Person = Schema.Struct({
   face: Box,
   /** Around everything that belongs to the person. */
-  outline: Schema.Array(Point),
+  outline: Outline,
 });
 export type Person = typeof Person.Type;
 
 /** A text or a logo in a photo, in fractions of the cropped photo. */
 export const Sign = Schema.Struct({ text: Schema.String, box: Box });
 export type Sign = typeof Sign.Type;
+
+/** Something that is to be removed from a photo, and where it is. */
+export const Removal = Schema.Struct({ what: Schema.String, box: Box });
+export type Removal = typeof Removal.Type;
 
 export const Crop = Schema.Struct({
   /**

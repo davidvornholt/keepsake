@@ -1,7 +1,13 @@
 import { clamp } from '../../../shared/boxes.ts';
 import type { Size } from '../../../shared/pictures.ts';
 import { fitted, guidedFilter } from './guided.ts';
-import { mapPlanes, type Plane, type Planes, srgbOf } from './raster.ts';
+import {
+  brightnessOf,
+  mapPlanes,
+  type Plane,
+  type Planes,
+  srgbOf,
+} from './raster.ts';
 import { averaging } from './smooth.ts';
 
 // In pixels of the small view. Light that changes over a shorter distance than
@@ -20,18 +26,6 @@ const darkest = 0.015;
 const colourless = 0.06;
 /** From here on highlights are compressed rather than cut off. */
 const knee = 0.8;
-
-const redShare = 0.2126;
-const greenShare = 0.7152;
-const blueShare = 0.0722;
-
-const brightness = ([red, green, blue]: Planes): Plane =>
-  red.map(
-    (light, index) =>
-      light * redShare +
-      (green[index] ?? 0) * greenShare +
-      (blue[index] ?? 0) * blueShare,
-  );
 
 /** By how much light changed, in natural logarithms. */
 const ratio = (before: Plane, after: Plane, least: number): Plane =>
@@ -54,8 +48,8 @@ export const lightChange = (
   const calmBefore = mapPlanes(before, withoutFeatures);
   const calmAfter = mapPlanes(after, withoutFeatures);
   const guide = mapPlanes(calmBefore, (plane) => plane.map(srgbOf));
-  const greyBefore = brightness(calmBefore);
-  const greyAfter = brightness(calmAfter);
+  const greyBefore = brightnessOf(calmBefore);
+  const greyAfter = brightnessOf(calmAfter);
   const follow = guidedFilter(
     guide,
     averaging(weights, size, lightRadius),

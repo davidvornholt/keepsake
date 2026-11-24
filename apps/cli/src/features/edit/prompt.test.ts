@@ -23,7 +23,15 @@ const pick: Pick = {
   description: 'A heron stands in shallow water',
 };
 const shoot = { name: 'lisbon', source: '/photos', about: 'Lisbon' };
-const wanted = { shoot, photo, pick, crop: wholePicture, problems: null };
+const wanted = {
+  shoot,
+  photo,
+  pick,
+  crop: wholePicture,
+  removed: [],
+  wish: null,
+  problems: null,
+};
 
 describe('editPrompt', () => {
   it('says what the photo shows and where it is from', () => {

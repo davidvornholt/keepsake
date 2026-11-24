@@ -1,4 +1,4 @@
-import type { Box, Person, Point } from '../../../shared/domain.ts';
+import type { Box, Outline, Person, Point } from '../../../shared/domain.ts';
 import type { Frame, Size } from '../../../shared/pictures.ts';
 import type { Plane } from '../pixels/raster.ts';
 import { averaging, gathered } from '../pixels/smooth.ts';
@@ -11,10 +11,7 @@ const perSide = 5;
 const samples = perSide ** 2;
 
 /** Whether a point is inside an outline. */
-export const isInside = (
-  outline: ReadonlyArray<Point>,
-  { x, y }: Point,
-): boolean => {
+export const isInside = (outline: Outline, { x, y }: Point): boolean => {
   let inside = false;
   let before = outline.at(-1);
   for (const point of outline) {
@@ -43,8 +40,8 @@ const fromFace = ({ face }: Person, { x, y }: Point): number => {
 const isOn = (person: Person, point: Point): boolean =>
   isInside(person.outline, point) || fromFace(person, point) <= 1;
 
-/** Whether most of a box is on a person, such as one around a cap's logo. */
-export const isMostlyOn = (person: Person, box: Box): boolean => {
+/** How much of a box is on a person, from 0 to 1. */
+export const shareOn = (person: Person, box: Box): number => {
   const places = Array.from({ length: samples }, (_, place) => ({
     x:
       box.left +
@@ -53,9 +50,12 @@ export const isMostlyOn = (person: Person, box: Box): boolean => {
       box.top +
       ((Math.floor(place / perSide) + half) / perSide) * (box.bottom - box.top),
   }));
-  const on = places.filter((place) => isOn(person, place));
-  return on.length > half * samples;
+  return places.filter((place) => isOn(person, place)).length / samples;
 };
+
+/** Whether most of a box is on a person, such as one around a cap's logo. */
+export const isMostlyOn = (person: Person, box: Box): boolean =>
+  shareOn(person, box) > half;
 
 /** A small view of a frame of a picture. */
 export type SmallView = {

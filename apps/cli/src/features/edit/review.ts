@@ -1,9 +1,10 @@
 import { Effect, Schema } from 'effect';
 import { coverage } from '../../shared/boxes.ts';
-import type { Box, Person, Pick, Sign } from '../../shared/domain.ts';
+import type { Box, Person, Sign } from '../../shared/domain.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
-import { edgesBeyond } from './beyond.ts';
+import { aboutBeyond } from './beyond.ts';
+import { aboutRemoved } from './removals.ts';
 
 const pictureSide = 1536;
 const closeUpSide = 1024;
@@ -70,25 +71,25 @@ type Shown = {
   /** The people and signs of the original, which are in every version. */
   readonly people: ReadonlyArray<Person>;
   readonly signs: ReadonlyArray<Sign>;
+  readonly removed: ReadonlyArray<string>;
+  readonly wish: string | null;
 };
 
-/** What to know about versions that have the original's signs. */
+/** What to know about versions made as the user wanted. */
+const aboutWish = (wish: string | null): ReadonlyArray<string> =>
+  wish === null
+    ? []
+    : [
+        `Whoever took the photo wanted this, so it is no fault, but it is one when it wasn’t done: “${wish}”`,
+      ];
+
+/** What to know about the signs of versions. */
 const aboutSigns = (signs: ReadonlyArray<Sign>): ReadonlyArray<string> =>
   signs.length === 0
     ? []
     : [
-        `These signs were put back into every version from the original, pixel by pixel, so they still say what they said, however small or soft they look: ${signs.map(({ text }) => `“${text}”`).join(', ')}. Judge only whether they sit naturally where they are, and whether any other text has changed.`,
+        `These signs were compared letter by letter, and where a version got one wrong, it was put back from the original, pixel by pixel. So they still say what they said, however small or soft they look: ${signs.map(({ text }) => `“${text}”`).join(', ')}. Judge only whether they sit naturally where they are, and whether any other text has changed.`,
       ];
-
-/** What to know about versions that continue the scene. */
-const aboutBeyond = (crop: Box): ReadonlyArray<string> => {
-  const edges = edgesBeyond(crop);
-  return edges === null
-    ? []
-    : [
-        `The plain grey area at the ${edges} of the original is not part of the photo. The edit was asked to fill it by continuing the scene and completing what the edge of the photo cuts off, so that is no fault and changes neither the moment nor the place. It is a fault when grey is left, when a seam shows where the photo ended, when what was completed has the wrong shape or anatomy, and when people, further animals, text or anything else that draws attention was added there.`,
-      ];
-};
 
 /** A picture, with its subject close up when that is small, and its faces. */
 const looks = Effect.fn('looks')(function* (
@@ -125,14 +126,14 @@ const looks = Effect.fn('looks')(function* (
 });
 
 export type Review = {
-  /** The file of the best version, or null when each has a fault. */
-  readonly best: string | null;
+  /** The versions without a fault, counted from 0, the best one first. */
+  readonly good: ReadonlyArray<number>;
   readonly notes: string;
 };
 
-/** Chooses the best version of an edit. */
+/** Finds the versions of an edit that may take the place of the original. */
 export const review = Effect.fn('review')(function* (
-  pick: Pick,
+  description: string,
   shown: Shown,
   files: {
     readonly original: string;
@@ -149,10 +150,12 @@ export const review = Effect.fn('review')(function* (
     name: 'assessment',
     schema: Assessment,
     pieces: [
-      `The photo: ${pick.description}`,
+      `The photo: ${description}`,
       ...original,
       ...edited.flat(),
       ...aboutSigns(shown.signs),
+      ...aboutRemoved(shown.removed),
+      ...aboutWish(shown.wish),
       ...aboutBeyond(shown.crop),
       question(files.versions.length),
     ],
@@ -160,11 +163,10 @@ export const review = Effect.fn('review')(function* (
   const known = assessments
     .filter(({ version }) => files.versions[version - 1] !== undefined)
     .toSorted((left, right) => right.beauty - left.beauty);
-  const best = known.find(passes);
+  const good = known.filter(passes);
   const result: Review = {
-    best:
-      best === undefined ? null : (files.versions[best.version - 1] ?? null),
-    notes: best?.notes ?? known.map(({ notes }) => notes).join(' '),
+    good: good.map(({ version }) => version - 1),
+    notes: good[0]?.notes ?? known.map(({ notes }) => notes).join(' '),
   };
   return result;
 });
