@@ -18,7 +18,8 @@ import {
 } from '../pixels/raster.ts';
 import { averaging } from '../pixels/smooth.ts';
 import { matteOf } from './matte.ts';
-import { grown, personMask } from './outline.ts';
+import { featuresMask, personMask } from './outline.ts';
+import { replacedPart } from './seam.ts';
 
 // Everything is measured in a small view in which the face is this wide, so a
 // large and a small face are treated alike.
@@ -26,10 +27,6 @@ const faceWidth = 40;
 /** How much of the frame around the person is looked at, in face widths. */
 const margin = 0.6;
 
-/** What is replaced, from how much of a pixel is the person. */
-const slightly = 0.4;
-/** How far beyond that, so nothing is left of the edit's person. */
-const reach = { grow: 1, edge: 1 };
 /** How closely the full-size picture's edges are followed. */
 const edgeRadius = 1;
 const edgeCalm = 0.0005;
@@ -38,6 +35,9 @@ const crisp = 4;
 const half = 0.5;
 /** What pixels near the edge count where there are no others. */
 const doubtful = 0.03;
+
+const mixed = (part: number, person: number, surroundings: number): number =>
+  part * person + (1 - part) * surroundings;
 
 const frameAround = ({ face, outline }: Person, picture: Size): Frame => {
   const extra = (face.right - face.left) * picture.width * margin;
@@ -81,25 +81,48 @@ const viewOf = (original: Raster, edit: Raster, person: Person): View => {
   };
   const before = shrunkLight(original, frame, size);
   const after = shrunkLight(edit, frame, size);
-  const mask = personMask(person, original, frame, size);
+  const view = { picture: original, frame, size };
+  const mask = personMask(person, view);
   const colours = mapPlanes(before, (plane) => plane.map(srgbOf));
   const { matte, inside, outside } = matteOf(colours, mask, size);
-  // The edit's person may reach a little further than the original's.
-  const inEdit = matteOf(
-    mapPlanes(after, (plane) => plane.map(srgbOf)),
-    mask,
-    size,
-  ).matte;
   const everywhere = new Float32Array(mask.length).fill(1);
+  const personLight = lightChange(
+    before,
+    after,
+    inside.map((part, index) => part + (matte[index] ?? 0) * doubtful),
+    size,
+  );
+  const backgroundLight = lightChange(
+    before,
+    after,
+    outside.map((part, index) => part + (1 - (matte[index] ?? 0)) * doubtful),
+    size,
+  );
+  const relitWith = (partAt: (index: number) => number): Planes =>
+    mapPlanes(before, (plane, channel) =>
+      plane.map((light, index) =>
+        relit(
+          light,
+          mixed(
+            partAt(index),
+            personLight[channel][index] ?? 0,
+            backgroundLight[channel][index] ?? 0,
+          ),
+        ),
+      ),
+    );
   return {
     frame,
     size,
-    replaced: grown(
-      matte.map((part, index) =>
-        Math.max(part, inEdit[index] ?? 0) > slightly ? 1 : 0,
-      ),
+    replaced: replacedPart(
+      matte,
+      featuresMask(person, view),
+      {
+        edit: after,
+        relit: relitWith((index) => matte[index] ?? 0),
+        relitSurroundings: relitWith(() => 0),
+      },
       size,
-      reach,
     ),
     inside,
     person: guidedFilter(
@@ -107,18 +130,8 @@ const viewOf = (original: Raster, edit: Raster, person: Person): View => {
       averaging(everywhere, size, edgeRadius),
       edgeCalm,
     )(matte),
-    personLight: lightChange(
-      before,
-      after,
-      inside.map((part, index) => part + (matte[index] ?? 0) * doubtful),
-      size,
-    ),
-    backgroundLight: lightChange(
-      before,
-      after,
-      outside.map((part, index) => part + (1 - (matte[index] ?? 0)) * doubtful),
-      size,
-    ),
+    personLight,
+    backgroundLight,
   };
 };
 
@@ -158,9 +171,11 @@ export const keepPerson = (
         );
         const part = personPart(view, read, pixel);
         for (const channel of channels) {
-          const change =
-            part * read(view.personLight[channel]) +
-            (1 - part) * read(view.backgroundLight[channel]);
+          const change = mixed(
+            part,
+            read(view.personLight[channel]),
+            read(view.backgroundLight[channel]),
+          );
           const light = relit(lightAt(pixel[channel] ?? 0), change);
           edit.pixels[index + channel] = Math.round(
             replaced * srgbOf(light) * brightest +

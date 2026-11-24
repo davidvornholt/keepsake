@@ -87,15 +87,31 @@ describe('keepPerson', () => {
     }
   });
 
-  it('covers a person the edit made wider', () => {
+  it('leaves no second edge where the edit made a person wider', () => {
     const edit = picture((x) =>
       x >= 60 && x < 134 ? skin(x, 2, 2) : brighterWall,
     );
     keepPerson(original, edit, person);
-    // No line of the edit's person is left at their edge.
-    for (const x of [132, 133, 134, 135, 136]) {
+    const isWall = (x: number) => {
       const [red, , blue] = at(edit, x, 80);
-      expect(blue).toBeGreaterThan(red + 40);
+      return blue > red + 40;
+    };
+    for (let x = 120; x < 133; x += 1) {
+      expect(isWall(x)).toBe(false);
+    }
+    for (let x = 136; x < 150; x += 1) {
+      expect(isWall(x)).toBe(true);
+    }
+  });
+
+  it('keeps a person the edit made slimmer', () => {
+    const edit = picture((x) =>
+      x >= 75 && x < 115 ? skin(x, 2, 2) : brighterWall,
+    );
+    keepPerson(original, edit, person);
+    for (const x of [66, 70, 120, 124]) {
+      const [red, , blue] = at(edit, x, 80);
+      expect(red).toBeGreaterThan(blue);
     }
   });
 

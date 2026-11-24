@@ -33,7 +33,7 @@ describe('personMask', () => {
     face: { left: 0.3, top: 0.1, right: 0.5, bottom: 0.5 },
     outline: square,
   };
-  const mask = personMask(person, picture, frame, size);
+  const mask = personMask(person, { picture, frame, size });
 
   it('has the outline and the face, which may be missing from it', () => {
     expect(at(mask, 8, 12)).toBe(1);
@@ -45,7 +45,9 @@ describe('personMask', () => {
 
   it('sees only the frame', () => {
     const right = { left: 60, top: 0, width: 40, height: 100 };
-    expect(Math.max(...personMask(person, picture, right, size))).toBe(0);
+    expect(
+      Math.max(...personMask(person, { picture, frame: right, size })),
+    ).toBe(0);
   });
 });
 
@@ -54,7 +56,7 @@ describe('grown and inner', () => {
     face: { left: 0.3, top: 0.4, right: 0.5, bottom: 0.6 },
     outline: square,
   };
-  const mask = personMask(person, picture, frame, size);
+  const mask = personMask(person, { picture, frame, size });
 
   it('reach further out and less far', () => {
     const shape = { grow: 1, edge: 0 };
