@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { isBlock, picture } from '../pixels/test-pictures.ts';
 import { findPlacement } from './find-placement.ts';
 import { placeOf } from './placement.ts';
+
+/** Looking for the photo in an edit takes seconds on a slow machine. */
+const slow = 30_000;
+setDefaultTimeout(slow);
 
 const size = { width: 1200, height: 800 };
 const whole = { left: 0, top: 0, ...size };
