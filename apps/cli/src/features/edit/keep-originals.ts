@@ -37,9 +37,19 @@ const boundsOf = ({ face, outline }: Person): Box =>
     ...outline.map(({ x, y }) => ({ left: x, top: y, right: x, bottom: y })),
   ]);
 
+/** The texts and logos on a person. */
+const writtenOn = (
+  person: Person,
+  signs: ReadonlyArray<Sign>,
+): ReadonlyArray<Sign> => signs.filter(({ box }) => isMostlyOn(person, box));
+
+/** The signs that are on nobody. */
+const signsApart = ({ people, signs }: Originals): ReadonlyArray<Sign> =>
+  signs.filter(({ box }) => !people.some((person) => isMostlyOn(person, box)));
+
 /** Puts people and signs back where an edit has moved them. Changes `edit`. */
 const keepMoved = (
-  { people, signs }: Originals,
+  originals: Originals,
   original: Raster,
   edit: Raster,
   {
@@ -48,7 +58,7 @@ const keepMoved = (
   }: { readonly photo: Frame; readonly placement: Placement },
 ): void => {
   const moved = placed(original, edit, photo, placement);
-  for (const person of people) {
+  for (const person of originals.people) {
     const rough = placedPerson(person, placement, original);
     const shift = shiftOf(moved, edit, frameOf(boundsOf(rough), original));
     const exact = movedOn(placement, shift);
@@ -56,9 +66,12 @@ const keepMoved = (
       placed(original, edit, photo, exact),
       edit,
       placedPerson(person, exact, original),
+      writtenOn(person, originals.signs).map(
+        (sign) => placedSign(sign, exact, original).box,
+      ),
     );
   }
-  for (const sign of signs) {
+  for (const sign of signsApart(originals)) {
     keepSign(moved, edit, placedSign(sign, placement, original));
   }
 };
@@ -68,27 +81,30 @@ const keepMoved = (
  * shows them. What is written on a person comes back with them. Changes `edit`.
  */
 export const putBack = (
-  { people, signs: everySign }: Originals,
+  originals: Originals,
   original: Raster,
   edit: Raster,
   crop: Box,
 ): void => {
-  const signs = everySign.filter(
-    ({ box }) => !people.some((person) => isMostlyOn(person, box)),
-  );
   const photo = frameOf(within(wholePicture, crop), original);
   const placement = findPlacement(original, edit, photo);
   if (placement !== null || edgesBeyond(crop) !== null) {
-    keepMoved({ people, signs }, original, edit, {
+    keepMoved(originals, original, edit, {
       photo,
       placement: placement ?? unmoved,
     });
     return;
   }
-  for (const person of people) {
-    keepPerson(original, edit, person);
+  for (const person of originals.people) {
+    const written = writtenOn(person, originals.signs);
+    keepPerson(
+      original,
+      edit,
+      person,
+      written.map(({ box }) => box),
+    );
   }
-  for (const sign of signs) {
+  for (const sign of signsApart(originals)) {
     keepSign(original, edit, sign);
   }
 };

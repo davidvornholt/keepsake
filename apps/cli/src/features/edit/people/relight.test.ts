@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { Box } from '../../../shared/domain.ts';
 import type { Raster } from '../../../shared/pictures.ts';
 import { lightAt, lightOf, srgbOf } from '../pixels/raster.ts';
 import { keepPerson } from './relight.ts';
@@ -68,7 +69,7 @@ const original = picture((x) => (isPerson(x) ? skin(x, 0, 1) : wall));
 describe('keepPerson', () => {
   it('keeps the features and takes over the light', () => {
     const edit = picture((x) => (isPerson(x) ? skin(x, 2, 2) : brighterWall));
-    keepPerson(original, edit, person);
+    keepPerson(original, edit, person, []);
     // Stripes are where the original has them, not where the edit had.
     expect(at(edit, 92, 80)[1]).toBeLessThan(at(edit, 94, 80)[1] - 20);
     const gain = meanLight(edit, 80, 112) / meanLight(original, 80, 112);
@@ -78,7 +79,7 @@ describe('keepPerson', () => {
 
   it('leaves the surroundings to the edit, up to the person’s edge', () => {
     const edit = picture((x) => (isPerson(x) ? skin(x, 2, 2) : brighterWall));
-    keepPerson(original, edit, person);
+    keepPerson(original, edit, person, []);
     for (const x of [10, 50, 54, 57, 133, 137, 150]) {
       const [red, green, blue] = at(edit, x, 80);
       expect(Math.abs(red - brighterWall[0])).toBeLessThan(8);
@@ -91,7 +92,7 @@ describe('keepPerson', () => {
     const edit = picture((x) =>
       x >= 60 && x < 134 ? skin(x, 2, 2) : brighterWall,
     );
-    keepPerson(original, edit, person);
+    keepPerson(original, edit, person, []);
     const isWall = (x: number) => {
       const [red, , blue] = at(edit, x, 80);
       return blue > red + 40;
@@ -108,16 +109,43 @@ describe('keepPerson', () => {
     const edit = picture((x) =>
       x >= 75 && x < 115 ? skin(x, 2, 2) : brighterWall,
     );
-    keepPerson(original, edit, person);
+    keepPerson(original, edit, person, []);
     for (const x of [66, 70, 120, 124]) {
       const [red, , blue] = at(edit, x, 80);
       expect(red).toBeGreaterThan(blue);
     }
   });
 
+  it('keeps what is written near the edge of a person', () => {
+    /** Lines that an edit draws elsewhere. */
+    const written = (shift: number, dark: Colour) =>
+      picture((x, y) => {
+        if (!isPerson(x)) {
+          return wall;
+        }
+        const isLetter = x >= 122 && x < 128 && y >= 64 && y < 96;
+        return isLetter && (y + shift) % 8 < 4 ? [240, 240, 240] : dark;
+      });
+    const before = written(0, [60, 45, 36]);
+    const edit = written(4, [85, 64, 52]);
+    const contrastWith = (boxes: ReadonlyArray<Box>) => {
+      const kept = copy(edit);
+      keepPerson(before, kept, person, boxes);
+      return at(kept, 126, 81)[1] - at(kept, 126, 85)[1];
+    };
+    const box = {
+      left: 121 / size.width,
+      top: 63 / size.height,
+      right: 129 / size.width,
+      bottom: 97 / size.height,
+    };
+    expect(contrastWith([])).toBeLessThan(0);
+    expect(contrastWith([box])).toBeGreaterThan(100);
+  });
+
   it('changes nothing when the edit changed nothing', () => {
     const edit = copy(original);
-    keepPerson(original, edit, person);
+    keepPerson(original, edit, person, []);
     const most = original.pixels.reduce(
       (worst, value, index) =>
         Math.max(worst, Math.abs(value - (edit.pixels[index] ?? 0))),
@@ -132,7 +160,7 @@ describe('keepPerson', () => {
       return isPerson(x) ? [value, value, value] : [60, 70, 80];
     });
     const edit = picture((x) => (isPerson(x) ? [252, 252, 252] : [60, 70, 80]));
-    keepPerson(bright, edit, person);
+    keepPerson(bright, edit, person, []);
     const [dark] = at(edit, 92, 80);
     const [light] = at(edit, 94, 80);
     expect(dark).toBeGreaterThan(200);
@@ -142,14 +170,19 @@ describe('keepPerson', () => {
 
   it('works on a person at the border of a picture', () => {
     const edit = copy(original);
-    keepPerson(original, edit, {
-      face: { left: 0.9, top: 0, right: 1, bottom: 0.2 },
-      outline: [
-        { x: 0.85, y: 0 },
-        { x: 1, y: 0 },
-        { x: 1, y: 1 },
-      ],
-    });
+    keepPerson(
+      original,
+      edit,
+      {
+        face: { left: 0.9, top: 0, right: 1, bottom: 0.2 },
+        outline: [
+          { x: 0.85, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 },
+        ],
+      },
+      [],
+    );
     expect(edit.pixels).toHaveLength(original.pixels.length);
   });
 });

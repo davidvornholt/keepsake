@@ -97,10 +97,13 @@ describe('putBack', () => {
   });
 
   it('leaves what is written on a person to the person', () => {
-    const edits = [
-      [],
-      [{ text: 'A', box: { ...box, bottom: box.top + 0.05 } }],
-    ].map((signs) => {
+    const chest = {
+      left: box.left + 0.05,
+      top: box.top + 0.08,
+      right: box.right - 0.05,
+      bottom: box.bottom - 0.08,
+    };
+    const edits = [[], [{ text: 'A', box: chest }]].map((signs) => {
       const edit = editWith(skin);
       putBack({ ...person, signs }, photoWith(skin), edit, wholePicture);
       return edit.pixels;

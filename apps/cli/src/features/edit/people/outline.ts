@@ -87,9 +87,24 @@ const maskOf = (
 export const personMask = (person: Person, view: SmallView): Plane =>
   maskOf(view, (point) => isOn(person, point));
 
-/** 1 where the features of a face are and 0 elsewhere. */
-export const featuresMask = (person: Person, view: SmallView): Plane =>
-  maskOf(view, (point) => fromFace(person, point) <= features);
+const isInBox = ({ left, top, right, bottom }: Box, { x, y }: Point): boolean =>
+  x >= left && x <= right && y >= top && y <= bottom;
+
+/**
+ * 1 where the features of a face are, or what is written on the person, and 0
+ * elsewhere.
+ */
+export const featuresMask = (
+  person: Person,
+  written: ReadonlyArray<Box>,
+  view: SmallView,
+): Plane =>
+  maskOf(
+    view,
+    (point) =>
+      fromFace(person, point) <= features ||
+      written.some((box) => isInBox(box, point)),
+  );
 
 /** A mask with a soft edge, whose pixels at the border of the view count on. */
 const softEdge = (mask: Plane, size: Size, radius: number): Plane => {
