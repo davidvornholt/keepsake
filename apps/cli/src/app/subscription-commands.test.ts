@@ -1,5 +1,6 @@
 // biome-ignore-all lint/style/useNamingConvention: the programs' names
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import {
   failureOf,
@@ -164,6 +165,20 @@ describe('codex models', () => {
     expect(input).toContain('(the attached picture number 2)');
     expect(args).toContain('model_reasoning_effort="medium"');
     expect(env).toHaveProperty('OPENAI_API_KEY', undefined);
+  });
+
+  it('know their role and that they need no tools', async () => {
+    const instructions: Array<string> = [];
+    fakeTools.assistant = ({ args }) => {
+      const name = 'model_instructions_file=';
+      const file = args.find((arg) => arg.startsWith(name)) ?? '';
+      const path = JSON.parse(file.slice(name.length));
+      instructions.push(readFileSync(path, 'utf8'));
+      return codexAnswer(verdictAnswer);
+    };
+    await cull(astra);
+    expect(instructions[0]).toStartWith('You choose the best photos');
+    expect(instructions[0]).toContain('call no tools');
   });
 
   it('think as long as their name says', async () => {
