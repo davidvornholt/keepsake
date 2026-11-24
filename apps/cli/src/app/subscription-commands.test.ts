@@ -86,11 +86,16 @@ describe('claude models', () => {
     expect(verdict).toMatchObject({ best: ['B'], score: 8, model: opus });
   });
 
-  it('judge photos unless another model has judged them before', async () => {
-    await rm(shootFile('judge.json'));
-    fakeTools.assistant = () =>
-      claudeAnswer({ is_error: false, structured_output: verdictAnswer });
-    expect((await runOk('cull', 'lisbon')).model).toBe(opus);
+  it('look after the edits unless another model is named', async () => {
+    await runOk('cull', 'lisbon');
+    await runOk('pick', 'lisbon');
+    const asked = fakeTools.runs.length;
+    fakeTools.assistant = () => lines({ type: 'system' });
+    const { failed } = await runOk('edit', 'lisbon', 'B');
+    expect(failed[0].reason).toStartWith(opus);
+    const commands = fakeTools.runs.slice(asked).map(({ command }) => command);
+    expect(commands).toContain('claude');
+    expect(commands).not.toContain('codex');
   });
 
   it('see the photos and nothing else of this machine', async () => {
@@ -167,6 +172,13 @@ describe('codex models', () => {
     expect(env).toHaveProperty('OPENAI_API_KEY', undefined);
   });
 
+  it('judge photos unless another model has judged them before', async () => {
+    await rm(shootFile('judge.json'));
+    fakeTools.assistant = () => codexAnswer(verdictAnswer);
+    const { model } = await runOk('cull', 'lisbon');
+    expect(model).toBe('codex/gpt-6.2-sol');
+  });
+
   it('know their role and that they need no tools', async () => {
     const instructions: Array<string> = [];
     fakeTools.assistant = ({ args }) => {
@@ -177,7 +189,7 @@ describe('codex models', () => {
       return codexAnswer(verdictAnswer);
     };
     await cull(astra);
-    expect(instructions[0]).toStartWith('You choose the best photos');
+    expect(instructions[0]).toStartWith('You choose the photos');
     expect(instructions[0]).toContain('call no tools');
   });
 

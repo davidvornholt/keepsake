@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, statSync } from 'node:fs';
 import {
   asked,
+  editLisbon,
   failureOf,
+  judge,
   photosFolder,
   pickLisbon,
   runOk,
@@ -11,7 +13,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { assessment, fakeModels, verdictAnswer } from './fake-models.ts';
+import { assessment, fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
 beforeEach(() => setUp(spyOn));
@@ -20,7 +22,7 @@ afterEach(tearDown);
 describe('keepsake edit', () => {
   it('edits every picked photo and keeps what passes the review', async () => {
     await pickLisbon();
-    const result = await runOk('edit', 'lisbon');
+    const result = await editLisbon();
     expect(result).toMatchObject({
       edited: 3,
       keptFromCamera: [],
@@ -30,7 +32,7 @@ describe('keepsake edit', () => {
     expect(fakeModels.edits).toHaveLength(3);
     expect(fakeModels.edits[0]?.size).toBe('3520x2352');
     expect(fakeModels.edits[0]?.prompt).toContain('from Lisbon, May 2026');
-    expect(fakeModels.edits[0]?.prompt).toContain(verdictAnswer.description);
+    expect(fakeModels.edits[0]?.prompt).toContain('A heron takes off.');
     for (const photo of ['A1', 'B', 'C']) {
       expect(
         existsSync(shootFile('edits', photo, `${photo}-keepsake.jpg`)),
@@ -52,7 +54,7 @@ describe('keepsake edit', () => {
       ],
     };
     fakeModels.answers.choice = { best: 2, reason: 'Closer is better.' };
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     expect(fakeModels.edits[0]?.size).toBe('2576x3216');
     expect(await shootJson('edits', 'B', 'crop.json')).toMatchObject({
       aspect: '4:5',
@@ -79,7 +81,7 @@ describe('keepsake edit', () => {
       crops: [tight('9:16', 'Tall.'), tight('3:2', 'Tight.')],
     };
     fakeModels.answers.choice = { best: 2, reason: 'Closer is better.' };
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     expect(asked('choice')[0]?.images).toBe(2);
     const { aspect, box } = await shootJson('edits', 'B', 'crop.json');
     expect(aspect).toBe('3:2');
@@ -91,12 +93,12 @@ describe('keepsake edit', () => {
 
   it('edits nothing twice, unless told to start over', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon');
-    await runOk('edit', 'lisbon');
+    await editLisbon();
+    await editLisbon();
     expect(fakeModels.edits).toHaveLength(3);
     const camera = shootFile('edits', 'B', 'B.jpg');
     const { mtimeMs } = statSync(camera);
-    await runOk('edit', 'lisbon', 'B', '--again');
+    await editLisbon('B', '--again');
     expect(fakeModels.edits).toHaveLength(4);
     // Immich would show it twice if it were made anew.
     expect(statSync(camera).mtimeMs).toBe(mtimeMs);
@@ -111,7 +113,7 @@ describe('keepsake edit', () => {
           : [assessment(2, { beauty: 9 }), assessment(1)],
       question,
     });
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     expect(fakeModels.edits).toHaveLength(2);
     expect(fakeModels.edits[0]?.prompt).not.toContain('It has two heads');
     expect(fakeModels.edits[1]?.prompt).toContain('It has two heads.');
@@ -123,16 +125,14 @@ describe('keepsake edit', () => {
 
   it('marks what an image model made, with the score and a caption', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     const marking = fakeTools.runs.find(
       ({ command, args }) =>
         command === 'exiftool' &&
         args.some((arg) => arg.includes('DigitalSourceType')),
     );
     expect(marking?.args).toContain('-XMP-xmp:Rating=4');
-    expect(marking?.args).toContain(
-      `-XMP-dc:Description=${verdictAnswer.description}`,
-    );
+    expect(marking?.args).toContain('-XMP-dc:Description=A heron takes off.');
   });
 });
 
@@ -156,14 +156,14 @@ describe('keepsake edit, in another time zone', () => {
     );
     // Scanning again without it keeps it.
     await runOk('scan', photosFolder(), '--name', 'lisbon');
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     const time = '-EXIF:DateTimeOriginal=2026:03:30 09:00:00';
     expect(timesWritten()).toEqual([time, time]);
   });
 
   it('leaves the camera’s clock alone otherwise', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     expect(timesWritten()).toEqual([]);
   });
 
@@ -180,17 +180,10 @@ describe('keepsake edit, in another time zone', () => {
 });
 
 describe('keepsake edit, with named photos', () => {
-  it('asks what a photo shows that isn’t the best of its moment', async () => {
+  it('edits one that isn’t the best of its moment', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon', 'B', 'A2');
+    expect((await editLisbon('A2')).edited).toBe(1);
     expect(asked('description')).toHaveLength(1);
-    const prompts = fakeModels.edits.map(({ prompt }) => prompt);
-    expect(
-      prompts.filter((prompt) => prompt.includes('A heron takes off.')),
-    ).toHaveLength(1);
-    expect(
-      prompts.filter((prompt) => prompt.includes(verdictAnswer.description)),
-    ).toHaveLength(1);
   });
 });
 
@@ -214,7 +207,7 @@ describe('keepsake edit, with people', () => {
         },
       ],
     };
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     const people = await shootJson('edits', 'B', 'people.json');
     // A person without a face or an outline can't be kept.
     expect(people).toHaveLength(1);
@@ -234,7 +227,7 @@ describe('keepsake edit, with people', () => {
 
   it('finishes what the model made when nobody is in the photo', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     expect(asked('people')).toHaveLength(1);
     expect(existsSync(shootFile('edits', 'B', 'version-1.png'))).toBe(true);
     expect(existsSync(shootFile('edits', 'B', 'version-1-kept.png'))).toBe(
@@ -255,7 +248,7 @@ describe('keepsake edit, with signs', () => {
         { part: 1, text: 'CAFE', box: { ...box, right: 0.2 } },
       ],
     };
-    const result = await runOk('edit', 'lisbon', 'B');
+    const result = await editLisbon('B');
     expect(result.edited).toBe(1);
     expect(await shootJson('edits', 'B', 'signs.json')).toEqual([
       { text: 'HOTEL', box },
@@ -270,7 +263,7 @@ describe('keepsake edit, with signs', () => {
 
   it('says nothing about signs when there are none', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     expect(asked('signs')).toHaveLength(1);
     expect(
       asked('assessment')[0]?.texts.some((text) => text.includes('signs')),
@@ -286,7 +279,7 @@ describe('keepsake edit, when something goes wrong', () => {
         assessment(1, { samePlace: false, notes: 'Another beach.' }),
       ],
     };
-    const result = await runOk('edit', 'lisbon', 'B');
+    const result = await editLisbon('B');
     expect(result.edited).toBe(0);
     expect(result.keptFromCamera).toEqual([
       { photo: 'B', reason: 'Another beach.' },
@@ -306,7 +299,7 @@ describe('keepsake edit, when something goes wrong', () => {
         { error: { code: 'moderation_blocked', message: 'refused' } },
         { status: 400 },
       );
-    const result = await runOk('edit', 'lisbon', 'B');
+    const result = await editLisbon('B');
     expect(result.keptFromCamera[0].reason).toContain('refused');
     expect(fakeModels.edits).toHaveLength(1);
   });
@@ -315,7 +308,7 @@ describe('keepsake edit, when something goes wrong', () => {
     await pickLisbon();
     fakeModels.editAnswer = () =>
       Response.json({ error: { message: 'no such model' } }, { status: 404 });
-    const result = await runOk('edit', 'lisbon', 'B');
+    const result = await editLisbon('B');
     expect(result.failed).toEqual([
       {
         photo: 'B',
@@ -326,14 +319,21 @@ describe('keepsake edit, when something goes wrong', () => {
 
   it('starts no photo beyond the budget', async () => {
     await pickLisbon();
-    const result = await runOk('edit', 'lisbon', '--budget', '1');
+    const result = await editLisbon('--budget', '1');
     expect(result.edited).toBe(2);
     expect(result.overBudget).toHaveLength(1);
   });
 
   it('refuses a photo nobody judged', async () => {
     await pickLisbon();
-    expect((await failureOf('edit', 'lisbon', 'Z'))._tag).toBe('InvalidInput');
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      'Z',
+      '--review-model',
+      judge,
+    );
+    expect(failure._tag).toBe('InvalidInput');
   });
 
   it('refuses a provider that can’t edit photos', async () => {

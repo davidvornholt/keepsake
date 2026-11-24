@@ -1,9 +1,14 @@
-import type { Person, Point } from '../../../shared/domain.ts';
+import type { Box, Person, Point } from '../../../shared/domain.ts';
 import type { Frame, Size } from '../../../shared/pictures.ts';
 import type { Plane } from '../pixels/raster.ts';
 import { averaging, gathered } from '../pixels/smooth.ts';
 
 const half = 0.5;
+/** How much of a face shows its features and not its edge. */
+const features = 0.9;
+/** How closely a box is looked at. */
+const perSide = 5;
+const samples = perSide ** 2;
 
 /** Whether a point is inside an outline. */
 export const isInside = (
@@ -26,20 +31,43 @@ export const isInside = (
   return inside;
 };
 
-/** Whether a point is in the ellipse that fills a face's box. */
-const isInFace = ({ face }: Person, { x, y }: Point): boolean => {
+/** How far from the middle of a face a point is, 1 being the face's edge. */
+const fromFace = ({ face }: Person, { x, y }: Point): number => {
   const across =
     (x - (face.left + face.right) * half) / (face.right - face.left);
   const down = (y - (face.top + face.bottom) * half) / (face.bottom - face.top);
-  return across * across + down * down <= half * half;
+  return Math.hypot(across, down) / half;
 };
 
-/** 1 where a person is and 0 elsewhere, in a small view of a frame. */
-export const personMask = (
-  person: Person,
-  picture: Size,
-  frame: Frame,
-  size: Size,
+/** Whether a point is on a person. An outline may leave out the face. */
+const isOn = (person: Person, point: Point): boolean =>
+  isInside(person.outline, point) || fromFace(person, point) <= 1;
+
+/** Whether most of a box is on a person, such as one around a cap's logo. */
+export const isMostlyOn = (person: Person, box: Box): boolean => {
+  const places = Array.from({ length: samples }, (_, place) => ({
+    x:
+      box.left +
+      (((place % perSide) + half) / perSide) * (box.right - box.left),
+    y:
+      box.top +
+      ((Math.floor(place / perSide) + half) / perSide) * (box.bottom - box.top),
+  }));
+  const on = places.filter((place) => isOn(person, place));
+  return on.length > half * samples;
+};
+
+/** A small view of a frame of a picture. */
+export type SmallView = {
+  readonly picture: Size;
+  readonly frame: Frame;
+  readonly size: Size;
+};
+
+/** 1 where a small view shows a place of some kind and 0 elsewhere. */
+const maskOf = (
+  { picture, frame, size }: SmallView,
+  isOfKind: (point: Point) => boolean,
 ): Plane =>
   Float32Array.from({ length: size.width * size.height }, (_, index) => {
     const column = index % size.width;
@@ -52,8 +80,16 @@ export const personMask = (
         (frame.top + ((row + half) * frame.height) / size.height) /
         picture.height,
     };
-    return isInside(person.outline, point) || isInFace(person, point) ? 1 : 0;
+    return isOfKind(point) ? 1 : 0;
   });
+
+/** 1 where a person is and 0 elsewhere. */
+export const personMask = (person: Person, view: SmallView): Plane =>
+  maskOf(view, (point) => isOn(person, point));
+
+/** 1 where the features of a face are and 0 elsewhere. */
+export const featuresMask = (person: Person, view: SmallView): Plane =>
+  maskOf(view, (point) => fromFace(person, point) <= features);
 
 /** A mask with a soft edge, whose pixels at the border of the view count on. */
 const softEdge = (mask: Plane, size: Size, radius: number): Plane => {

@@ -138,6 +138,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         directory,
         /** The camera's own full-size JPEG. */
         camera: path.join(directory, `${base}.jpg`),
+        /** What the photo shows, if another model judged it. */
+        description: path.join(directory, 'description.json'),
         crop: path.join(directory, 'crop.json'),
         /** The cropped photo the image model gets. */
         input: path.join(directory, 'input.jpg'),

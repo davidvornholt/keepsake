@@ -4,18 +4,16 @@ import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import type { OpenShoot } from '../../shared/store.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
+import { variedBest } from './varied.ts';
 
 /** How many photos are compared with each other at once. */
 const groupSize = 8;
 /** How many different groups each photo is in. */
 const rounds = 3;
 const pictureSide = 768;
-const concurrency = 6;
-/** What one point of the score is worth next to the comparisons. */
-const scoreWeight = 0.1;
-
+const concurrency = 18;
 const role =
-  'You help someone choose which photos of a private shoot to print. Each photo will be edited by a strong image model first, which can improve light, colour, sky, sharpness and framing, so judge what the photo shows and what it could become.';
+  'You choose which photos go into the album of a private trip or day out when it has no room for all of them. Each photo will be edited by a strong image model first, which can improve light, colour, sky, sharpness and framing, so judge what the photo shows and what it could become. An album lives from variety: places, streets, buildings, views, food, plants, people and what they do, animals, funny or telling moments, small details, and how these come together in one picture.';
 
 const Ranking = Schema.Struct({
   bestFirst: Schema.Array(Schema.Int).annotate({
@@ -24,7 +22,7 @@ const Ranking = Schema.Struct({
 });
 
 const question =
-  'Which of these would you most like to see on your wall? Rank all of them, best first.';
+  'Which of these would you miss most in the album? Rank all of them, the one you would miss most first.';
 
 /**
  * Splits items into groups, differently in every round, so each item meets
@@ -102,19 +100,23 @@ export const bestOf = Effect.fn('bestOf')(function* (
   const compared = yield* inSteps('rank', groups, concurrency, (group) =>
     compare(open, group),
   );
+  // The comparisons are worth one point of the score: they tell photos apart
+  // that the score puts on the same or the next step.
   const value = new Map(
-    picks.map(({ photo, score }) => [photo, score * scoreWeight] as const),
+    picks.map(({ photo, score }) => [photo, score] as const),
   );
   for (const { photo, points } of compared.flat()) {
     value.set(photo, (value.get(photo) ?? 0) + points / rounds);
   }
   const best = new Set(
-    picks
-      .map(({ photo }) => photo)
-      .toSorted(
-        (left, right) => (value.get(right) ?? 0) - (value.get(left) ?? 0),
-      )
-      .slice(0, maximum),
+    variedBest(
+      picks.map((one) => ({
+        pick: one,
+        value: value.get(one.photo) ?? 0,
+        takenAt: open.photos.get(one.photo)?.takenAt ?? '',
+      })),
+      maximum,
+    ),
   );
-  return picks.filter(({ photo }) => best.has(photo));
+  return picks.filter((one) => best.has(one));
 });

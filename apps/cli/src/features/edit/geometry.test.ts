@@ -52,12 +52,15 @@ describe('fitAspect', () => {
     });
   });
 
-  it('reads a box whose sides are the wrong way round', () => {
-    const box = { left: 0.6, top: 0.65, right: 0.4, bottom: 0.35 };
-    const tidy = { left: 0.4, top: 0.35, right: 0.6, bottom: 0.65 };
-    expect(fitAspect(box, camera, '3:2')).toEqual(
-      fitAspect(tidy, camera, '3:2'),
-    );
+  it('goes beyond the picture only where the box does', () => {
+    const box = { left: -0.1, top: 0.2, right: 0.6, bottom: 0.8 };
+    const crop = fitAspect(box, camera, '3:2');
+    expect(crop.left).toBeCloseTo(-0.1);
+    expect(crop.right).toBeCloseTo(0.6);
+    const square = fitAspect(box, camera, '1:1');
+    expect(square.top).toBeCloseTo(0);
+    expect(square.bottom).toBeCloseTo(1);
+    expect(square.left).toBeGreaterThanOrEqual(-0.1);
   });
 });
 
@@ -96,6 +99,14 @@ describe('exactFrame', () => {
     expect(frame.left + frame.width).toBeLessThanOrEqual(camera.width);
     expect(frame.top + frame.height).toBeLessThanOrEqual(camera.height);
     expect(frame.width).toBeGreaterThan(camera.width * 0.99);
+  });
+
+  it.each(aspectNames)('is never a pixel outside a %s crop', (aspect) => {
+    const corner = { left: 0.71, top: 0.67, right: 1, bottom: 1 };
+    const crop = fitAspect(corner, camera, aspect);
+    const frame = exactFrame(crop, camera, outputSize(aspect));
+    expect(frame.left + frame.width).toBeLessThanOrEqual(camera.width);
+    expect(frame.top + frame.height).toBeLessThanOrEqual(camera.height);
   });
 });
 

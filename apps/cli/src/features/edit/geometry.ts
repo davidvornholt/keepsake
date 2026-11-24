@@ -1,4 +1,4 @@
-import { clamp, tidyBox } from '../../shared/boxes.ts';
+import { around, clamp, tidyBox, wholePicture } from '../../shared/boxes.ts';
 import {
   type AspectName,
   aspectNames,
@@ -14,16 +14,20 @@ const smallestLongSide = 1600;
 
 /**
  * The smallest crop of the wanted shape that shows the whole box, as large as
- * a crop has to be, and moved inside the picture.
+ * a crop has to be. It goes beyond the picture only as far as the box does.
  */
-export const fitAspect = (box: Box, size: Size, aspect: AspectName): Box => {
+export const fitAspect = (wanted: Box, size: Size, aspect: AspectName): Box => {
   const ratio = ratioOf(aspect);
-  const wanted = tidyBox(box);
+  const bounds = around([wholePicture, wanted]);
+  const most = {
+    width: (bounds.right - bounds.left) * size.width,
+    height: (bounds.bottom - bounds.top) * size.height,
+  };
   const wantedWidth = (wanted.right - wanted.left) * size.width;
   const wantedHeight = (wanted.bottom - wanted.top) * size.height;
   const smallestWidth =
     ratio >= 1 ? smallestLongSide : smallestLongSide * ratio;
-  const widest = Math.min(size.width, size.height * ratio);
+  const widest = Math.min(most.width, most.height * ratio);
   const width = Math.min(
     Math.max(wantedWidth, wantedHeight * ratio, smallestWidth),
     widest,
@@ -31,13 +35,13 @@ export const fitAspect = (box: Box, size: Size, aspect: AspectName): Box => {
   const height = width / ratio;
   const left = clamp(
     ((wanted.left + wanted.right) / half) * size.width - width / half,
-    0,
-    size.width - width,
+    bounds.left * size.width,
+    bounds.right * size.width - width,
   );
   const top = clamp(
     ((wanted.top + wanted.bottom) / half) * size.height - height / half,
-    0,
-    size.height - height,
+    bounds.top * size.height,
+    bounds.bottom * size.height - height,
   );
   return {
     left: left / size.width,
@@ -104,10 +108,11 @@ export const exactFrame = (box: Box, size: Size, output: Size): Frame => {
   const height = width / ratio;
   const left = box.left * size.width + (boxWidth - width) / half;
   const top = box.top * size.height + (boxHeight - height) / half;
+  // Each side is rounded, so none ends up a pixel outside the box.
   return {
     left: Math.round(left),
     top: Math.round(top),
-    width: Math.round(width),
-    height: Math.round(height),
+    width: Math.round(left + width) - Math.round(left),
+    height: Math.round(top + height) - Math.round(top),
   };
 };

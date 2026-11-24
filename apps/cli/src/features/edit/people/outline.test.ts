@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { grown, inner, isInside, personMask } from './outline.ts';
+import { grown, inner, isInside, isMostlyOn, personMask } from './outline.ts';
 
 const square = [
   { x: 0.2, y: 0.4 },
@@ -33,7 +33,7 @@ describe('personMask', () => {
     face: { left: 0.3, top: 0.1, right: 0.5, bottom: 0.5 },
     outline: square,
   };
-  const mask = personMask(person, picture, frame, size);
+  const mask = personMask(person, { picture, frame, size });
 
   it('has the outline and the face, which may be missing from it', () => {
     expect(at(mask, 8, 12)).toBe(1);
@@ -45,7 +45,28 @@ describe('personMask', () => {
 
   it('sees only the frame', () => {
     const right = { left: 60, top: 0, width: 40, height: 100 };
-    expect(Math.max(...personMask(person, picture, right, size))).toBe(0);
+    expect(
+      Math.max(...personMask(person, { picture, frame: right, size })),
+    ).toBe(0);
+  });
+});
+
+describe('isMostlyOn', () => {
+  const person = {
+    face: { left: 0.3, top: 0.1, right: 0.5, bottom: 0.5 },
+    outline: square,
+  };
+
+  it('tells a logo on a person from a sign behind them', () => {
+    const logo = { left: 0.25, top: 0.36, right: 0.35, bottom: 0.5 };
+    expect(isMostlyOn(person, logo)).toBe(true);
+    const sign = { left: 0.1, top: 0.4, right: 0.95, bottom: 0.7 };
+    expect(isMostlyOn(person, sign)).toBe(false);
+  });
+
+  it('counts a face that the outline leaves out', () => {
+    const badge = { left: 0.38, top: 0.2, right: 0.42, bottom: 0.25 };
+    expect(isMostlyOn(person, badge)).toBe(true);
   });
 });
 
@@ -54,7 +75,7 @@ describe('grown and inner', () => {
     face: { left: 0.3, top: 0.4, right: 0.5, bottom: 0.6 },
     outline: square,
   };
-  const mask = personMask(person, picture, frame, size);
+  const mask = personMask(person, { picture, frame, size });
 
   it('reach further out and less far', () => {
     const shape = { grow: 1, edge: 0 };

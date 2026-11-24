@@ -3,17 +3,25 @@ import type { Box } from './domain.ts';
 export const clamp = (value: number, low: number, high: number) =>
   Math.min(Math.max(value, low), high);
 
+/** All of a picture. */
+export const wholePicture: Box = { left: 0, top: 0, right: 1, bottom: 1 };
+
+/** A box with its sides in order. */
+export const ordered = ({ left, top, right, bottom }: Box): Box => ({
+  left: Math.min(left, right),
+  top: Math.min(top, bottom),
+  right: Math.max(left, right),
+  bottom: Math.max(top, bottom),
+});
+
 /** A box with its sides in order and inside the picture. */
-export const tidyBox = (box: Box): Box => {
-  const xs = [box.left, box.right].map((x) => clamp(x, 0, 1));
-  const ys = [box.top, box.bottom].map((y) => clamp(y, 0, 1));
-  return {
-    left: Math.min(...xs),
-    top: Math.min(...ys),
-    right: Math.max(...xs),
-    bottom: Math.max(...ys),
-  };
-};
+export const tidyBox = ({ left, top, right, bottom }: Box): Box =>
+  ordered({
+    left: clamp(left, 0, 1),
+    top: clamp(top, 0, 1),
+    right: clamp(right, 0, 1),
+    bottom: clamp(bottom, 0, 1),
+  });
 
 /** How much of a picture's area a box covers, from 0 to 1. */
 export const coverage = ({ left, top, right, bottom }: Box): number =>

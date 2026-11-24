@@ -1,9 +1,10 @@
-import { Effect, Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { whatToDescribe } from '../../shared/describing.ts';
-import type { Pick } from '../../shared/domain.ts';
+import type { Box } from '../../shared/domain.ts';
 import { rendered } from '../../shared/pictures.ts';
-import type { OpenShoot } from '../../shared/store.ts';
+import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { Vision } from '../../shared/vision.ts';
+import { edgesBeyond } from './beyond.ts';
 
 const pictureSide = 1024;
 
@@ -12,25 +13,38 @@ const role =
 
 const Description = Schema.Struct({ description: Schema.String });
 
-/** The pick with what its own photo shows, not another frame of its moment. */
-export const described = Effect.fn('described')(function* (
+/**
+ * Says what a photo shows once it is framed, unless it has said so before. What
+ * the frame leaves out isn't mentioned, or the image model would bring it back.
+ */
+export const descriptionOf = Effect.fn('descriptionOf')(function* (
   open: OpenShoot,
-  pick: Pick,
+  photo: string,
+  frame: Box,
 ) {
   const vision = yield* Vision;
+  const files = open.files.edit(photo);
+  const before = yield* readJson(Description, files.description);
+  if (Option.isSome(before)) {
+    return before.value.description;
+  }
   const about =
     open.shoot.about === null ? '' : `The shoot: ${open.shoot.about}. `;
-  const { description } = yield* vision.ask({
+  const edges = edgesBeyond(frame);
+  const beyond =
+    edges === null
+      ? ''
+      : ` The plain grey area at the ${edges} is not part of it, so don't mention that.`;
+  const answer = yield* vision.ask({
     role,
     name: 'description',
     schema: Description,
     pieces: [
-      `${about}Here is one photo.`,
-      yield* rendered(open.files.preview(pick.photo), {
-        longSide: pictureSide,
-      }),
+      `${about}Here is one photo.${beyond}`,
+      yield* rendered(files.input, { longSide: pictureSide }),
       `Describe ${whatToDescribe}`,
     ],
   });
-  return { ...pick, description };
+  yield* writeJson(Description, files.description, answer);
+  return answer.description;
 });

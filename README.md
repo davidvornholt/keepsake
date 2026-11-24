@@ -6,9 +6,9 @@
 
 1. It groups the photos into moments, such as a burst of a bird taking off.
 2. A vision model finds the best frames of each moment, checks their focus at full size, and scores them. It takes more than one of a moment where they show clearly different things, such as another pose.
-3. It leaves out repeats and, when there are too many, compares the photos with each other and keeps the best.
-4. It crops each one where that makes it stronger, and an image model edits it.
-5. Image models redraw faces, so keepsake takes everyone who can be recognised from the photo itself. The vision model outlines them, keepsake puts their own pixels back into the edit, and only their light follows the edit: brighter, darker, warmer or cooler over areas too large to change a feature. The words on signs, which image models rewrite, are kept the same way.
+3. It leaves out repeats and, when there are too many, compares the photos with each other and keeps the best, with a variety of places, people, animals and the rest.
+4. It crops each one to an interesting composition, and an image model edits it. The frame may reach a little beyond the photo where a subject is cut off or has no room, and the image model continues the scene there.
+5. Image models redraw faces, so keepsake takes everyone who can be recognised from the photo itself. The vision model outlines them, keepsake puts their own pixels back into the edit, from inside up to where both show the same, and only their light follows the edit: brighter, darker, warmer or cooler over areas too large to change a feature. The words on signs, which image models rewrite, are kept the same way. Image models also show a photo a little larger or further to a side, so keepsake first finds where an edit shows it.
 6. The vision model reviews every edit against the original. Where the subject, its pose, the people or the place changed, or the edit isn't better, keepsake asks for another, and in the end falls back to the camera's own picture.
 7. It publishes the result to an album in [Immich](https://immich.app), each photo stacked on the camera's own picture.
 
@@ -33,7 +33,7 @@ Publishing needs the [photos](https://github.com/davidvornholt/photos) command, 
 
 ## Sign in
 
-Claude Opus 5.5 judges the photos through [Claude Code](https://code.claude.com), on the subscription it is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo.
+GPT-6.2 Sol chooses and crops the photos through [Codex](https://developers.openai.com/codex). Claude Opus 5.5 describes the chosen ones, marks the people and signs in them and reviews the edits through [Claude Code](https://code.claude.com). Both run on the subscription their program is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo.
 
 Edits use your own API key. With Azure, deploy `gpt-image-2.5-sunburst` under that name, then:
 
@@ -43,7 +43,7 @@ keepsake login azure --endpoint https://example.openai.azure.com
 
 It asks for the key without showing it, or reads it from stdin, checks it, and saves it to `~/.config/keepsake/credentials.json`, readable only by you. `openai` works too, with `--image-model openai/<model>`. `keepsake status` shows what this machine is signed in to.
 
-Other models can judge with `--model`: `codex/gpt-6.2-sol` asks [Codex](https://developers.openai.com/codex) on its subscription the same way, and `azure`, `openai`, `anthropic` and `google` use an API key, such as `azure/gpt-6-astra`. A subscription's model thinks with medium effort unless its name ends with another one, such as `claude/claude-opus-5-5@high`. The model that culled a shoot is used for its later steps.
+Other models can choose and crop with `--model`, and do the rest with `--review-model`. `azure`, `openai`, `anthropic` and `google` use an API key, such as `azure/gpt-6-astra`. A subscription's model thinks with medium effort unless its name ends with another one, such as `claude/claude-opus-5-5@high`. The model that culled a shoot also picks and crops its photos.
 
 ## Use
 

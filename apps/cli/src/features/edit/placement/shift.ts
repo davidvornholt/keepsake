@@ -5,7 +5,7 @@ import { averaging } from '../pixels/smooth.ts';
 
 export type Shift = { readonly x: number; readonly y: number };
 
-/** How far an edit may have moved something, in shares of the longer side. */
+/** How far an edit may have moved a sign, in shares of the longer side. */
 const furthest = 0.028;
 /** The first search is in a view this many times smaller. */
 const coarse = 4;
@@ -105,6 +105,31 @@ const grownBy = (frame: Frame, room: number): Frame => ({
   height: frame.height + 2 * room,
 });
 
+type Search = {
+  /** How far to look, in pixels. */
+  readonly room: number;
+  /** How many times smaller the view is in which it looks. */
+  readonly block: number;
+};
+
+/** About how far an edit has moved what is in a frame, and how surely. */
+export const roughShiftOf = (
+  original: Raster,
+  edit: Raster,
+  frame: Frame,
+  { room, block }: Search,
+) => {
+  const found = bestShift(
+    detailOf(original, frame, block),
+    detailOf(edit, grownBy(frame, room), block),
+  );
+  return {
+    x: clamp(found.x * block, -room, room),
+    y: clamp(found.y * block, -room, room),
+    likeness: found.likeness,
+  };
+};
+
 /** How far an edit of a photo has moved what is in a frame of the original. */
 export const shiftOf = (
   original: Raster,
@@ -113,17 +138,10 @@ export const shiftOf = (
 ): Shift => {
   const side = Math.max(original.width, original.height);
   const room = Math.ceil((furthest * side) / coarse) * coarse;
-  const rough = bestShift(
-    detailOf(original, frame, coarse),
-    detailOf(edit, grownBy(frame, room), coarse),
-  );
-  if (rough.likeness < leastLikeness) {
+  const near = roughShiftOf(original, edit, frame, { room, block: coarse });
+  if (near.likeness < leastLikeness) {
     return { x: 0, y: 0 };
   }
-  const near = {
-    x: clamp(rough.x * coarse, -room, room),
-    y: clamp(rough.y * coarse, -room, room),
-  };
   const fine = bestShift(
     detailOf(original, frame, 1),
     detailOf(

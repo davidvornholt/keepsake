@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import {
+  editLisbon,
   failureOf,
+  judge,
   pickLisbon,
   runOk,
   scanLisbon,
@@ -19,7 +21,7 @@ afterEach(tearDown);
 describe('keepsake publish', () => {
   it('uploads each finished photo on top of the camera’s, once', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon');
+    await editLisbon();
     const result = await runOk('publish', 'lisbon');
     expect(result).toMatchObject({
       album: { name: 'Lisbon, May 2026' },
@@ -39,7 +41,7 @@ describe('keepsake publish', () => {
 
   it('uploads a photo that was edited again, and names the old one', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon');
+    await editLisbon();
     await runOk('publish', 'lisbon');
     await writeFile(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');
     const result = await runOk('publish', 'lisbon');
@@ -48,7 +50,7 @@ describe('keepsake publish', () => {
 
   it('uploads a photo that wasn’t picked when it is named', async () => {
     await pickLisbon();
-    await runOk('edit', 'lisbon', 'A2');
+    await editLisbon('A2');
     const result = await runOk('publish', 'lisbon', 'A2');
     expect(result).toMatchObject({ published: 1, outdated: [] });
     expect(fakeTools.uploads[0]).toEndWith('A2-keepsake.jpg');
@@ -67,20 +69,43 @@ describe('keepsake run', () => {
   it('does everything and goes on where it stopped', async () => {
     await scanLisbon();
     const folder = (await shootJson('shoot.json')).source;
-    const result = await runOk('run', folder, '--name', 'lisbon', '--publish');
+    const result = await runOk(
+      'run',
+      folder,
+      '--name',
+      'lisbon',
+      '--review-model',
+      judge,
+      '--publish',
+    );
     expect(result.culled.moments).toBe(3);
     expect(result.picked.picked).toBe(3);
     expect(result.edited.edited).toBe(3);
     expect(result.published.published).toBe(3);
     const questions = fakeModels.asked.length;
-    await runOk('run', folder, '--name', 'lisbon', '--publish');
+    await runOk(
+      'run',
+      folder,
+      '--name',
+      'lisbon',
+      '--review-model',
+      judge,
+      '--publish',
+    );
     expect(fakeModels.asked).toHaveLength(questions);
   });
 
   it('uploads nothing unless asked to', async () => {
     await scanLisbon();
     const folder = (await shootJson('shoot.json')).source;
-    const result = await runOk('run', folder, '--name', 'lisbon');
+    const result = await runOk(
+      'run',
+      folder,
+      '--name',
+      'lisbon',
+      '--review-model',
+      judge,
+    );
     expect(result.published).toBeNull();
     expect(fakeTools.uploads).toEqual([]);
   });

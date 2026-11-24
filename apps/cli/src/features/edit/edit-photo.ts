@@ -1,4 +1,5 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
+import { tidyBox, wholePicture } from '../../shared/boxes.ts';
 import { developed } from '../../shared/develop.ts';
 import {
   Crop,
@@ -10,11 +11,13 @@ import {
 } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import {
+  frameOf,
   renderExactly,
   rendered,
   type Size,
   sizeOf,
 } from '../../shared/pictures.ts';
+import { askReviewer } from '../../shared/review-vision.ts';
 import { starsFor } from '../../shared/stars.ts';
 import {
   atomically,
@@ -26,9 +29,11 @@ import {
   writeBytes,
   writeJson,
 } from '../../shared/store.ts';
+import { edgesBeyond } from './beyond.ts';
 import { chooseCrop } from './crop.ts';
+import { descriptionOf } from './describe.ts';
 import { type CameraData, copyCameraData, finish } from './finish.ts';
-import { exactFrame, outputSize } from './geometry.ts';
+import { exactFrame, outputSize, within } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
 import { keepOriginals, type Originals } from './keep-originals.ts';
 import { findPeople } from './people/find-people.ts';
@@ -48,6 +53,12 @@ export type EditOptions = {
   readonly versions: number;
   /** Starts over, from the crop. */
   readonly again: boolean;
+};
+
+/** A photo to edit. */
+export type ToEdit = {
+  readonly pick: Pick;
+  readonly photo: Photo;
 };
 
 /** A picked photo with everything needed to edit it. */
@@ -122,13 +133,13 @@ const imageInput = Effect.fn('imageInput')(function* (job: Job, crop: Crop) {
   return size;
 });
 
-const peopleOf = Effect.fn('peopleOf')(function* ({ files }: Job) {
+const peopleOf = Effect.fn('peopleOf')(function* ({ files }: Job, crop: Crop) {
   const people = Schema.Array(Person);
   const before = yield* readJson(people, files.people);
   if (Option.isSome(before)) {
     return before.value;
   }
-  const found = yield* findPeople(files.input);
+  const found = yield* findPeople(files.input, within(wholePicture, crop.box));
   yield* writeJson(people, files.people, found);
   return found;
 });
@@ -154,7 +165,7 @@ type Prepared = {
 /** A version with the original's people and signs. */
 const withOriginals = Effect.fn('withOriginals')(function* (
   { files }: Job,
-  originals: Originals,
+  { crop: { box: crop }, originals }: Prepared,
   number: number,
 ) {
   const version = files.version(number);
@@ -164,7 +175,7 @@ const withOriginals = Effect.fn('withOriginals')(function* (
   const target = files.versionWithOriginals(number);
   if (!(yield* exists(target))) {
     yield* atomically(target, (draft) =>
-      keepOriginals(originals, {
+      keepOriginals(originals, crop, {
         original: files.input,
         version,
         target: draft,
@@ -177,10 +188,11 @@ const withOriginals = Effect.fn('withOriginals')(function* (
 /** Makes versions, unless they are there from before, and reviews them. */
 const attempt = Effect.fn('attempt')(function* (
   job: Job,
-  { crop, size, originals }: Prepared,
+  prepared: Prepared,
   number: number,
   problems: string | null,
 ) {
+  const { crop, size, originals } = prepared;
   const { files, open, photo, pick } = job;
   const image = yield* ImageModel;
   const numbers = Array.from(
@@ -192,7 +204,13 @@ const attempt = Effect.fn('attempt')(function* (
   if (!isThere.includes(true)) {
     const versions = yield* image.edit({
       picture: new Uint8Array(yield* readBytes(files.input)),
-      prompt: editPrompt(open.shoot, photo, pick, problems),
+      prompt: editPrompt({
+        shoot: open.shoot,
+        photo,
+        pick,
+        crop: crop.box,
+        problems,
+      }),
       size,
       versions: job.versions,
     });
@@ -205,11 +223,11 @@ const attempt = Effect.fn('attempt')(function* (
   }
   const made = yield* Effect.filter(numbers, isMade);
   const versions = yield* Effect.forEach(made, (version) =>
-    withOriginals(job, originals, version),
+    withOriginals(job, prepared, version),
   );
   return yield* review(
     pick,
-    { subject: crop.subject, ...originals },
+    { crop: crop.box, subject: crop.subject, ...originals },
     { original: files.input, versions },
   );
 });
@@ -246,8 +264,7 @@ export const editOf = Effect.fn('editOf')(function* (
 /** Crops, edits and reviews one photo and writes the finished file. */
 export const editPhoto = Effect.fn('editPhoto')(function* (
   open: OpenShoot,
-  pick: Pick,
-  photo: Photo,
+  { pick, photo }: ToEdit,
   options: EditOptions,
 ) {
   const files = open.files.edit(photo.id);
@@ -255,7 +272,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     yield* startOver(files);
   }
   const image = yield* ImageModel;
-  const job: Job = {
+  const chosen: Job = {
     open,
     pick,
     photo,
@@ -266,21 +283,22 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     },
     versions: options.versions,
   };
-  yield* cameraPicture(job);
-  const crop = yield* cropOf(job);
-  const size = yield* imageInput(job, crop);
-  const originals = {
-    people: yield* peopleOf(job),
-    signs: yield* signsOf(job),
-  };
-  const { best, notes, attempts } = yield* bestVersion(job, {
-    crop,
-    size,
-    originals,
-  });
+  yield* cameraPicture(chosen);
+  const crop = yield* cropOf(chosen);
+  const size = yield* imageInput(chosen, crop);
+  const description = yield* askReviewer(
+    descriptionOf(open, photo.id, crop.box),
+  );
+  const job: Job = { ...chosen, pick: { ...pick, description } };
+  const originals = yield* askReviewer(
+    Effect.all({ people: peopleOf(job, crop), signs: signsOf(job) }),
+  );
+  const { best, notes, attempts } = yield* askReviewer(
+    bestVersion(job, { crop, size, originals }),
+  );
   const caption = {
     stars: starsFor(pick.score),
-    description: pick.description,
+    description,
     ai: best !== null,
   };
   yield* atomically(files.final, (draft) =>
@@ -289,8 +307,13 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
         yield* finish(best, job.camera, draft, caption);
         return;
       }
-      // No version is good enough, so the camera's own picture is cropped.
-      const frame = exactFrame(crop.box, yield* sizeOf(files.camera), size);
+      // No version is good enough, so the camera's own picture is cropped, as
+      // far as there is one.
+      const whole = yield* sizeOf(files.camera);
+      const frame =
+        edgesBeyond(crop.box) === null
+          ? exactFrame(crop.box, whole, size)
+          : frameOf(tidyBox(crop.box), whole);
       const cropped = yield* rendered(files.camera, {
         frame,
         quality: cameraQuality,
