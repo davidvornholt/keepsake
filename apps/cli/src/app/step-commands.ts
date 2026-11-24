@@ -1,4 +1,4 @@
-import { Effect, Option } from 'effect';
+import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
 import { edit as editShoot } from '../features/edit/edit.ts';
@@ -7,7 +7,8 @@ import { pick as pickShoot } from '../features/pick/pick.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
 import { judgeOf } from '../shared/judge.ts';
-import { defaultImageModel } from '../shared/models.ts';
+import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
+import { ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
 import { openShoot } from '../shared/store.ts';
 import { Vision } from '../shared/vision.ts';
@@ -85,6 +86,10 @@ const editFlags = {
     'image-model',
     `The image model, with its provider (default ${defaultImageModel})`,
   ),
+  reviewModel: optionalString(
+    'review-model',
+    `The vision model that describes the photos, marks people and signs in them and reviews the edits, with its provider (default ${defaultReviewModel})`,
+  ),
 };
 
 const editInput = (flags: {
@@ -106,8 +111,19 @@ const editInput = (flags: {
     };
   });
 
-const imageLayer = (model: Option.Option<string>) =>
-  ImageModel.layer(Option.getOrElse(model, () => defaultImageModel));
+/** The models that edit and that look after the edits. */
+const editLayer = (flags: {
+  readonly imageModel: Option.Option<string>;
+  readonly reviewModel: Option.Option<string>;
+}) =>
+  Layer.merge(
+    ImageModel.layer(
+      Option.getOrElse(flags.imageModel, () => defaultImageModel),
+    ),
+    ReviewVision.layer(
+      Option.getOrElse(flags.reviewModel, () => defaultReviewModel),
+    ),
+  );
 
 /** Runs steps with the vision model asked for, or the shoot's own. */
 const withVision =
@@ -158,20 +174,20 @@ export const edit = Command.make(
     ...editFlags,
     again,
   },
-  ({ shoot, photos, model, imageModel, again: startOver, ...flags }) =>
+  ({ shoot, photos, model, again: startOver, ...flags }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
       yield* workOn(shoot, (open) =>
         editShoot(open, photos, { ...input, again: startOver }),
       ).pipe(
         Effect.flatMap(emitWithCost),
-        Effect.provide(imageLayer(imageModel)),
+        Effect.provide(editLayer(flags)),
         withVision(shoot, model),
       );
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(
-    'Crop the picked photos, edit them with an image model, and keep the version that passes a review, or the camera’s own picture when none does. Photos edited before are kept.',
+    'Crop the picked photos, edit them with an image model, and keep the version that passes a review, or the camera’s own picture when none does. Photos edited before are kept. `--model` is the one that crops.',
   ),
 );
 
@@ -227,10 +243,7 @@ export const run = Command.make(
           ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
           : null;
         yield* emitWithCost({ scanned, culled, picked, edited, published });
-      }).pipe(
-        Effect.provide(imageLayer(flags.imageModel)),
-        withVision(shoot, flags.model),
-      );
+      }).pipe(Effect.provide(editLayer(flags)), withVision(shoot, flags.model));
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(

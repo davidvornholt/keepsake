@@ -35,18 +35,19 @@ const backoff = Schedule.exponential('4 seconds').pipe(Schedule.jittered);
 const modelFailed = (model: string) => (error: AiError.AiError) =>
   new ModelFailed({ message: `${model}: ${error.message}` });
 
+export type VisionModel = {
+  /** The model's name with its provider. */
+  readonly model: string;
+  /** Asks about photos and answers in the question's shape. */
+  readonly ask: <S extends AnswerSchema>(
+    question: Question<S>,
+  ) => Effect.Effect<S['Type'], ModelFailed>;
+};
+
 /** The model that looks at photos in this command. */
-export class Vision extends Context.Service<
-  Vision,
-  {
-    /** The model's name with its provider. */
-    readonly model: string;
-    /** Asks about photos and answers in the question's shape. */
-    readonly ask: <S extends AnswerSchema>(
-      question: Question<S>,
-    ) => Effect.Effect<S['Type'], ModelFailed>;
-  }
->()('@keepsake/cli/shared/Vision') {
+export class Vision extends Context.Service<Vision, VisionModel>()(
+  '@keepsake/cli/shared/Vision',
+) {
   static readonly layer = (model: string) =>
     Layer.effect(
       Vision,

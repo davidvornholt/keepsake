@@ -33,7 +33,7 @@ Publishing needs the [photos](https://github.com/davidvornholt/photos) command, 
 
 ## Sign in
 
-Claude Opus 5.5 judges the photos through [Claude Code](https://code.claude.com), on the subscription it is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo.
+GPT-6.2 Sol chooses and crops the photos through [Codex](https://developers.openai.com/codex). Claude Opus 5.5 describes the chosen ones, marks the people and signs in them and reviews the edits through [Claude Code](https://code.claude.com). Both run on the subscription their program is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo.
 
 Edits use your own API key. With Azure, deploy `gpt-image-2.5-sunburst` under that name, then:
 
@@ -43,7 +43,7 @@ keepsake login azure --endpoint https://example.openai.azure.com
 
 It asks for the key without showing it, or reads it from stdin, checks it, and saves it to `~/.config/keepsake/credentials.json`, readable only by you. `openai` works too, with `--image-model openai/<model>`. `keepsake status` shows what this machine is signed in to.
 
-Other models can judge with `--model`: `codex/gpt-6.2-sol` asks [Codex](https://developers.openai.com/codex) on its subscription the same way, and `azure`, `openai`, `anthropic` and `google` use an API key, such as `azure/gpt-6-astra`. A subscription's model thinks with medium effort unless its name ends with another one, such as `claude/claude-opus-5-5@high`. The model that culled a shoot is used for its later steps.
+Other models can choose and crop with `--model`, and do the rest with `--review-model`. `azure`, `openai`, `anthropic` and `google` use an API key, such as `azure/gpt-6-astra`. A subscription's model thinks with medium effort unless its name ends with another one, such as `claude/claude-opus-5-5@high`. The model that culled a shoot also picks and crops its photos.
 
 ## Use
 

@@ -17,6 +17,7 @@ import {
   type Size,
   sizeOf,
 } from '../../shared/pictures.ts';
+import { askReviewer } from '../../shared/review-vision.ts';
 import { starsFor } from '../../shared/stars.ts';
 import {
   atomically,
@@ -30,6 +31,7 @@ import {
 } from '../../shared/store.ts';
 import { edgesBeyond } from './beyond.ts';
 import { chooseCrop } from './crop.ts';
+import { descriptionOf } from './describe.ts';
 import { type CameraData, copyCameraData, finish } from './finish.ts';
 import { exactFrame, outputSize, within } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
@@ -51,6 +53,14 @@ export type EditOptions = {
   readonly versions: number;
   /** Starts over, from the crop. */
   readonly again: boolean;
+};
+
+/** A photo to edit. */
+export type ToEdit = {
+  readonly pick: Pick;
+  readonly photo: Photo;
+  /** Whether the model that looks after the edit has described this photo. */
+  readonly isDescribed: boolean;
 };
 
 /** A picked photo with everything needed to edit it. */
@@ -255,14 +265,19 @@ export const editOf = Effect.fn('editOf')(function* (
 /** Crops, edits and reviews one photo and writes the finished file. */
 export const editPhoto = Effect.fn('editPhoto')(function* (
   open: OpenShoot,
-  pick: Pick,
-  photo: Photo,
+  { pick: picked, photo, isDescribed }: ToEdit,
   options: EditOptions,
 ) {
   const files = open.files.edit(photo.id);
   if (options.again) {
     yield* startOver(files);
   }
+  const pick = isDescribed
+    ? picked
+    : {
+        ...picked,
+        description: yield* askReviewer(descriptionOf(open, picked)),
+      };
   const image = yield* ImageModel;
   const job: Job = {
     open,
@@ -278,15 +293,12 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   yield* cameraPicture(job);
   const crop = yield* cropOf(job);
   const size = yield* imageInput(job, crop);
-  const originals = {
-    people: yield* peopleOf(job, crop),
-    signs: yield* signsOf(job),
-  };
-  const { best, notes, attempts } = yield* bestVersion(job, {
-    crop,
-    size,
-    originals,
-  });
+  const originals = yield* askReviewer(
+    Effect.all({ people: peopleOf(job, crop), signs: signsOf(job) }),
+  );
+  const { best, notes, attempts } = yield* askReviewer(
+    bestVersion(job, { crop, size, originals }),
+  );
   const caption = {
     stars: starsFor(pick.score),
     description: pick.description,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
+  editLisbon,
   failureOf,
   photosFolder,
   runOk,
@@ -43,7 +44,7 @@ describe('keepsake show', () => {
     });
     await runOk('cull', 'lisbon');
     await runOk('pick', 'lisbon');
-    await runOk('edit', 'lisbon', 'B');
+    await editLisbon('B');
     const shown = await runOk('show', 'lisbon');
     expect(shown.judgedBy.moments).toBe(3);
     expect(shown.picked[1]).toMatchObject({

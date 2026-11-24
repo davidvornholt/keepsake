@@ -1,24 +1,22 @@
 import { Effect, Option, Ref } from 'effect';
-import type { EditRecord, Photo, Pick } from '../../shared/domain.ts';
+import type { EditRecord } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
+import { ReviewVision } from '../../shared/review-vision.ts';
 import { Spending, totalDollars } from '../../shared/spending.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
-import { described } from './describe.ts';
-import { type EditOptions, editOf, editPhoto } from './edit-photo.ts';
+import {
+  type EditOptions,
+  editOf,
+  editPhoto,
+  type ToEdit,
+} from './edit-photo.ts';
 
 /** More photos than image requests at once, so reviews don't hold those up. */
 const concurrency = 5;
-
-type Job = {
-  readonly pick: Pick;
-  readonly photo: Photo;
-  /** Whether the model has said what this very photo shows. */
-  readonly isDescribed: boolean;
-};
 
 /**
  * The photos to edit: the picked ones, or those named, which needn't be
@@ -28,13 +26,14 @@ const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
 ) {
-  const withPhoto = (pick: Pick): ReadonlyArray<Job> => {
-    const photo = open.photos.get(pick.photo);
-    return photo === undefined ? [] : [{ pick, photo, isDescribed: true }];
-  };
+  const reviewer = yield* ReviewVision;
   if (names.length === 0) {
-    const { picks } = yield* readPicks(open.files, open.shoot.name);
-    return picks.flatMap(withPhoto);
+    const list = yield* readPicks(open.files, open.shoot.name);
+    const isDescribed = list.model === reviewer.model;
+    return list.picks.flatMap((pick): ReadonlyArray<ToEdit> => {
+      const photo = open.photos.get(pick.photo);
+      return photo === undefined ? [] : [{ pick, photo, isDescribed }];
+    });
   }
   const { model } = yield* Vision;
   const judged = yield* verdicts(open, model);
@@ -53,8 +52,10 @@ const jobs = Effect.fn('jobs')(function* (
       return {
         photo,
         pick: { photo: photo.id, moment, score, subject, description },
-        isDescribed: own !== undefined || best[0] === photo.id,
-      };
+        isDescribed:
+          model === reviewer.model &&
+          (own !== undefined || best[0] === photo.id),
+      } satisfies ToEdit;
     }),
   );
 });
@@ -104,36 +105,30 @@ export const edit = Effect.fn('edit')(function* (
 ) {
   const todo = yield* jobs(open, names);
   const withinBudget = yield* makeBudget(options.budget);
-  const outcomes = yield* inSteps(
-    'edit',
-    todo,
-    concurrency,
-    ({ pick, photo, isDescribed }) =>
-      Effect.gen(function* () {
-        const before = yield* editOf(open, photo.id);
-        if (Option.isSome(before) && !options.again) {
-          return { kind: 'done', record: before.value } satisfies Outcome;
-        }
-        const record = yield* withinBudget(
-          Effect.gen(function* () {
-            const shown = isDescribed ? pick : yield* described(open, pick);
-            return yield* editPhoto(open, shown, photo, options);
-          }),
-        );
-        return Option.match(record, {
-          onNone: (): Outcome => ({ kind: 'overBudget', photo: photo.id }),
-          onSome: (made): Outcome => ({ kind: 'done', record: made }),
-        });
-      }).pipe(
-        // One photo that can't be edited doesn't stop the others.
-        Effect.catchTag(['ModelFailed', 'ToolFailed'], ({ message }) =>
-          Effect.succeed<Outcome>({
-            kind: 'failed',
-            photo: photo.id,
-            reason: message,
-          }),
-        ),
+  const outcomes = yield* inSteps('edit', todo, concurrency, (toEdit) =>
+    Effect.gen(function* () {
+      const before = yield* editOf(open, toEdit.photo.id);
+      if (Option.isSome(before) && !options.again) {
+        return { kind: 'done', record: before.value } satisfies Outcome;
+      }
+      const record = yield* withinBudget(editPhoto(open, toEdit, options));
+      return Option.match(record, {
+        onNone: (): Outcome => ({
+          kind: 'overBudget',
+          photo: toEdit.photo.id,
+        }),
+        onSome: (made): Outcome => ({ kind: 'done', record: made }),
+      });
+    }).pipe(
+      // One photo that can't be edited doesn't stop the others.
+      Effect.catchTag(['ModelFailed', 'ToolFailed'], ({ message }) =>
+        Effect.succeed<Outcome>({
+          kind: 'failed',
+          photo: toEdit.photo.id,
+          reason: message,
+        }),
       ),
+    ),
   );
   const records = outcomes.flatMap((outcome) =>
     outcome.kind === 'done' ? [outcome.record] : [],

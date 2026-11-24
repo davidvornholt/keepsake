@@ -117,6 +117,10 @@ export const pickLisbon = async () => {
   await runOk('pick', 'lisbon');
 };
 
+/** Edits photos of `scanLisbon`, with the same model for the reviews. */
+export const editLisbon = (...args: ReadonlyArray<string>) =>
+  runOk('edit', 'lisbon', ...args, '--review-model', judge);
+
 /** The questions a model was asked, by the name of the answer. */
 export const asked = (name: AnswerName) =>
   fakeModels.asked.filter((question) => question.name === name);

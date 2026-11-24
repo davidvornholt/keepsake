@@ -22,7 +22,9 @@ import {
 } from './subscriptions/subscriptions.ts';
 
 /** Judges photos unless another model is named or has judged them before. */
-export const defaultVisionModel = 'claude/claude-opus-5-5';
+export const defaultVisionModel = 'codex/gpt-6.2-sol';
+/** Looks after the edits unless another model is named. */
+export const defaultReviewModel = 'claude/claude-opus-5-5';
 /** Edits photos unless another model is named. */
 export const defaultImageModel = 'azure/gpt-image-2.5-sunburst';
 

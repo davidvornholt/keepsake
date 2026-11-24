@@ -1,8 +1,8 @@
-import { Effect, Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { whatToDescribe } from '../../shared/describing.ts';
 import type { Pick } from '../../shared/domain.ts';
 import { rendered } from '../../shared/pictures.ts';
-import type { OpenShoot } from '../../shared/store.ts';
+import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { Vision } from '../../shared/vision.ts';
 
 const pictureSide = 1024;
@@ -12,15 +12,20 @@ const role =
 
 const Description = Schema.Struct({ description: Schema.String });
 
-/** The pick with what its own photo shows, not another frame of its moment. */
-export const described = Effect.fn('described')(function* (
+/** Says what a photo shows, unless it has said so before. */
+export const descriptionOf = Effect.fn('descriptionOf')(function* (
   open: OpenShoot,
   pick: Pick,
 ) {
   const vision = yield* Vision;
+  const files = open.files.edit(pick.photo);
+  const before = yield* readJson(Description, files.description);
+  if (Option.isSome(before)) {
+    return before.value.description;
+  }
   const about =
     open.shoot.about === null ? '' : `The shoot: ${open.shoot.about}. `;
-  const { description } = yield* vision.ask({
+  const answer = yield* vision.ask({
     role,
     name: 'description',
     schema: Description,
@@ -32,5 +37,6 @@ export const described = Effect.fn('described')(function* (
       `Describe ${whatToDescribe}`,
     ],
   });
-  return { ...pick, description };
+  yield* writeJson(Description, files.description, answer);
+  return answer.description;
 });
