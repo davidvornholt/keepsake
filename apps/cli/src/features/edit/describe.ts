@@ -5,6 +5,7 @@ import { rendered } from '../../shared/pictures.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { Vision } from '../../shared/vision.ts';
 import { edgesBeyond } from './beyond.ts';
+import { withoutRemoved } from './removals.ts';
 
 const pictureSide = 1024;
 
@@ -15,12 +16,14 @@ const Description = Schema.Struct({ description: Schema.String });
 
 /**
  * Says what a photo shows once it is framed, unless it has said so before. What
- * the frame leaves out isn't mentioned, or the image model would bring it back.
+ * the frame leaves out, or what is removed, isn't mentioned, or the image model
+ * would bring it back.
  */
 export const descriptionOf = Effect.fn('descriptionOf')(function* (
   open: OpenShoot,
   photo: string,
   frame: Box,
+  removed: ReadonlyArray<string>,
 ) {
   const vision = yield* Vision;
   const files = open.files.edit(photo);
@@ -42,6 +45,7 @@ export const descriptionOf = Effect.fn('descriptionOf')(function* (
     pieces: [
       `${about}Here is one photo.${beyond}`,
       yield* rendered(files.input, { longSide: pictureSide }),
+      ...withoutRemoved(removed),
       `Describe ${whatToDescribe}`,
     ],
   });

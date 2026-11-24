@@ -12,7 +12,6 @@ import {
   aspectNames,
   Box,
   type Crop,
-  type Pick,
   type Shoot,
 } from '../../shared/domain.ts';
 import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
@@ -26,6 +25,14 @@ const mostProposals = 3;
 const almostEverything = 0.97;
 /** How much room there is around what belongs to a photo. */
 const air = 0.02;
+
+/** What to know about a photo to frame it. */
+type About = {
+  /** What it shows. */
+  readonly description: string;
+  /** What the user wants to be done with it. */
+  readonly wish: string | null;
+};
 
 const role = `You frame the photos of a private trip for an album. Look for an interesting composition rather than a large subject. A photo may show one thing close up, but it often says more when it shows how things come together: an animal and the place it lives in, someone and what they look at, a building and the street in front of it, a group, a row or a pattern, a reflection, or layers from near to far. Give what the eye goes to a strong place, let lines and shapes lead to it, balance it with what else is there, and leave room in front of a subject that looks or moves in a direction.
 
@@ -53,7 +60,7 @@ const Choice = Schema.Struct({
 });
 
 const choiceQuestion = (count: number) =>
-  `These are ${count} ways to frame the same photo; photo 1 is all of it. An edit will improve light and sharpness later, and fill plain grey areas by continuing the scene, so judge only the composition. Which one is the most interesting, the one you would most like to see in the album? Don't choose one that cuts off the subject carelessly, loses something that belongs to the photo, or feels cramped, nor one with grey areas where one without them is as good.`;
+  `These are ${count} ways to frame the same photo; photo 1 is all of it. An edit will improve light and sharpness later, and fill plain grey areas by continuing the scene, so judge only the composition. Which one is the most interesting, the one you would most like to see in the album? Don't choose one that cuts off the subject carelessly, loses something that belongs to the photo, feels cramped, squeezes the subject against an edge, or lets an animal fill the frame for no reason, nor one with grey areas where one without them is as good.`;
 
 type Candidate = {
   readonly box: Box;
@@ -78,15 +85,19 @@ const isWhole = (box: Box): boolean =>
 /** Finds the framing that makes the strongest photo. */
 export const chooseCrop = Effect.fn('chooseCrop')(function* (
   shoot: Shoot,
-  pick: Pick,
   /** The whole photo, the right way up. */
   camera: string,
+  { description, wish }: About,
 ) {
   const vision = yield* Vision;
   const size = yield* sizeOf(camera);
   const whole = wholePhoto(size);
   const about = shoot.about === null ? '' : `The shoot: ${shoot.about}. `;
-  const introduction = `${about}The photo: ${pick.description}`;
+  const wanted =
+    wish === null
+      ? ''
+      : ` Whoever took the photo wants this, which comes first where it is about the framing: “${wish}”`;
+  const introduction = `${about}The photo: ${description}${wanted}`;
   const proposals = yield* vision.ask({
     role,
     name: 'crops',

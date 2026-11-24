@@ -53,8 +53,16 @@ const editWith = ({ bright, dark }: Marks) =>
 const letters: Marks = { bright: 230, dark: 30 };
 const skin: Marks = { bright: 190, dark: 130 };
 
-const sign = { people: [], signs: [{ text: 'HOTEL', box }] };
+const nothing = {
+  people: [],
+  signs: [],
+  bystanders: [],
+  textures: [],
+  gone: [],
+};
+const sign = { ...nothing, signs: [{ text: 'HOTEL', box }] };
 const person = {
+  ...nothing,
   people: [
     {
       face: box,
@@ -66,7 +74,6 @@ const person = {
       ],
     },
   ],
-  signs: [],
 };
 
 describe('putBack', () => {
@@ -109,5 +116,27 @@ describe('putBack', () => {
       return edit.pixels;
     });
     expect(edits[1]).toEqual(edits[0]);
+  });
+
+  it('brings nothing back where something was removed', () => {
+    const removed = { ...box, right: (box.left + box.right) / 2 };
+    const edit = editWith(letters);
+    const before = editWith(letters);
+    putBack(
+      { ...sign, gone: [removed] },
+      photoWith(letters),
+      edit,
+      wholePicture,
+    );
+    const changed = (column: number) =>
+      Array.from({ length: 100 }, (_, index) =>
+        Math.round(scale * (place.top + 30 + index) + offset.y),
+      ).filter(
+        (row) => valueAt(edit, column, row) !== valueAt(before, column, row),
+      ).length;
+    expect(changed(Math.round(scale * (place.left + 40) + offset.x))).toBe(0);
+    expect(
+      changed(Math.round(scale * (place.right - 40) + offset.x)),
+    ).toBeGreaterThan(0);
   });
 });

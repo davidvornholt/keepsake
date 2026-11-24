@@ -1,5 +1,5 @@
 import { clamp } from '../../../shared/boxes.ts';
-import type { Box, Person, Sign } from '../../../shared/domain.ts';
+import type { Box, Outline, Person, Sign } from '../../../shared/domain.ts';
 import type { Frame, Raster, Size } from '../../../shared/pictures.ts';
 import { channels, indexOf } from '../pixels/raster.ts';
 
@@ -25,7 +25,8 @@ export const movedOn = (
   y: { ...y, offset: y.offset + by.y },
 });
 
-const placedBox = (box: Box, { x, y }: Placement, size: Size): Box => {
+/** Where an edit shows a box. */
+export const placedBox = (box: Box, { x, y }: Placement, size: Size): Box => {
   const across = (position: number) =>
     clamp(placeOf(x, position * size.width) / size.width, 0, 1);
   const down = (position: number) =>
@@ -44,20 +45,28 @@ export const placedSign = (
   size: Size,
 ): Sign => ({ ...sign, box: placedBox(sign.box, placement, size) });
 
+/** Where an edit shows an outline. */
+export const placedOutline = (
+  outline: Outline,
+  placement: Placement,
+  size: Size,
+): Outline =>
+  outline.map(({ x, y }) => {
+    const { left, top } = placedBox(
+      { left: x, top: y, right: x, bottom: y },
+      placement,
+      size,
+    );
+    return { x: left, y: top };
+  });
+
 export const placedPerson = (
   { face, outline }: Person,
   placement: Placement,
   size: Size,
 ): Person => ({
   face: placedBox(face, placement, size),
-  outline: outline.map((point) => {
-    const { left, top } = placedBox(
-      { left: point.x, top: point.y, right: point.x, bottom: point.y },
-      placement,
-      size,
-    );
-    return { x: left, y: top };
-  }),
+  outline: placedOutline(outline, placement, size),
 });
 
 type Source = {

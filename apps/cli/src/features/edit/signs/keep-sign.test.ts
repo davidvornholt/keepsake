@@ -44,7 +44,7 @@ const edited = () =>
 describe('keepSign', () => {
   it('puts the photo’s letters where the edit has the sign', () => {
     const edit = edited();
-    keepSign(original, edit, sign);
+    keepSign(original, edit, sign, [sign]);
     for (let x = place.left; x < place.right; x += 1) {
       const value = valueAt(edit, x + shift.x, 220 + shift.y);
       expect(value > 150).toBe(isLetter(x));
@@ -53,7 +53,7 @@ describe('keepSign', () => {
 
   it('takes over the light of the edit', () => {
     const edit = edited();
-    keepSign(original, edit, sign);
+    keepSign(original, edit, sign, [sign]);
     const around = { x: place.left - 4 + shift.x, y: 220 + shift.y };
     expect(valueAt(edit, around.x, around.y)).toBeGreaterThan(
       valueAt(original, place.left - 4, 220) * 1.3,
@@ -63,7 +63,7 @@ describe('keepSign', () => {
   it('changes nothing elsewhere', () => {
     const edit = edited();
     const before = edited();
-    keepSign(original, edit, sign);
+    keepSign(original, edit, sign, [sign]);
     for (const [x, y] of [
       [200, 220],
       [480, 220],
@@ -80,7 +80,7 @@ describe('keepSign', () => {
       text: 'EXIT',
       box: { left: 0, top: 0, right: 0.05, bottom: 0.05 },
     };
-    keepSign(original, edit, corner);
+    keepSign(original, edit, corner, [corner]);
     expect(edit.pixels).toHaveLength(original.pixels.length);
   });
 });

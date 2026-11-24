@@ -237,28 +237,57 @@ describe('keepsake edit, with people', () => {
 });
 
 describe('keepsake edit, with signs', () => {
-  it('puts the photo’s own signs into every version', async () => {
+  it('puts the photo’s own signs where a version got them wrong', async () => {
     await pickLisbon();
     const box = { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 };
     fakeModels.answers.signs = {
       signs: [
         { part: 1, text: 'HOTEL', box },
+        { part: 1, text: 'PARK', box },
         // Neither a part that isn't there nor an empty box can be kept.
         { part: 9, text: 'BAR', box },
         { part: 1, text: 'CAFE', box: { ...box, right: 0.2 } },
       ],
     };
+    fakeModels.answers['changed-signs'] = () => ({
+      changed: asked('changed-signs').length === 1 ? [1, 7] : [],
+    });
     const result = await editLisbon('B');
     expect(result.edited).toBe(1);
-    expect(await shootJson('edits', 'B', 'signs.json')).toEqual([
+    const signs = (name: string) => shootJson('edits', 'B', name);
+    expect(await signs('signs.json')).toHaveLength(2);
+    expect(await signs('version-1-signs.json')).toEqual([
       { text: 'HOTEL', box },
     ]);
-    for (const version of ['version-1-kept.png', 'version-2-kept.png']) {
-      expect(existsSync(shootFile('edits', 'B', version))).toBe(true);
-    }
+    expect(await signs('version-2-signs.json')).toEqual([]);
+    const isKept = (version: string) =>
+      existsSync(shootFile('edits', 'B', version));
+    expect(isKept('version-1-kept.png')).toBe(true);
+    expect(isKept('version-2-kept.png')).toBe(false);
     expect(
       asked('assessment')[0]?.texts.some((text) => text.includes('“HOTEL”')),
     ).toBe(true);
+  });
+
+  it('compares many signs a few at a time', async () => {
+    await pickLisbon();
+    fakeModels.answers.signs = {
+      signs: Array.from({ length: 25 }, (_, sign) => ({
+        part: 1,
+        text: `${sign}`,
+        box: { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 },
+      })),
+    };
+    fakeModels.answers['changed-signs'] = { changed: [2] };
+    await editLisbon('B', '--versions', '1');
+    expect(asked('changed-signs').map(({ images }) => images)).toEqual([
+      40, 10,
+    ]);
+    const changed = await shootJson('edits', 'B', 'version-1-signs.json');
+    expect(changed.map(({ text }: { text: string }) => text)).toEqual([
+      '1',
+      '21',
+    ]);
   });
 
   it('says nothing about signs when there are none', async () => {

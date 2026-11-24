@@ -1,5 +1,12 @@
-import { clamp, coverage, ordered, tidyBox } from '../../shared/boxes.ts';
+import {
+  clamp,
+  coverage,
+  ordered,
+  tidyBox,
+  wholePicture,
+} from '../../shared/boxes.ts';
 import type { Box } from '../../shared/domain.ts';
+import { within } from './geometry.ts';
 
 /** How far a frame may reach beyond each edge of the photo. */
 const mostBeyond = 0.25;
@@ -47,4 +54,31 @@ export const edgesBeyond = (crop: Box): string | null => {
   }
   const names = new Intl.ListFormat('en-GB').format(edges);
   return `${names} ${edges.length === 1 ? 'edge' : 'edges'}`;
+};
+
+/** Boxes from a model are never exact. */
+const closeToEdge = 0.004;
+
+/**
+ * Whether an edge of the photo cuts off what a box of a crop shows, and the
+ * crop reaches beyond that edge, so that the edit completes it.
+ */
+export const isCompleted = (box: Box, crop: Box): boolean => {
+  const photo = within(wholePicture, crop);
+  return (
+    (crop.left < -tolerance && box.left < photo.left + closeToEdge) ||
+    (crop.top < -tolerance && box.top < photo.top + closeToEdge) ||
+    (crop.right > 1 + tolerance && box.right > photo.right - closeToEdge) ||
+    (crop.bottom > 1 + tolerance && box.bottom > photo.bottom - closeToEdge)
+  );
+};
+
+/** What to know about versions that continue the scene. */
+export const aboutBeyond = (crop: Box): ReadonlyArray<string> => {
+  const edges = edgesBeyond(crop);
+  return edges === null
+    ? []
+    : [
+        `The plain grey area at the ${edges} of the original is not part of the photo. The edit was asked to fill it by continuing the scene and completing what the edge of the photo cuts off, so that is no fault and changes neither the moment nor the place. It is a fault when grey is left, when a seam shows where the photo ended, when what was completed has the wrong shape or anatomy, and when people, further animals, text or anything else that draws attention was added there.`,
+      ];
 };

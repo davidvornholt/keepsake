@@ -1,16 +1,17 @@
 import { Effect } from 'effect';
 import { around, wholePicture } from '../../shared/boxes.ts';
-import type { Box, Person, Sign } from '../../shared/domain.ts';
+import type { Box, Outline, Person, Sign } from '../../shared/domain.ts';
 import {
-  type Frame,
   frameOf,
   type Raster,
   rasterOf,
   sizeOf,
   writeRaster,
 } from '../../shared/pictures.ts';
-import { edgesBeyond } from './beyond.ts';
+import { edgesBeyond, isCompleted } from './beyond.ts';
 import { within } from './geometry.ts';
+import { keepPatch } from './patches/keep-patch.ts';
+import { changeOutside } from './patches/outside.ts';
 import { isMostlyOn } from './people/outline.ts';
 import { keepPerson } from './people/relight.ts';
 import { findPlacement } from './placement/find-placement.ts';
@@ -18,17 +19,26 @@ import {
   movedOn,
   type Placement,
   placed,
+  placedBox,
+  placedOutline,
   placedPerson,
   placedSign,
   unmoved,
 } from './placement/placement.ts';
 import { shiftOf } from './placement/shift.ts';
 import { keepSign } from './signs/keep-sign.ts';
+import { keepTexture } from './textures/keep-texture.ts';
 
 /** What an image model would redraw and nobody wants redrawn. */
 export type Originals = {
   readonly people: ReadonlyArray<Person>;
   readonly signs: ReadonlyArray<Sign>;
+  /** Everyone else, however small, and what else is put back around it. */
+  readonly bystanders: ReadonlyArray<Box>;
+  /** The areas that keep the photo's own texture. */
+  readonly textures: ReadonlyArray<Outline>;
+  /** Where something was removed, which must not come back. */
+  readonly gone: ReadonlyArray<Box>;
 };
 
 const boundsOf = ({ face, outline }: Person): Box =>
@@ -44,7 +54,10 @@ const writtenOn = (
 ): ReadonlyArray<Sign> => signs.filter(({ box }) => isMostlyOn(person, box));
 
 /** The signs that are on nobody. */
-const signsApart = ({ people, signs }: Originals): ReadonlyArray<Sign> =>
+const signsApart = ({
+  people,
+  signs,
+}: Pick<Originals, 'people' | 'signs'>): ReadonlyArray<Sign> =>
   signs.filter(({ box }) => !people.some((person) => isMostlyOn(person, box)));
 
 /** Puts people and signs back where an edit has moved them. Changes `edit`. */
@@ -53,11 +66,28 @@ const keepMoved = (
   original: Raster,
   edit: Raster,
   {
-    photo,
+    photoBox,
     placement,
-  }: { readonly photo: Frame; readonly placement: Placement },
+  }: { readonly photoBox: Box; readonly placement: Placement },
 ): void => {
+  const photo = frameOf(photoBox, original);
   const moved = placed(original, edit, photo, placement);
+  const inEdit = (box: Box) => placedBox(box, placement, original);
+  const gone = originals.gone.map(inEdit);
+  const bystanders = originals.bystanders.map(inEdit);
+  changeOutside(gone, edit, () => {
+    keepTexture(
+      moved,
+      edit,
+      originals.textures.map((outline) =>
+        placedOutline(outline, placement, original),
+      ),
+      inEdit(photoBox),
+    );
+    for (const box of bystanders) {
+      keepPatch(moved, edit, box, bystanders);
+    }
+  });
   for (const person of originals.people) {
     const rough = placedPerson(person, placement, original);
     const shift = shiftOf(moved, edit, frameOf(boundsOf(rough), original));
@@ -71,30 +101,47 @@ const keepMoved = (
       ),
     );
   }
-  for (const sign of signsApart(originals)) {
-    keepSign(moved, edit, placedSign(sign, placement, original));
-  }
+  const signs = signsApart(originals).map((sign) =>
+    placedSign(sign, placement, original),
+  );
+  changeOutside(gone, edit, () => {
+    for (const sign of signs) {
+      keepSign(moved, edit, sign, signs);
+    }
+  });
 };
 
 /**
  * Puts the people and signs of a photo back into an edit of it, where the edit
- * shows them. What is written on a person comes back with them. Changes `edit`.
+ * shows them. What is written on a person comes back with them. Nobody small
+ * comes back whom the photo cuts off and the edit completes, and nothing where
+ * something was removed. Changes `edit`.
  */
 export const putBack = (
-  originals: Originals,
+  wanted: Originals,
   original: Raster,
   edit: Raster,
   crop: Box,
 ): void => {
-  const photo = frameOf(within(wholePicture, crop), original);
-  const placement = findPlacement(original, edit, photo);
+  const originals = {
+    ...wanted,
+    bystanders: wanted.bystanders.filter((box) => !isCompleted(box, crop)),
+  };
+  const photoBox = within(wholePicture, crop);
+  const placement = findPlacement(original, edit, frameOf(photoBox, original));
   if (placement !== null || edgesBeyond(crop) !== null) {
     keepMoved(originals, original, edit, {
-      photo,
+      photoBox,
       placement: placement ?? unmoved,
     });
     return;
   }
+  changeOutside(originals.gone, edit, () => {
+    keepTexture(original, edit, originals.textures);
+    for (const box of originals.bystanders) {
+      keepPatch(original, edit, box, originals.bystanders);
+    }
+  });
   for (const person of originals.people) {
     const written = writtenOn(person, originals.signs);
     keepPerson(
@@ -104,9 +151,12 @@ export const putBack = (
       written.map(({ box }) => box),
     );
   }
-  for (const sign of signsApart(originals)) {
-    keepSign(original, edit, sign);
-  }
+  const signs = signsApart(originals);
+  changeOutside(originals.gone, edit, () => {
+    for (const sign of signs) {
+      keepSign(original, edit, sign, signs);
+    }
+  });
 };
 
 /**

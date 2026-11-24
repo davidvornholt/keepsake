@@ -15,6 +15,19 @@ export const mapPlanes = (
   change: (plane: Plane, channel: Channel) => Plane,
 ): Planes => [change(planes[0], 0), change(planes[1], 1), change(planes[2], 2)];
 
+const redShare = 0.2126;
+const greenShare = 0.7152;
+const blueShare = 0.0722;
+
+/** How bright each pixel is. */
+export const brightnessOf = ([red, green, blue]: Planes): Plane =>
+  red.map(
+    (value, index) =>
+      value * redShare +
+      (green[index] ?? 0) * greenShare +
+      (blue[index] ?? 0) * blueShare,
+  );
+
 export const brightest = 255;
 
 const toeEnd = 0.040_45;
@@ -45,6 +58,25 @@ export const lightAt = (value: number): number => lights[value] ?? 0;
 /** Where a channel of a pixel is in a raster's pixels. */
 export const indexOf = (raster: Raster, x: number, y: number): number =>
   (y * raster.width + x) * channelCount;
+
+/** The sRGB values in a part of a raster, from 0 to 1. */
+export const valuesIn = (raster: Raster, frame: Frame): Planes => {
+  const planes: Planes = [
+    new Float32Array(frame.width * frame.height),
+    new Float32Array(frame.width * frame.height),
+    new Float32Array(frame.width * frame.height),
+  ];
+  for (let y = 0; y < frame.height; y += 1) {
+    for (let x = 0; x < frame.width; x += 1) {
+      const source = indexOf(raster, frame.left + x, frame.top + y);
+      for (const channel of channels) {
+        planes[channel][y * frame.width + x] =
+          (raster.pixels[source + channel] ?? 0) / brightest;
+      }
+    }
+  }
+  return planes;
+};
 
 /** The light in a part of a raster, made smaller by averaging. */
 export const shrunkLight = (
