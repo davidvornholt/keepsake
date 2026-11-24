@@ -34,7 +34,7 @@ export const descriptionOf = Effect.fn('descriptionOf')(function* (
   const beyond =
     edges === null
       ? ''
-      : ` The plain grey area at the ${edges} is not part of it, so don't mention that.`;
+      : ` The plain grey area at the ${edges} is not part of it. The finished photo will show there what is cut off now, so mention neither the grey area nor that anything is cut off at it.`;
   const answer = yield* vision.ask({
     role,
     name: 'description',
