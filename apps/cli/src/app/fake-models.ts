@@ -37,9 +37,16 @@ export const assessment = (version: number, overrides: object = {}) => ({
 const usualAnswers = {
   judgement: verdictAnswer,
   shortlist: { best: [1] },
-  check: { ranking: [1], score: 8, reason: 'Still sharp.' },
+  check: {
+    ranking: [1],
+    score: 8,
+    description: 'A heron stands in shallow water.',
+    reason: 'Still sharp.',
+    further: [],
+  },
   album: { leaveOut: [] },
   ranking: { bestFirst: [] },
+  description: { description: 'A heron takes off.' },
   crops: { subject: box, belongings: [], crops: [] },
   choice: { best: 1, reason: 'The whole frame is best.' },
   people: { people: [] },

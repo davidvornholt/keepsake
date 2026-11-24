@@ -111,11 +111,18 @@
   }
 
   #compare li {
+    position: relative;
     min-block-size: 0;
     padding: 0.375rem;
   }
 
-  #compare button {
+  [data-keep] {
+    position: absolute;
+    inset-block-end: 1rem;
+    inset-inline-end: 1rem;
+  }
+
+  [data-tile] {
     display: grid;
     grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
@@ -127,15 +134,15 @@
     border: 0;
   }
 
-  #compare button:hover {
+  [data-tile]:hover {
     background: var(--raised);
   }
 
-  #compare button[data-chosen] {
+  [data-tile][data-chosen] {
     background: var(--chosen);
   }
 
-  #compare img {
+  [data-tile] img {
     max-inline-size: 100%;
     max-block-size: 100%;
   }
@@ -203,8 +210,8 @@
     color: var(--chosen);
   }
 
-  #stars button[aria-pressed="true"],
-  #stars button[aria-pressed="true"] > * {
+  :is(#stars button, #keep, [data-keep])[aria-pressed="true"],
+  :is(#stars button, #keep, [data-keep])[aria-pressed="true"] > * {
     color: var(--background);
     background: var(--chosen);
     border-color: var(--background);

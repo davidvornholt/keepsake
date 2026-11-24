@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import {
   failureOf,
+  judge,
   runOk,
   scanLisbon,
   setUp,
@@ -24,8 +25,14 @@ describe('keepsake bench', () => {
     await writeFile(
       shootFile('ratings.json'),
       JSON.stringify([
-        { moment: 'A1', photos: ['A1', 'A2'], best: 'A1', stars: 4 },
-        { moment: 'B', photos: ['B'], best: null, stars: 0 },
+        {
+          moment: 'A1',
+          photos: ['A1', 'A2'],
+          best: 'A1',
+          stars: 4,
+          further: [],
+        },
+        { moment: 'B', photos: ['B'], best: null, stars: 0, further: [] },
       ]),
     );
     const { results, dollarsSpent, models } = await runOk(
@@ -65,4 +72,25 @@ describe('keepsake rate', () => {
       expect(failure._tag).toBe('InvalidInput');
     },
   );
+
+  it.each([1, 3])('refuses to compare %d models', async (count) => {
+    await scanLisbon();
+    const flags = Array.from({ length: count }, () => ['--between', judge]);
+    const failure = await failureOf('rate', 'lisbon', ...flags.flat());
+    expect(failure.message).toContain('two times');
+  });
+
+  it('needs verdicts of both models to compare them', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    const failure = await failureOf(
+      'rate',
+      'lisbon',
+      ...['--between', judge],
+      ...['--between', 'azure/other-model'],
+    );
+    expect(failure.message).toContain(
+      'keepsake cull lisbon --model azure/other-model',
+    );
+  });
 });

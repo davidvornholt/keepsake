@@ -7,12 +7,18 @@ import { Spending, totalDollars } from '../../shared/spending.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
+import { described } from './describe.ts';
 import { type EditOptions, editOf, editPhoto } from './edit-photo.ts';
 
 /** More photos than image requests at once, so reviews don't hold those up. */
 const concurrency = 5;
 
-type Job = { readonly pick: Pick; readonly photo: Photo };
+type Job = {
+  readonly pick: Pick;
+  readonly photo: Photo;
+  /** Whether the model has said what this very photo shows. */
+  readonly isDescribed: boolean;
+};
 
 /**
  * The photos to edit: the picked ones, or those named, which needn't be
@@ -24,7 +30,7 @@ const jobs = Effect.fn('jobs')(function* (
 ) {
   const withPhoto = (pick: Pick): ReadonlyArray<Job> => {
     const photo = open.photos.get(pick.photo);
-    return photo === undefined ? [] : [{ pick, photo }];
+    return photo === undefined ? [] : [{ pick, photo, isDescribed: true }];
   };
   if (names.length === 0) {
     const { picks } = yield* readPicks(open.files, open.shoot.name);
@@ -41,10 +47,13 @@ const jobs = Effect.fn('jobs')(function* (
           message: `${model} has not judged ${name}. Run \`keepsake cull ${open.shoot.name}\` first.`,
         });
       }
-      const { moment, score, subject, description } = verdict;
+      const { moment, subject, best, further } = verdict;
+      const own = further.find((one) => one.photo === photo.id);
+      const { score, description } = own ?? verdict;
       return {
         photo,
         pick: { photo: photo.id, moment, score, subject, description },
+        isDescribed: own !== undefined || best[0] === photo.id,
       };
     }),
   );
@@ -99,14 +108,17 @@ export const edit = Effect.fn('edit')(function* (
     'edit',
     todo,
     concurrency,
-    ({ pick, photo }) =>
+    ({ pick, photo, isDescribed }) =>
       Effect.gen(function* () {
         const before = yield* editOf(open, photo.id);
         if (Option.isSome(before) && !options.again) {
           return { kind: 'done', record: before.value } satisfies Outcome;
         }
         const record = yield* withinBudget(
-          editPhoto(open, pick, photo, options),
+          Effect.gen(function* () {
+            const shown = isDescribed ? pick : yield* described(open, pick);
+            return yield* editPhoto(open, shown, photo, options);
+          }),
         );
         return Option.match(record, {
           onNone: (): Outcome => ({ kind: 'overBudget', photo: photo.id }),

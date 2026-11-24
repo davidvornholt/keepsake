@@ -5,7 +5,7 @@
 `keepsake` is a command-line tool that turns a folder of photos into a small album of beautiful ones. It is made for photographers who enjoy taking photos and not the evenings of sorting and editing that follow, and for the AI agents that run it for them.
 
 1. It groups the photos into moments, such as a burst of a bird taking off.
-2. A vision model finds the best frames of each moment, checks their focus at full size, and scores them.
+2. A vision model finds the best frames of each moment, checks their focus at full size, and scores them. It takes more than one of a moment where they show clearly different things, such as another pose.
 3. It leaves out repeats and, when there are too many, compares the photos with each other and keeps the best.
 4. It crops each one where that makes it stronger, and an image model edits it.
 5. Image models redraw faces, so keepsake takes everyone who can be recognised from the photo itself. The vision model outlines them, keepsake puts their own pixels back into the edit, and only their light follows the edit: brighter, darker, warmer or cooler over areas too large to change a feature. The words on signs, which image models rewrite, are kept the same way.

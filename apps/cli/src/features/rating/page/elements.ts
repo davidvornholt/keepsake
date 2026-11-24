@@ -28,5 +28,7 @@ export const elements = {
   stars: element('stars', HTMLFieldSetElement),
   all: element('all', HTMLButtonElement),
   allLabel: element('all-label', HTMLSpanElement),
+  /** Whether the photo shown is worth keeping when it isn't the best. */
+  keep: element('keep', HTMLButtonElement),
   zoom: element('zoom', HTMLButtonElement),
 };

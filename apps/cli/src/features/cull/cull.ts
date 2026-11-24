@@ -1,6 +1,11 @@
 import { Effect, Option } from 'effect';
 import { developed } from '../../shared/develop.ts';
-import { type Box, type Moment, Verdict } from '../../shared/domain.ts';
+import {
+  type Box,
+  type Further,
+  type Moment,
+  Verdict,
+} from '../../shared/domain.ts';
 import { ModelFailed } from '../../shared/errors/errors.ts';
 import { saveJudge } from '../../shared/judge.ts';
 import { rendered } from '../../shared/pictures.ts';
@@ -127,6 +132,20 @@ const contenderPieces = Effect.fn('contenderPieces')(function* (
   return pieces.flat();
 });
 
+/** The photos a model would keep next to the best one; each once. */
+const furtherOf = (
+  ranked: ReadonlyArray<string>,
+  answer: (typeof Check.Type)['further'],
+  best: string | undefined,
+): ReadonlyArray<Further> =>
+  answer.flatMap(({ frame, score, description }, index) => {
+    const photo = ranked[frame - 1];
+    const isFirst = answer.findIndex((one) => one.frame === frame) === index;
+    return photo === undefined || photo === best || !isFirst
+      ? []
+      : [{ photo, score: inRange(score), description }];
+  });
+
 /** What the model thinks of one moment. */
 const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
   const vision = yield* Vision;
@@ -166,6 +185,7 @@ const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
     subject: answer.subject,
     description: answer.description,
     reason: answer.reason,
+    further: [],
   };
   if (ranked.length === 1 || answer.score < checkedFrom) {
     return verdict;
@@ -177,15 +197,18 @@ const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
     pieces: [
       introduction(open.shoot, ranked.length),
       ...(yield* contenderPieces(open, contenders)),
-      checkQuestion(answer.score, answer.reason),
+      checkQuestion(answer),
     ],
   });
+  // A frame the second answer leaves out keeps its place at the end.
+  const best = [...new Set([...chosen(ranked, check.ranking), ...ranked])];
   return {
     ...verdict,
-    // A frame the second answer leaves out keeps its place at the end.
-    best: [...new Set([...chosen(ranked, check.ranking), ...ranked])],
+    best,
     score: inRange(check.score),
+    description: check.description,
     reason: check.reason,
+    further: furtherOf(ranked, check.further, best[0]),
   };
 });
 

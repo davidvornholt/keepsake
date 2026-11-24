@@ -39,6 +39,7 @@ const rating = (moment: string, overrides: Partial<Rating>): Rating => ({
   photos: [`${moment}1`, `${moment}2`, `${moment}3`, `${moment}4`],
   best: `${moment}1`,
   stars: 3,
+  further: [],
   ...overrides,
 });
 
@@ -51,6 +52,7 @@ const verdict = (moment: string, best: string, score: number): Verdict => ({
   subject: 'bird',
   description: '',
   reason: '',
+  further: [],
 });
 
 describe('compareWithOwner', () => {
@@ -72,5 +74,14 @@ describe('compareWithOwner', () => {
       keepAccuracy: 1,
       rankCorrelation: 0.5,
     });
+  });
+
+  it('counts every frame the owner would keep as a best one', () => {
+    expect(
+      compareWithOwner(
+        [verdict('A', 'A3', 8)],
+        [rating('A', { further: ['A3', 'A4'] })],
+      ),
+    ).toMatchObject({ sameBestFrame: 1, bestFrameByChance: 0.75 });
   });
 });

@@ -29,6 +29,11 @@ test('rates a whole shoot with the keyboard', async ({ page }) => {
   await expect(photo).toBeVisible();
   expect(await scanWcag22AaViolations(page)).toEqual([]);
 
+  const keepToo = page.getByRole('button', { name: 'Keep too', exact: true });
+  await page.keyboard.press('k');
+  await expect(keepToo).toHaveAttribute('aria-pressed', 'true');
+  expect(await scanWcag22AaViolations(page)).toEqual([]);
+
   await page.keyboard.press('z');
   await expect(photo).toHaveAttribute('data-zoomed', '');
   await expect(photo).toHaveAttribute('src', '/full?photo=A3');
@@ -38,6 +43,12 @@ test('rates a whole shoot with the keyboard', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Photo 3 of 3' }),
   ).toBeFocused();
+  const keepThird = page.getByRole('button', { name: 'Keep too: photo 3' });
+  await expect(keepThird).toHaveAttribute('aria-pressed', 'true');
+  expect(await scanWcag22AaViolations(page)).toEqual([]);
+  await page.keyboard.press('k');
+  await expect(keepThird).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('k');
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Enter');
   await page.keyboard.press('4');
@@ -52,6 +63,10 @@ test('rates a whole shoot with the keyboard', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: '4 stars for the wall' }),
   ).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ArrowRight');
+  await expect(keepToo).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ArrowLeft');
+  await expect(keepToo).toHaveAttribute('aria-pressed', 'false');
   await page.keyboard.press('4');
   await expect(question(page)).toHaveText('How good is this photo?');
   await page.keyboard.press('0');
@@ -81,6 +96,8 @@ test('rates with the pointer', async ({ page }) => {
     return route.fulfill({ status: 204 });
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Keep too: photo 1' }).click();
+  await page.getByRole('button', { name: 'Keep too: photo 2' }).click();
   await page.getByRole('button', { name: 'Photo 1 of 2' }).click();
   await page.getByRole('button', { name: 'Next photo' }).click();
   await expect(question(page)).toHaveText(
@@ -100,9 +117,9 @@ test('rates with the pointer', async ({ page }) => {
   await page.getByRole('button', { name: 'throw away' }).click();
   await expect(question(page)).toContainText('All 2 are rated');
   expect(answers).toEqual([
-    { moment: 'A1', best: 'A2', stars: 5 },
-    { moment: 'A1', best: null, stars: 0 },
-    { moment: 'B', best: null, stars: 0 },
+    { moment: 'A1', best: 'A2', stars: 5, further: ['A1'] },
+    { moment: 'A1', best: null, stars: 0, further: [] },
+    { moment: 'B', best: null, stars: 0, further: [] },
   ]);
 });
 

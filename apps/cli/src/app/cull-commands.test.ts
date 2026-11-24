@@ -56,6 +56,28 @@ describe('keepsake scan', () => {
   });
 });
 
+/** Lets the model rank both frames of the burst, the second one first. */
+const likeBothFrames = (further: ReadonlyArray<object>) => {
+  const focus = verdictAnswer.ranking[0]?.focus;
+  fakeModels.answers.judgement = (question: { images: number }) =>
+    question.images === 2
+      ? {
+          ...verdictAnswer,
+          ranking: [
+            { frame: 1, focus },
+            { frame: 2, focus },
+          ],
+        }
+      : verdictAnswer;
+  fakeModels.answers.check = {
+    ranking: [2, 1],
+    score: 9,
+    description: 'A heron flies.',
+    reason: 'The second is sharp.',
+    further,
+  };
+};
+
 describe('keepsake cull', () => {
   it('asks once about each moment and keeps the verdicts', async () => {
     await scanLisbon();
@@ -73,27 +95,36 @@ describe('keepsake cull', () => {
 
   it('decides between good frames with close-ups', async () => {
     await scanLisbon();
-    const focus = verdictAnswer.ranking[0]?.focus;
-    fakeModels.answers.judgement = (question: { images: number }) =>
-      question.images === 2
-        ? {
-            ...verdictAnswer,
-            ranking: [
-              { frame: 1, focus },
-              { frame: 2, focus },
-            ],
-          }
-        : verdictAnswer;
-    fakeModels.answers.check = {
-      ranking: [2, 1],
-      score: 9,
-      reason: 'The second is sharp.',
-    };
+    likeBothFrames([]);
     await runOk('cull', 'lisbon');
     expect(asked('check').map(({ images }) => images)).toEqual([4]);
     expect(
       await shootJson('verdicts', 'azure--gpt-6-astra', 'A1.json'),
-    ).toMatchObject({ best: ['A2', 'A1'], score: 9 });
+    ).toMatchObject({
+      best: ['A2', 'A1'],
+      score: 9,
+      description: 'A heron flies.',
+      further: [],
+    });
+  });
+
+  it('names further frames that show something else, each once', async () => {
+    await scanLisbon();
+    const standing = { frame: 1, score: 11, description: 'A heron stands.' };
+    likeBothFrames([
+      standing,
+      { ...standing, score: 3 },
+      // The best one isn't a further one, and frame 5 doesn't exist.
+      { ...standing, frame: 2 },
+      { ...standing, frame: 5 },
+    ]);
+    await runOk('cull', 'lisbon');
+    expect(
+      await shootJson('verdicts', 'azure--gpt-6-astra', 'A1.json'),
+    ).toMatchObject({
+      best: ['A2', 'A1'],
+      further: [{ photo: 'A1', score: 10, description: 'A heron stands.' }],
+    });
   });
 
   it('goes on when a moment can’t be judged, and tries it again later', async () => {
@@ -151,6 +182,21 @@ describe('keepsake pick', () => {
     await runOk('cull', 'lisbon');
     const result = await runOk('pick', 'lisbon');
     expect(result).toMatchObject({ candidates: 2, redundant: 1, picked: 1 });
+  });
+
+  it('takes further frames of a moment that score high enough', async () => {
+    await scanLisbon();
+    const standing = { frame: 1, score: 7, description: 'A heron stands.' };
+    likeBothFrames([standing]);
+    await runOk('cull', 'lisbon');
+    expect(await runOk('pick', 'lisbon')).toMatchObject({ picked: 4 });
+    const { picks } = await shootJson('picks.json');
+    expect(picks.slice(0, 2)).toMatchObject([
+      { photo: 'A1', moment: 'A1', score: 7, description: 'A heron stands.' },
+      { photo: 'A2', moment: 'A1', score: 9, description: 'A heron flies.' },
+    ]);
+    const fewer = await runOk('pick', 'lisbon', '--minimum-score', '8');
+    expect(fewer).toMatchObject({ picked: 3 });
   });
 
   it('keeps the best by comparison when there are too many', async () => {

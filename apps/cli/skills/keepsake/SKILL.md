@@ -24,8 +24,8 @@ keepsake only reads the folder of photos and never changes it. What it makes is 
 The steps are also commands of their own, for a shoot that `scan` has named:
 
 1. `scan <folder>` reads the photos and groups them into moments, such as a burst.
-2. `cull` finds the best frames of each moment and scores it from 1 to 10. Most good photos get 6 or 7; from 8 on they are for the wall.
-3. `pick` takes the photos from `--minimum-score` on and leaves out repeats. With `--maximum` it compares them with each other and keeps the best.
+2. `cull` finds the best frames of each moment and scores it from 1 to 10. Most good photos get 6 or 7; from 8 on they are for the wall. Frames that show something clearly different from the best one are listed under `further`, each with its own score.
+3. `pick` takes the best and the `further` photos of every moment from `--minimum-score` on and leaves out repeats. With `--maximum` it compares them with each other and keeps the best.
 4. `edit` crops each pick where that makes it stronger, makes `--versions` of it, puts the people and the signs of the original back into them, and has them reviewed. People who can be recognised keep their own pixels and get only the light of the edit, so their features can't change. Signs keep their own pixels the same way, so they say what they said. Where no version passes, it keeps the camera's own picture, listed under `keptFromCamera` with the reason.
 5. `publish` uploads the finished photos to an album in Immich, each stacked on the camera's own picture and tagged `keepsake`. Publish only when the user asks for it.
 
@@ -38,12 +38,14 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 
 ## Comparing vision models
 
-`keepsake rate <shoot>` serves a page where the user chooses the best photo of each moment and gives it stars, 60 moments of up to 12 photos unless `--moments` says otherwise. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
+`keepsake rate <shoot>` serves a page where the user chooses the best photo of each moment, gives it stars and marks others worth keeping, 60 moments of up to 12 photos unless `--moments` says otherwise. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
 
 `keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them (nothing extra on a subscription):
 
-- `sameBestFrame` is how often the model chose the user's best frame of a burst, and `bestFrameByChance` how often guessing would.
+- `sameBestFrame` is how often the model chose a frame of a burst that the user would keep, and `bestFrameByChance` how often guessing would.
 - `keepAccuracy` is how often a photo the user would keep (3 stars or more) scored above one they would not; 0.5 is guessing. Use this to choose a model.
 - `rankCorrelation` compares the order of all scores with the order of the stars, from -1 to 1.
 
 With 60 rated moments, the same model's numbers differ by up to 0.1 from run to run, so a smaller difference between models means nothing.
+
+When two models come out close, let the user rate the moments those two judge differently. Run `cull <shoot> --model <model>` with both, last with the one that should stay the judge of the shoot, then `rate <shoot> --between <model> --between <model>`, and `bench` with both. Only the difference between the two says something then: both get lower numbers on these moments, and a third model looks better than it is next to them.

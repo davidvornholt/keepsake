@@ -66,6 +66,14 @@ export const subjects = [
 export const Judge = Schema.Struct({ model: Schema.String });
 export type Judge = typeof Judge.Type;
 
+/** A photo that belongs in the album next to the best one of its moment. */
+export const Further = Schema.Struct({
+  photo: Schema.String,
+  score: Schema.Int,
+  description: Schema.String,
+});
+export type Further = typeof Further.Type;
+
 /** What a vision model thinks of one moment. */
 export const Verdict = Schema.Struct({
   moment: Schema.String,
@@ -74,12 +82,14 @@ export const Verdict = Schema.Struct({
   model: Schema.String,
   /** The best photos, best first. */
   best: Schema.Array(Schema.String),
-  /** From 1, throw away, to 10, outstanding. */
+  /** From 1, throw away, to 10, outstanding, for the best photo. */
   score: Schema.Int,
   subject: Schema.Literals(subjects),
-  /** What the photo shows, for the edit prompt and the caption. */
+  /** What the best photo shows, for the edit prompt and the caption. */
   description: Schema.String,
   reason: Schema.String,
+  /** Others of its best photos that show something clearly different. */
+  further: Schema.Array(Further),
 });
 export type Verdict = typeof Verdict.Type;
 
@@ -99,7 +109,7 @@ export const PickList = Schema.Struct({
   /** Every photo that scored high enough. */
   candidates: Schema.Array(Pick),
   picks: Schema.Array(Pick),
-  /** Moments left out because a pick shows the same thing better. */
+  /** Photos left out because a pick shows the same thing better. */
   redundant: Schema.Array(Schema.String),
 });
 export type PickList = typeof PickList.Type;
@@ -184,5 +194,7 @@ export const Rating = Schema.Struct({
   best: Schema.NullOr(Schema.String),
   /** How good the best photo is: 0 to throw away, up to 5 stars. */
   stars: Schema.Int,
+  /** Other photos worth keeping next to the best one. */
+  further: Schema.Array(Schema.String),
 });
 export type Rating = typeof Rating.Type;

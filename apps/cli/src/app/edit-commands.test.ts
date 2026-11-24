@@ -179,6 +179,21 @@ describe('keepsake edit, in another time zone', () => {
   });
 });
 
+describe('keepsake edit, with named photos', () => {
+  it('asks what a photo shows that isn’t the best of its moment', async () => {
+    await pickLisbon();
+    await runOk('edit', 'lisbon', 'B', 'A2');
+    expect(asked('description')).toHaveLength(1);
+    const prompts = fakeModels.edits.map(({ prompt }) => prompt);
+    expect(
+      prompts.filter((prompt) => prompt.includes('A heron takes off.')),
+    ).toHaveLength(1);
+    expect(
+      prompts.filter((prompt) => prompt.includes(verdictAnswer.description)),
+    ).toHaveLength(1);
+  });
+});
+
 describe('keepsake edit, with people', () => {
   it('puts the photo’s own people into every version', async () => {
     await pickLisbon();
