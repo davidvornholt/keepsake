@@ -8,7 +8,7 @@ export type Size = { readonly width: number; readonly height: number };
 /** A picture's pixels: red, green and blue from 0 to 255, row by row. */
 export type Raster = Size & { readonly pixels: Uint8Array };
 
-/** A rectangle in pixels. */
+/** A rectangle in pixels. It may reach beyond the picture, which adds grey. */
 export type Frame = Size & { readonly left: number; readonly top: number };
 
 const sizePattern = /^(?<width>\d+) (?<height>\d+)$/u;
@@ -30,7 +30,7 @@ export const sizeOf = Effect.fn('sizeOf')(function* (file: string) {
   return { width: Number(size.width), height: Number(size.height) };
 });
 
-/** A box in fractions as whole pixels inside a picture of the given size. */
+/** A box in fractions as whole pixels of a picture of the given size. */
 export const frameOf = (box: Box, size: Size): Frame => {
   const left = Math.round(box.left * size.width);
   const top = Math.round(box.top * size.height);
@@ -42,8 +42,19 @@ export const frameOf = (box: Box, size: Size): Frame => {
   };
 };
 
-const geometry = ({ width, height, left, top }: Frame) =>
-  `${width}x${height}+${left}+${top}`;
+const signed = (offset: number) => (offset < 0 ? `${offset}` : `+${offset}`);
+
+/** What a frame shows where it reaches beyond the picture. */
+const emptiness = '#808080';
+
+/** Cuts a frame out of a picture. */
+const cut = ({ width, height, left, top }: Frame): ReadonlyArray<string> => [
+  '-background',
+  emptiness,
+  '-extent',
+  `${width}x${height}${signed(left)}${signed(top)}`,
+  '+repage',
+];
 
 export type Rendering = {
   /** The part to show; all of it when absent. */
@@ -63,9 +74,7 @@ const viewingQuality = 88;
 export const rendered = (source: string, rendering: Rendering = {}) =>
   toolBytes('magick', [
     source,
-    ...(rendering.frame === undefined
-      ? []
-      : ['-crop', geometry(rendering.frame), '+repage']),
+    ...(rendering.frame === undefined ? [] : cut(rendering.frame)),
     ...(rendering.longSide === undefined
       ? []
       : ['-resize', `${rendering.longSide}x${rendering.longSide}>`]),
@@ -87,9 +96,7 @@ export const renderExactly = (
 ) =>
   toolBytes('magick', [
     source,
-    '-crop',
-    geometry(options.frame),
-    '+repage',
+    ...cut(options.frame),
     '-resize',
     `${options.size.width}x${options.size.height}!`,
     '-strip',

@@ -4,6 +4,7 @@ import {
   coverage,
   holds,
   tidyBox,
+  wholePicture,
   widened,
 } from '../../shared/boxes.ts';
 import {
@@ -16,20 +17,21 @@ import {
 } from '../../shared/domain.ts';
 import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
+import { frameBox, isMostlyPhoto } from './beyond.ts';
 import { closestAspect, fitAspect, within } from './geometry.ts';
 
 const pictureSide = 1024;
 const mostProposals = 3;
-/** A crop that keeps more than this isn't worth telling from the whole. */
+/** A frame this close to all of the photo isn't worth telling from it. */
 const almostEverything = 0.97;
 /** How much room there is around what belongs to a photo. */
 const air = 0.02;
 
-const role = `You crop photos for someone who likes tight crops, but not at the price of what belongs to the photo. A good crop makes the subject large and clear, takes away everything that adds nothing, and puts the subject where the eye wants it. A bird or another animal usually deserves to fill a good part of the frame, and so do a face, a flower, or a detail. A landscape, a skyline or a building often needs its surroundings, so crop it only where the edges add nothing.
+const role = `You frame the photos of a private trip for an album. Look for an interesting composition rather than a large subject. A photo may show one thing close up, but it often says more when it shows how things come together: an animal and the place it lives in, someone and what they look at, a building and the street in front of it, a group, a row or a pattern, a reflection, or layers from near to far. Give what the eye goes to a strong place, let lines and shapes lead to it, balance it with what else is there, and leave room in front of a subject that looks or moves in a direction.
 
-What belongs to a photo stays in it: a landmark, a skyline or a view behind the subject that shows where it was taken, even out of focus; all of a group, a row or a pattern, such as every bird on a branch; and whatever else makes it funny, tells its story, or would be missed by someone who was there. Plain sky or water, dark edges, leaves, strangers, clutter, a feeder or a fence around an animal, and whatever the edge of the photo already cuts off don't belong to it. When animals or people do something together up close, only the parts that do it belong, such as the heads of two birds that feed each other.
+Take away only what adds nothing: plain sky or water without a purpose, dark edges, clutter, strangers at the edge, or a feeder or a fence around an animal. Go close only where the surroundings add nothing, or where a face, a gesture or a detail is what counts. Keep what shows where the photo was taken, what makes it funny or tells its story, all of a group, a row or a pattern, and whatever else would be missed by someone who was there, even out of focus. Never cut off a part of the subject that is in the frame, such as feet, a tail, wing tips, a reflection, the top of a building, or a person's hands, unless you go clearly and deliberately close, as in a portrait of a head.
 
-Leave room in front of a subject that looks or moves in a direction. Never cut off a part of the subject that is in the frame, such as feet, a tail, wing tips, a reflection, the top of a building, or a person's hands, unless you go clearly and deliberately close, as in a portrait of a head.`;
+The image model that edits the photo afterwards can also continue the scene beyond the edges of the photo and complete what they cut off, such as the tip of a wing or the top of a tower, as long as anyone could guess what is there. So a frame may reach beyond the photo, by up to a quarter of its width or height on each side: its box then has numbers below 0 or above 1. Do this only where it makes the photo clearly stronger, because a subject is cut off or has no room, and never where it would have to make up a person or a text.`;
 
 const Proposals = Schema.Struct({
   subject: Box,
@@ -43,7 +45,7 @@ const Proposals = Schema.Struct({
   ),
 });
 
-const proposalQuestion = `First give a box around the main subject, all of it. Then list what else belongs to the photo, each with a box around all of it that is in the frame; the list is empty when only the subject counts. Then propose up to ${mostProposals} crops that could make this a stronger photo: one tight, one moderate, and one in another shape if that suits the subject. Each must show everything you listed. Propose none if the whole frame can't be improved. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each crop should have.`;
+const proposalQuestion = `First give a box around the main subject, all of it, or around what the eye goes to when there is no single subject. Then list what else belongs to the photo, each with a box around all of it that is in the frame; the list is empty when only the subject counts. Then propose up to ${mostProposals} frames that could make this a stronger photo, as different from each other as the photo allows, such as the scene with little taken away, a closer one, or another shape. Each must show everything you listed. Propose none if the whole photo is the best composition. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each frame should have.`;
 
 const Choice = Schema.Struct({
   best: Schema.Int,
@@ -51,7 +53,7 @@ const Choice = Schema.Struct({
 });
 
 const choiceQuestion = (count: number) =>
-  `These are ${count} ways to frame the same photo; photo 1 is the whole frame. An edit will improve light and sharpness later, so judge only the framing. Which one would you hang on the wall? Prefer the tighter one when two are equally good. Don't choose one that cuts off the subject carelessly, loses something that belongs to the photo, or feels cramped.`;
+  `These are ${count} ways to frame the same photo; photo 1 is all of it. An edit will improve light and sharpness later, and fill plain grey areas by continuing the scene, so judge only the composition. Which one is the most interesting, the one you would most like to see in the album? Don't choose one that cuts off the subject carelessly, loses something that belongs to the photo, or feels cramped, nor one with grey areas where one without them is as good.`;
 
 type Candidate = {
   readonly box: Box;
@@ -62,11 +64,16 @@ type Candidate = {
 const wholePhoto = (size: Size): Candidate => {
   const aspect = closestAspect(size);
   return {
-    box: fitAspect({ left: 0, top: 0, right: 1, bottom: 1 }, size, aspect),
+    box: fitAspect(wholePicture, size, aspect),
     aspect,
-    reason: 'The whole frame is best.',
+    reason: 'The whole photo is best.',
   };
 };
+
+/** Whether a frame shows almost all of the photo and nothing beyond it. */
+const isWhole = (box: Box): boolean =>
+  coverage(tidyBox(box)) >= almostEverything &&
+  coverage(box) <= 1 / almostEverything;
 
 /** Finds the framing that makes the strongest photo. */
 export const chooseCrop = Effect.fn('chooseCrop')(function* (
@@ -98,7 +105,7 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
         // However tight the proposal is, what belongs to the photo stays.
         box: fitAspect(
           around([
-            tidyBox(box),
+            frameBox(box),
             ...belongings.map((belonging) => widened(belonging, air)),
           ]),
           size,
@@ -110,7 +117,8 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
     )
     .filter(
       ({ box }) =>
-        coverage(box) < almostEverything &&
+        !isWhole(box) &&
+        isMostlyPhoto(box) &&
         belongings.every((belonging) => holds(box, belonging)),
     );
   const candidates = [whole, ...crops];

@@ -3,6 +3,7 @@ import { coverage } from '../../shared/boxes.ts';
 import type { Box, Person, Pick, Sign } from '../../shared/domain.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
+import { edgesBeyond } from './beyond.ts';
 
 const pictureSide = 1536;
 const closeUpSide = 1024;
@@ -63,6 +64,8 @@ const withMargin = ({ left, top, right, bottom }: Box): Box => {
 };
 
 type Shown = {
+  /** What the original shows of the photo. */
+  readonly crop: Box;
   readonly subject: Box;
   /** The people and signs of the original, which are in every version. */
   readonly people: ReadonlyArray<Person>;
@@ -76,6 +79,16 @@ const aboutSigns = (signs: ReadonlyArray<Sign>): ReadonlyArray<string> =>
     : [
         `These signs were put back into every version from the original, pixel by pixel, so they still say what they said, however small or soft they look: ${signs.map(({ text }) => `“${text}”`).join(', ')}. Judge only whether they sit naturally where they are, and whether any other text has changed.`,
       ];
+
+/** What to know about versions that continue the scene. */
+const aboutBeyond = (crop: Box): ReadonlyArray<string> => {
+  const edges = edgesBeyond(crop);
+  return edges === null
+    ? []
+    : [
+        `The plain grey area at the ${edges} of the original is not part of the photo. The edit was asked to fill it by continuing the scene and completing what the edge of the photo cuts off, so that is no fault and changes neither the moment nor the place. It is a fault when grey is left, when a seam shows where the photo ended, when what was completed has the wrong shape or anatomy, and when people, further animals, text or anything else that draws attention was added there.`,
+      ];
+};
 
 /** A picture, with its subject close up when that is small, and its faces. */
 const looks = Effect.fn('looks')(function* (
@@ -140,6 +153,7 @@ export const review = Effect.fn('review')(function* (
       ...original,
       ...edited.flat(),
       ...aboutSigns(shown.signs),
+      ...aboutBeyond(shown.crop),
       question(files.versions.length),
     ],
   });

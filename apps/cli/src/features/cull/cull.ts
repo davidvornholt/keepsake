@@ -37,7 +37,7 @@ const closeUpSide = 1024;
 const closeUpQuality = 90;
 /** Close-ups decide only between frames that are good enough to keep. */
 const checkedFrom = 5;
-const concurrency = 6;
+const concurrency = 18;
 
 const lowestScore = 1;
 const highestScore = 10;

@@ -177,7 +177,7 @@ describe('codex models', () => {
       return codexAnswer(verdictAnswer);
     };
     await cull(astra);
-    expect(instructions[0]).toStartWith('You choose the best photos');
+    expect(instructions[0]).toStartWith('You choose the photos');
     expect(instructions[0]).toContain('call no tools');
   });
 

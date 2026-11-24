@@ -82,7 +82,7 @@ export const Verdict = Schema.Struct({
   model: Schema.String,
   /** The best photos, best first. */
   best: Schema.Array(Schema.String),
-  /** From 1, throw away, to 10, outstanding, for the best photo. */
+  /** From 1, throw away, to 10, a highlight, for the best photo. */
   score: Schema.Int,
   subject: Schema.Literals(subjects),
   /** What the best photo shows, for the edit prompt and the caption. */
@@ -151,10 +151,13 @@ export const Sign = Schema.Struct({ text: Schema.String, box: Box });
 export type Sign = typeof Sign.Type;
 
 export const Crop = Schema.Struct({
-  /** What stays, in fractions of the whole photo. */
+  /**
+   * What the finished photo shows, in fractions of the whole photo. It may
+   * reach beyond the photo, where the image model continues the scene.
+   */
   box: Box,
   aspect: Schema.Literals(aspectNames),
-  /** The subject, in fractions of what stays. */
+  /** The subject, in fractions of what the finished photo shows. */
   subject: Box,
   reason: Schema.String,
 });

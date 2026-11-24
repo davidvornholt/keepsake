@@ -1,4 +1,5 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
+import { tidyBox, wholePicture } from '../../shared/boxes.ts';
 import { developed } from '../../shared/develop.ts';
 import {
   Crop,
@@ -10,6 +11,7 @@ import {
 } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import {
+  frameOf,
   renderExactly,
   rendered,
   type Size,
@@ -26,9 +28,10 @@ import {
   writeBytes,
   writeJson,
 } from '../../shared/store.ts';
+import { edgesBeyond } from './beyond.ts';
 import { chooseCrop } from './crop.ts';
 import { type CameraData, copyCameraData, finish } from './finish.ts';
-import { exactFrame, outputSize } from './geometry.ts';
+import { exactFrame, outputSize, within } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
 import { keepOriginals, type Originals } from './keep-originals.ts';
 import { findPeople } from './people/find-people.ts';
@@ -122,13 +125,13 @@ const imageInput = Effect.fn('imageInput')(function* (job: Job, crop: Crop) {
   return size;
 });
 
-const peopleOf = Effect.fn('peopleOf')(function* ({ files }: Job) {
+const peopleOf = Effect.fn('peopleOf')(function* ({ files }: Job, crop: Crop) {
   const people = Schema.Array(Person);
   const before = yield* readJson(people, files.people);
   if (Option.isSome(before)) {
     return before.value;
   }
-  const found = yield* findPeople(files.input);
+  const found = yield* findPeople(files.input, within(wholePicture, crop.box));
   yield* writeJson(people, files.people, found);
   return found;
 });
@@ -192,7 +195,13 @@ const attempt = Effect.fn('attempt')(function* (
   if (!isThere.includes(true)) {
     const versions = yield* image.edit({
       picture: new Uint8Array(yield* readBytes(files.input)),
-      prompt: editPrompt(open.shoot, photo, pick, problems),
+      prompt: editPrompt({
+        shoot: open.shoot,
+        photo,
+        pick,
+        crop: crop.box,
+        problems,
+      }),
       size,
       versions: job.versions,
     });
@@ -209,7 +218,7 @@ const attempt = Effect.fn('attempt')(function* (
   );
   return yield* review(
     pick,
-    { subject: crop.subject, ...originals },
+    { crop: crop.box, subject: crop.subject, ...originals },
     { original: files.input, versions },
   );
 });
@@ -270,7 +279,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   const crop = yield* cropOf(job);
   const size = yield* imageInput(job, crop);
   const originals = {
-    people: yield* peopleOf(job),
+    people: yield* peopleOf(job, crop),
     signs: yield* signsOf(job),
   };
   const { best, notes, attempts } = yield* bestVersion(job, {
@@ -289,8 +298,13 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
         yield* finish(best, job.camera, draft, caption);
         return;
       }
-      // No version is good enough, so the camera's own picture is cropped.
-      const frame = exactFrame(crop.box, yield* sizeOf(files.camera), size);
+      // No version is good enough, so the camera's own picture is cropped, as
+      // far as there is one.
+      const whole = yield* sizeOf(files.camera);
+      const frame =
+        edgesBeyond(crop.box) === null
+          ? exactFrame(crop.box, whole, size)
+          : frameOf(tidyBox(crop.box), whole);
       const cropped = yield* rendered(files.camera, {
         frame,
         quality: cameraQuality,

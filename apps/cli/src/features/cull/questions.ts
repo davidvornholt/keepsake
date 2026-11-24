@@ -5,18 +5,19 @@ import { Box, type Shoot, subjects } from '../../shared/domain.ts';
 /** At most this many frames of a moment are ranked. */
 export const mostRanked = 4;
 
-export const role = `You choose the best photos of a private shoot for the person who took them. You see small versions straight from the camera, before any editing. Every photo you choose will afterwards be cropped, straightened and edited by a strong image model, which can improve light, colour, sky, contrast, noise and slight blur, and calm a distracting background.
+export const role = `You choose the photos for the album of a private trip or day out, for the person who took them. You see small versions straight from the camera, before any editing. Every photo you choose will afterwards be cropped, straightened and edited by a strong image model. It can improve light, colour, sky, contrast, noise and blur, calm a distracting background, complete a subject that the edge of the photo cuts off, and continue the scene beyond the edges.
 
-So don't mark a photo down for flat light, a dull sky, noise, slight softness, a tilted horizon, loose framing, or a subject that is small in the frame. Mark it down for what no edit can fix: no clear subject, a subject that is turned away, hidden or cut off, closed eyes, an awkward pose or expression, a missed moment, heavy blur, or a photo taken by accident.
+An album lives from variety: places, streets, buildings, views, food, plants, people and what they do, animals, funny or telling moments, small details, and how these come together in one picture. A photo doesn't need one clear subject. An interesting scene, a mood, or something that brings the day back is worth as much as a portrait of an animal.
 
-Score the photo from 1 to 10 as it could become after a good edit:
-10: among the best photos of the year
-8 or 9: worth printing and showing to anyone
-6 or 7: good, belongs in the album
-4 or 5: an ordinary record of something
-1 to 3: throw away
+Score a photo from 1 to 10 as it could become after a good edit. Don't mark it down for flat light, a dull sky, noise, softness, a tilted horizon, loose or tight framing, a subject that is small in the frame, or one that is at its edge or cut off by it. Mark it down for what no edit can fix: nothing worth looking at, a subject that is turned away or hidden, a person's face that is cut off, closed eyes, an awkward pose or expression, a missed moment, blur beyond recognition, or a photo taken by accident.
 
-Most photos of a shoot deserve 3 to 6. Use the whole range.`;
+9 or 10: the few best photos of the trip
+7 or 8: a highlight of the album
+5 or 6: the album would miss it
+3 or 4: an ordinary record the album can do without
+1 or 2: throw away
+
+Most photos deserve 3 to 6, and only a few of a hundred 9 or 10. Use the whole range.`;
 
 /** What every question starts with. */
 export const introduction = (shoot: Shoot, count: number) => {
@@ -37,7 +38,7 @@ export const Shortlist = Schema.Struct({
 });
 
 export const shortlistQuestion =
-  'Which are the best frames? Compare the pose, the expression, the eyes, where the subject looks, what is cut off, and what is sharp. Give the numbers of the three best, best first.';
+  'Which are the best frames? Compare the pose, the expression, the eyes, where the subject looks, the composition, and what is sharp. Give the numbers of the three best, best first.';
 
 export const Judgement = Schema.Struct({
   ranking: Schema.Array(
@@ -57,7 +58,7 @@ export const Judgement = Schema.Struct({
   reason: Schema.String.annotate({ description: 'One short sentence' }),
 });
 
-export const judgementQuestion = `Rank the best frames, best first, at most ${mostRanked}. If the frames show clearly different things, such as another pose, action, expression, viewpoint or distance, have the best frame of each among them. For each, give a box around what has to be sharp, as fractions of the frame's width and height from its top left corner: the head of an animal, the face of a person, or else the main subject.
+export const judgementQuestion = `Rank the best frames, best first, at most ${mostRanked}. Between frames of the same thing the moment, the pose, the expression, the eyes, the composition and what is sharp decide. If the frames show clearly different things, such as another pose, action, expression, viewpoint or distance, have the best frame of each among them. For each, give a box around what has to be sharp, as fractions of the frame's width and height from its top left corner: the head of an animal, the face of a person, or else what the photo is about.
 
 Then, for the best frame, give its score, its subject, and a description of ${whatToDescribe} Give your reason for the score in one short sentence.`;
 
