@@ -2,7 +2,8 @@ import type { Box, Photo, Pick, Shoot } from '../../shared/domain.ts';
 import { edgesBeyond } from './beyond.ts';
 import { listed } from './removals.ts';
 
-const sentence = (text: string) => {
+/** A text that ends like a sentence. */
+export const sentence = (text: string): string => {
   const trimmed = text.trim();
   return trimmed === '' || trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
 };

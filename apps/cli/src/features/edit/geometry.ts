@@ -80,21 +80,35 @@ const mostPixels = 8_294_400;
 /** A shape this far off the wanted one can't be told from it. */
 const tolerance = 0.006;
 
-/** The largest size an image model makes in a shape. */
-export const outputSize = (aspect: AspectName): Size => {
-  const ratio = ratioOf(aspect);
+const fits = ({ width, height }: Size): boolean =>
+  Math.max(width, height) <= longestSide && width * height <= mostPixels;
+
+/** The largest size an image model makes in a shape of that width to height. */
+const largestSize = (ratio: number): Size => {
   let best: Size = { width: step, height: step };
   for (let width = step; width <= longestSide; width += step) {
     const height = Math.round(width / ratio / step) * step;
-    const fits = height <= longestSide && width * height <= mostPixels;
     const isClose =
       height > 0 && Math.abs(width / height / ratio - 1) <= tolerance;
-    if (fits && isClose && width * height > best.width * best.height) {
+    if (
+      isClose &&
+      fits({ width, height }) &&
+      width * height > best.width * best.height
+    ) {
       best = { width, height };
     }
   }
   return best;
 };
+
+export const outputSize = (aspect: AspectName): Size =>
+  largestSize(ratioOf(aspect));
+
+/** The size an image model makes of a picture, its own if it can. */
+export const editableSize = (size: Size): Size =>
+  size.width % step === 0 && size.height % step === 0 && fits(size)
+    ? size
+    : largestSize(size.width / size.height);
 
 /**
  * The pixels of a crop, trimmed by a hair so its shape is exactly that of the

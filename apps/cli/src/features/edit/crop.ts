@@ -18,6 +18,7 @@ import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 import { frameBox, isMostlyPhoto } from './beyond.ts';
 import { closestAspect, fitAspect, within } from './geometry.ts';
+import { sides, withRoomAhead } from './room-ahead.ts';
 
 const pictureSide = 1024;
 const mostProposals = 3;
@@ -34,7 +35,7 @@ type About = {
   readonly wish: string | null;
 };
 
-const role = `You frame the photos of a private trip for an album. Look for an interesting composition rather than a large subject. A photo may show one thing close up, but it often says more when it shows how things come together: an animal and the place it lives in, someone and what they look at, a building and the street in front of it, a group, a row or a pattern, a reflection, or layers from near to far. Give what the eye goes to a strong place, let lines and shapes lead to it, balance it with what else is there, and leave room in front of a subject that looks or moves in a direction.
+const role = `You frame the photos of a private trip for an album. Look for an interesting composition rather than a large subject. A photo may show one thing close up, but it often says more when it shows how things come together: an animal and the place it lives in, someone and what they look at, a building and the street in front of it, a group, a row or a pattern, a reflection, or layers from near to far. Give what the eye goes to a strong place, let lines and shapes lead to it, balance it with what else is there, and give an animal or a person that looks or moves to one side clearly more room in front than behind.
 
 Take away only what adds nothing: plain sky or water without a purpose, dark edges, clutter, strangers at the edge, or a feeder or a fence around an animal. Go close only where the surroundings add nothing, or where a face, a gesture or a detail is what counts. Keep what shows where the photo was taken, what makes it funny or tells its story, all of a group, a row or a pattern, and whatever else would be missed by someone who was there, even out of focus. Never cut off a part of the subject that is in the frame, such as feet, a tail, wing tips, a reflection, the top of a building, or a person's hands, unless you go clearly and deliberately close, as in a portrait of a head.
 
@@ -42,6 +43,10 @@ The image model that edits the photo afterwards can also continue the scene beyo
 
 const Proposals = Schema.Struct({
   subject: Box,
+  facing: Schema.Literals(sides).annotate({
+    description:
+      'The side of the photo that the subject looks at or moves to, if it is an animal or a person, or several that do the same; neither for anything else, and when it faces the camera or turns away from it',
+  }),
   belongings: Schema.Array(Schema.Struct({ what: Schema.String, box: Box })),
   crops: Schema.Array(
     Schema.Struct({
@@ -52,7 +57,7 @@ const Proposals = Schema.Struct({
   ),
 });
 
-const proposalQuestion = `First give a box around the main subject, all of it, or around what the eye goes to when there is no single subject. Then list what else belongs to the photo, each with a box around all of it that is in the frame; the list is empty when only the subject counts. Then propose up to ${mostProposals} frames that could make this a stronger photo, as different from each other as the photo allows, such as the scene with little taken away, a closer one, or another shape. Each must show everything you listed. Propose none if the whole photo is the best composition. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each frame should have.`;
+const proposalQuestion = `First give a box around the main subject, all of it, or around what the eye goes to when there is no single subject, and say which side it faces. Then list what else belongs to the photo, each with a box around all of it that is in the frame; the list is empty when only the subject counts. Then propose up to ${mostProposals} frames that could make this a stronger photo, as different from each other as the photo allows, such as the scene with little taken away, a closer one, or another shape. Each must show everything you listed. Propose none if the whole photo is the best composition. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each frame should have.`;
 
 const Choice = Schema.Struct({
   best: Schema.Int,
@@ -60,7 +65,7 @@ const Choice = Schema.Struct({
 });
 
 const choiceQuestion = (count: number) =>
-  `These are ${count} ways to frame the same photo; photo 1 is all of it. An edit will improve light and sharpness later, and fill plain grey areas by continuing the scene, so judge only the composition. Which one is the most interesting, the one you would most like to see in the album? Don't choose one that cuts off the subject carelessly, loses something that belongs to the photo, feels cramped, squeezes the subject against an edge, or lets an animal fill the frame for no reason, nor one with grey areas where one without them is as good.`;
+  `These are ${count} ways to frame the same photo; photo 1 is all of it. An edit will improve light and sharpness later, and fill plain grey areas by continuing the scene, so judge only the composition. Which one is the most interesting, the one you would most like to see in the album? Don't choose one that cuts off the subject carelessly, loses something that belongs to the photo, feels cramped, squeezes the subject against an edge, lets an animal fill the frame for no reason, or leaves an animal or a person that looks or moves to one side less room in front than behind, nor one with grey areas where one without them is as good.`;
 
 type Candidate = {
   readonly box: Box;
@@ -108,19 +113,17 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
       proposalQuestion,
     ],
   });
+  const subject = tidyBox(proposals.subject);
   const belongings = proposals.belongings.map(({ box }) => tidyBox(box));
+  const held = belongings.map((belonging) => widened(belonging, air));
   const crops = proposals.crops
     .slice(0, mostProposals)
     .map(
       ({ box, aspect, reason }): Candidate => ({
         // However tight the proposal is, what belongs to the photo stays.
-        box: fitAspect(
-          around([
-            frameBox(box),
-            ...belongings.map((belonging) => widened(belonging, air)),
-          ]),
-          size,
-          aspect,
+        box: withRoomAhead(
+          fitAspect(around([frameBox(box), ...held]), size, aspect),
+          { subject, facing: proposals.facing, held },
         ),
         aspect,
         reason,
@@ -133,7 +136,6 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
         belongings.every((belonging) => holds(box, belonging)),
     );
   const candidates = [whole, ...crops];
-  const subject = tidyBox(proposals.subject);
   const asCrop = ({ box, aspect, reason }: Candidate): Crop => ({
     box,
     aspect,

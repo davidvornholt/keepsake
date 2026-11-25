@@ -1,5 +1,4 @@
 import { Effect, Option, Ref } from 'effect';
-import type { EditRecord } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
@@ -8,6 +7,7 @@ import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
 import {
+  type Edited,
   type EditOptions,
   editOf,
   editPhoto,
@@ -55,7 +55,7 @@ const jobs = Effect.fn('jobs')(function* (
 });
 
 type Outcome =
-  | { readonly kind: 'done'; readonly record: EditRecord }
+  | ({ readonly kind: 'done' } & Edited)
   | { readonly kind: 'overBudget'; readonly photo: string }
   | {
       readonly kind: 'failed';
@@ -104,15 +104,19 @@ export const edit = Effect.fn('edit')(function* (
     Effect.gen(function* () {
       const before = yield* editOf(open, toEdit.photo.id);
       if (Option.isSome(before) && !isAnew) {
-        return { kind: 'done', record: before.value } satisfies Outcome;
+        return {
+          kind: 'done',
+          record: before.value,
+          notDone: [],
+        } satisfies Outcome;
       }
-      const record = yield* withinBudget(editPhoto(open, toEdit, options));
-      return Option.match(record, {
+      const edited = yield* withinBudget(editPhoto(open, toEdit, options));
+      return Option.match(edited, {
         onNone: (): Outcome => ({
           kind: 'overBudget',
           photo: toEdit.photo.id,
         }),
-        onSome: (made): Outcome => ({ kind: 'done', record: made }),
+        onSome: (made): Outcome => ({ kind: 'done', ...made }),
       });
     }).pipe(
       // One photo that can't be edited doesn't stop the others.
@@ -125,15 +129,19 @@ export const edit = Effect.fn('edit')(function* (
       ),
     ),
   );
-  const records = outcomes.flatMap((outcome) =>
-    outcome.kind === 'done' ? [outcome.record] : [],
+  const done = outcomes.flatMap((outcome) =>
+    outcome.kind === 'done' ? [outcome] : [],
   );
+  const records = done.map(({ record }) => record);
   return {
     shoot: open.shoot.name,
     edited: records.filter(({ version }) => version === 'ai').length,
     keptFromCamera: records
       .filter(({ version }) => version === 'camera')
       .map(({ photo, review }) => ({ photo, reason: review })),
+    notDone: done.flatMap(({ record: { photo }, notDone }) =>
+      notDone.map((what) => ({ photo, what })),
+    ),
     overBudget: outcomes.flatMap((outcome) =>
       outcome.kind === 'overBudget' ? [outcome.photo] : [],
     ),

@@ -175,7 +175,7 @@ export const edit = Command.make(
     ...editFlags,
     wish: optionalString(
       'wish',
-      'What you want to be done with the named photos, such as what to remove. Edits them anew in the frame they have; with --again, the frame follows it too',
+      'What you want to be done with the named photos, such as what to remove. Changes only the places of a finished photo that it is about, or edits all of it anew in the frame it has; with --again, the frame follows it too',
     ),
     again,
   },

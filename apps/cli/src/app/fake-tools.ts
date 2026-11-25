@@ -19,7 +19,8 @@ const cameraSize = '7008 4672';
 /** Small, since pixels of it are computed with. */
 const editSize = '48 32';
 const editBytes = 4608;
-const editPattern = /(?:input\.jpg|version-\d+(?:-kept|-mended)?\.png)$/u;
+const editPattern =
+  /(?:input(?:-\d+)?\.jpg|version-\d+(?:-kept|-mended)?\.png|(?:candidate-\d+|result)-\d+\.png|-keepsake\.jpg)$/u;
 
 const pad = (value: number) => String(value).padStart(2, '0');
 

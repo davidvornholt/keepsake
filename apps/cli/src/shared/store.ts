@@ -101,6 +101,45 @@ const shootsDirectory = Effect.gen(function* () {
   return path.join(data, 'keepsake', 'shoots');
 });
 
+/** The files of an edit of a photo. */
+const editFiles = (path: Path.Path, directory: string, base: string) => ({
+  directory,
+  /** The camera's own full-size JPEG. */
+  camera: path.join(directory, `${base}.jpg`),
+  /** What the photo shows, if another model judged it. */
+  description: path.join(directory, 'description.json'),
+  crop: path.join(directory, 'crop.json'),
+  /** The cropped photo the image model gets. */
+  input: path.join(directory, 'input.jpg'),
+  /** What the user wants to be done with the photo. */
+  wish: path.join(directory, 'wish.json'),
+  /** What is removed from the photo. */
+  removals: path.join(directory, 'removals.json'),
+  /** The people who can be recognised, and everyone else. */
+  people: path.join(directory, 'people.json'),
+  bystanders: path.join(directory, 'bystanders.json'),
+  signs: path.join(directory, 'signs.json'),
+  /** The areas that keep the photo's own texture. */
+  textures: path.join(directory, 'textures.json'),
+  /** What the image model made. */
+  version: (number: number) => path.join(directory, `version-${number}.png`),
+  /** The signs it got wrong. */
+  changedSigns: (number: number) =>
+    path.join(directory, `version-${number}-signs.json`),
+  /** The same with the original's people, textures and signs in it. */
+  versionWithOriginals: (number: number) =>
+    path.join(directory, `version-${number}-kept.png`),
+  /** What is wrong with it when looking closely. */
+  faults: (number: number) =>
+    path.join(directory, `version-${number}-faults.json`),
+  /** The same without what could be mended. */
+  versionMended: (number: number) =>
+    path.join(directory, `version-${number}-mended.png`),
+  final: path.join(directory, `${base}-keepsake.jpg`),
+  record: path.join(directory, 'edit.json'),
+});
+export type EditFiles = ReturnType<typeof editFiles>;
+
 const shootNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
 /** Where keepsake keeps everything about one shoot. */
@@ -134,42 +173,32 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     edit: (photo: string) => {
       const directory = path.join(root, 'edits', photo);
       const base = path.basename(photo);
+      const files = editFiles(path, directory, base);
+      const changes = path.join(directory, 'correction');
       return {
-        directory,
-        /** The camera's own full-size JPEG. */
-        camera: path.join(directory, `${base}.jpg`),
-        /** What the photo shows, if another model judged it. */
-        description: path.join(directory, 'description.json'),
-        crop: path.join(directory, 'crop.json'),
-        /** The cropped photo the image model gets. */
-        input: path.join(directory, 'input.jpg'),
-        /** What the user wants to be done with the photo. */
-        wish: path.join(directory, 'wish.json'),
-        /** What is removed from the photo. */
-        removals: path.join(directory, 'removals.json'),
-        /** The people who can be recognised, and everyone else. */
-        people: path.join(directory, 'people.json'),
-        bystanders: path.join(directory, 'bystanders.json'),
-        signs: path.join(directory, 'signs.json'),
-        /** The areas that keep the photo's own texture. */
-        textures: path.join(directory, 'textures.json'),
-        /** What the image model made. */
-        version: (number: number) =>
-          path.join(directory, `version-${number}.png`),
-        /** The signs it got wrong. */
-        changedSigns: (number: number) =>
-          path.join(directory, `version-${number}-signs.json`),
-        /** The same with the original's people, textures and signs in it. */
-        versionWithOriginals: (number: number) =>
-          path.join(directory, `version-${number}-kept.png`),
-        /** What is wrong with it when looking closely. */
-        faults: (number: number) =>
-          path.join(directory, `version-${number}-faults.json`),
-        /** The same without what could be mended. */
-        versionMended: (number: number) =>
-          path.join(directory, `version-${number}-mended.png`),
-        final: path.join(directory, `${base}-keepsake.jpg`),
-        record: path.join(directory, 'edit.json'),
+        ...files,
+        /** A change to the finished photo, which stays until that is done. */
+        correction: {
+          ...editFiles(path, changes, base),
+          camera: files.camera,
+          final: files.final,
+          /** What has to change, and where. */
+          places: path.join(changes, 'places.json'),
+          /** What an attempt starts from, in the size the image model makes. */
+          inputOf: (attempt: number) =>
+            path.join(changes, `input-${attempt}.jpg`),
+          /** The finished photo with the changes of a version. */
+          candidate: (attempt: number, number: number) =>
+            path.join(changes, `candidate-${attempt}-${number}.png`),
+          /** Which of them is best at each place. */
+          choices: (attempt: number) =>
+            path.join(changes, `choices-${attempt}.json`),
+          /** The finished photo with the best of them. */
+          result: (attempt: number) =>
+            path.join(changes, `result-${attempt}.png`),
+          /** What came of it. */
+          outcome: path.join(changes, 'outcome.json'),
+        },
       };
     },
   };

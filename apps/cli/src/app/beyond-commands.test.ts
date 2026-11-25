@@ -19,6 +19,7 @@ describe('a crop beyond the photo', () => {
   const beyond = () => {
     fakeModels.answers.crops = {
       subject: { left: 0, top: 0.4, right: 0.5, bottom: 0.6 },
+      facing: 'neither',
       belongings: [],
       crops: [
         {

@@ -7,10 +7,11 @@
 1. It groups the photos into moments, such as a burst of a bird taking off.
 2. A vision model finds the best frames of each moment, checks their focus at full size, and scores them. It takes more than one of a moment where they show clearly different things, such as another pose.
 3. It leaves out repeats, keeps the most interesting of several photos that show the same thing again within a few minutes, and, when there are too many, compares the photos with each other and keeps the best, with a variety of places, people, animals and the rest.
-4. It crops each one to an interesting composition, and an image model edits it. The frame may reach a little beyond the photo where a subject is cut off or has no room, and the image model continues the scene there. The edit also takes away what only distracts, such as strangers who aren't part of the scene, a chair or a sign at the edge, and you can tell it what else you want with `--wish`.
+4. It crops each one to an interesting composition, with more room in front of an animal or a person than behind, and an image model edits it. The frame may reach a little beyond the photo where a subject is cut off or has no room, and the image model continues the scene there. The edit also takes away what only distracts, such as strangers who aren't part of the scene, a chair or a sign at the edge.
 5. Image models redraw faces, so keepsake takes everyone who can be recognised from the photo itself. The vision model outlines them, keepsake puts their own pixels back into the edit, from inside up to where both show the same, and only their light follows the edit: brighter, darker, warmer or cooler over areas too large to change a feature. Small people in the background and in reflections come back as well, and so do the words on signs where the image model changed them, and the leaves of forests, which it turns into clumps. Image models also show a photo a little larger or further to a side, so keepsake first finds where an edit shows it.
 6. The vision model reviews every edit against the original, and then looks through it part by part at full size for what would bother someone: a melted person, a woven lawn, a ghost, a seam. keepsake puts such a place back from the original and looks again. Where that doesn't help, where the subject, its pose, the people or the place changed, or where the edit isn't better, it asks for another, and in the end falls back to the camera's own picture.
-7. It publishes the result to an album in [Immich](https://immich.app), each photo stacked on the camera's own picture.
+7. You can tell it with `--wish` what else you want to be done with a finished photo, such as another thing to remove. It finds the places that is about, has the image model make versions, checks each place close up in all of them, and takes only what changed there into the photo. Everything else stays as it is.
+8. It publishes the result to an album in [Immich](https://immich.app), each photo stacked on the camera's own picture.
 
 keepsake never changes the photos themselves. Models see re-encoded pictures without metadata. The finished photos keep the camera's data, get a caption and a star rating, and carry IPTC's mark for photos edited with AI.
 
@@ -51,7 +52,7 @@ Other models can choose and crop with `--model`, and do the rest with `--review-
 keepsake run ~/photos/lisbon --about "Lisbon, May 2026" --maximum 40 --budget 30 --publish
 ```
 
-It can take hours. When it stops, run it again and it goes on where it stopped. Editing costs about $0.75 per photo. Culling costs nothing extra on a subscription, and about $2.50 per 100 photos with `azure/gpt-6-astra`. `--budget` limits what the edits cost.
+It can take hours. When it stops, run it again and it goes on where it stopped. Editing costs about $0.75 per photo, and a change to a finished one about $0.45. Culling costs nothing extra on a subscription, and about $2.50 per 100 photos with `azure/gpt-6-astra`. `--budget` limits what the edits cost.
 
 `keepsake rate` and `keepsake bench` measure which vision model agrees best with your own taste: you rate some moments on a local page, and each model is compared with your ratings.
 

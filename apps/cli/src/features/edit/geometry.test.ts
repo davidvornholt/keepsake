@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { aspectNames, ratioOf } from '../../shared/domain.ts';
 import {
   closestAspect,
+  editableSize,
   exactFrame,
   fitAspect,
   outputSize,
@@ -85,6 +86,27 @@ describe('outputSize', () => {
     expect(width * height).toBeLessThanOrEqual(8_294_400);
     expect(width * height).toBeGreaterThan(8_000_000);
     expect(Math.abs(width / height / ratioOf(aspect) - 1)).toBeLessThan(0.006);
+  });
+});
+
+describe('editableSize', () => {
+  it('is a picture’s own if the model makes it', () => {
+    const own = { width: 3520, height: 2352 };
+    expect(editableSize(own)).toEqual(own);
+  });
+
+  it.each([
+    { width: 2520, height: 1680 },
+    { width: 2523, height: 1677 },
+    { width: 7008, height: 4672 },
+  ])('has the shape of any other picture: %o', (size) => {
+    const { width, height } = editableSize(size);
+    expect(width % 16).toBe(0);
+    expect(height % 16).toBe(0);
+    expect(width * height).toBeGreaterThan(8_000_000);
+    expect(
+      Math.abs(((width / height) * size.height) / size.width - 1),
+    ).toBeLessThan(0.006);
   });
 });
 
