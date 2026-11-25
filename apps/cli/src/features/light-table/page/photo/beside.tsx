@@ -69,7 +69,7 @@ const Caption = ({
         h: captionHeight,
       }}
     >
-      <span aria-hidden="true" className="rounded-[2px] bg-ground px-2 py-1.5">
+      <span aria-hidden="true" className="bg-ground px-2 py-1.5">
         {children}
       </span>
     </Placed>

@@ -44,7 +44,7 @@ export const Sentence = ({ lead }: { readonly lead: string }) => {
       <p className="text-print" id={labelId}>
         {lead}
       </p>
-      <div className="mt-2.5 flex flex-wrap items-center justify-end gap-x-2 rounded-[3px] border border-rule py-1.5 pr-1.5 pl-4 focus-within:border-quiet">
+      <div className="mt-2.5 flex flex-wrap items-center justify-end gap-x-2 border border-rule py-1.5 pr-1.5 pl-4 focus-within:border-quiet">
         <input
           aria-labelledby={labelId}
           // As wide as the sentence, so that on a narrow screen the button goes below it instead of hiding its end.

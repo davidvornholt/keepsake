@@ -60,7 +60,7 @@ const Frame = ({
       <a
         aria-current={isShown ? 'true' : undefined}
         aria-label={`Photo ${number}: ${isFront ? said.text : `behind it${why}`}`}
-        className="block rounded-[2px] outline-2 outline-transparent outline-offset-1 transition-[outline-color,opacity] duration-150 hover:opacity-100 aria-[current]:opacity-100 aria-[current]:outline-lamp data-[front=false]:opacity-55"
+        className="block outline-2 outline-transparent outline-offset-1 transition-[outline-color,opacity] duration-150 hover:opacity-100 aria-[current]:opacity-100 aria-[current]:outline-lamp data-[front=false]:opacity-55"
         data-front={isFront}
         href={hrefOfPhoto(photo.id)}
         onClick={(event) => {
@@ -77,7 +77,7 @@ const Frame = ({
         }
       >
         <Thumb
-          className="h-11 w-auto rounded-[2px]"
+          className="h-11 w-auto"
           picture={photo.edit?.picture ?? photo.picture}
           width={small}
         />

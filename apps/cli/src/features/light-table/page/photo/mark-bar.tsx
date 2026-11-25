@@ -15,7 +15,7 @@ import { useSince } from '../ui/use-since.ts';
 const iconSize = 16;
 const heartSize = 20;
 const button =
-  'group/mark type-label flex min-h-12 min-w-16 flex-col items-center justify-center gap-1 rounded-[3px] px-3 text-[0.8125rem] text-quiet transition-colors duration-150 hover:bg-raised hover:text-lamp aria-pressed:text-lamp sm:flex-row sm:gap-2.5 sm:text-sm';
+  'group/mark type-label flex min-h-12 min-w-16 flex-col items-center justify-center gap-1 px-3 text-[0.8125rem] text-quiet transition-colors duration-150 hover:bg-raised hover:text-lamp aria-pressed:text-lamp sm:flex-row sm:gap-2.5 sm:text-sm';
 
 const MarkButton = ({
   photo,
@@ -127,7 +127,7 @@ export const MarkBar = ({
         {/* Beside the pencils, so that they stay in the middle without it. */}
         <button
           aria-keyshortcuts="U"
-          className="type-label absolute top-0 left-full ml-1 flex min-h-12 min-w-11 items-center justify-center gap-2 rounded-[3px] px-3 text-print text-sm transition-[opacity,color] duration-150 hover:bg-raised hover:text-lamp disabled:invisible disabled:opacity-0 sm:ml-4"
+          className="type-label absolute top-0 left-full ml-1 flex min-h-12 min-w-11 items-center justify-center gap-2 px-3 text-print text-sm transition-[opacity,color] duration-150 hover:bg-raised hover:text-lamp disabled:invisible disabled:opacity-0 sm:ml-4"
           disabled={undoable === null}
           onClick={() => store.undo()}
           type="button"

@@ -74,13 +74,13 @@ export const Labels = ({
       <div className="flex flex-wrap items-center gap-1.5 border-rule border-b pb-1.5 focus-within:border-lamp">
         {labels.map((label) => (
           <span
-            className="type-label inline-flex items-center gap-1 rounded-[3px] bg-raised py-0.5 pr-1 pl-2 text-print text-sm"
+            className="type-label inline-flex items-center gap-1 bg-raised py-0.5 pr-1 pl-2 text-print text-sm"
             key={label}
           >
             {label}
             <button
               aria-label={`Remove the label ${label}`}
-              className="grid size-5 place-items-center rounded-[2px] text-quiet hover:text-lamp"
+              className="grid size-5 place-items-center text-quiet hover:text-lamp"
               onClick={() =>
                 store.label(
                   photo,

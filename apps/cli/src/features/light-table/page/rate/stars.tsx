@@ -52,7 +52,7 @@ const StarButton = ({
   <button
     aria-keyshortcuts={String(stars)}
     aria-pressed={isGiven}
-    className="type-label flex min-h-12 flex-col items-center justify-center gap-1 rounded-[3px] px-3 text-[0.8125rem] text-quiet transition-colors duration-150 hover:bg-raised hover:text-lamp aria-pressed:text-lamp lg:flex-row lg:gap-2.5 lg:px-3.5"
+    className="type-label flex min-h-12 flex-col items-center justify-center gap-1 px-3 text-[0.8125rem] text-quiet transition-colors duration-150 hover:bg-raised hover:text-lamp aria-pressed:text-lamp lg:flex-row lg:gap-2.5 lg:px-3.5"
     onClick={() => onRate(stars)}
     type="button"
   >

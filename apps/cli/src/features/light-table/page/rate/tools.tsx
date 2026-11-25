@@ -81,7 +81,7 @@ type ToolsProps = {
   readonly onZoom: () => void;
 };
 
-const tool = `${quietButton} h-10 whitespace-nowrap rounded-[3px] px-2.5 text-sm hover:bg-raised`;
+const tool = `${quietButton} h-10 whitespace-nowrap px-2.5 text-sm hover:bg-raised`;
 
 /** What can be done with the photo that is shown large. */
 export const RateTools = ({

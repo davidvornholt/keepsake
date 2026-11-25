@@ -26,7 +26,7 @@ export const Notices = ({
     return hint === null ? null : (
       <Placed className={shape} rect={place}>
         <p
-          className="type-label flex min-h-11 max-w-[40rem] items-center rounded-[3px] bg-raised px-4 py-2 text-lamp shadow-[0_6px_24px_var(--color-shade)]"
+          className="type-label flex min-h-11 max-w-[40rem] items-center bg-raised px-4 py-2 text-lamp shadow-[0_6px_24px_var(--color-shade)]"
           role="status"
         >
           {hint}
@@ -37,7 +37,7 @@ export const Notices = ({
   return (
     <Placed className={shape} rect={place}>
       <p
-        className="pointer-events-auto flex min-h-11 max-w-[40rem] items-center gap-3 rounded-[3px] bg-lamp py-1 pr-1 pl-4 text-sheet shadow-[0_6px_24px_var(--color-shade)]"
+        className="pointer-events-auto flex min-h-11 max-w-[40rem] items-center gap-3 bg-lamp py-1 pr-1 pl-4 text-sheet shadow-[0_6px_24px_var(--color-shade)]"
         role="status"
       >
         <span className="py-1.5">

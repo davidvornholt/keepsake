@@ -174,7 +174,7 @@ export const Album = ({
   const name = shoot.about ?? shoot.name;
   return (
     <a
-      className="group block rounded-[3px] p-3"
+      className="group block p-3"
       data-album={shoot.name}
       href={hrefOf(route)}
       onClick={(event) => {
@@ -215,7 +215,7 @@ export const NewPlace = ({ isFirst }: { readonly isFirst: boolean }) => {
   return (
     <a
       aria-keyshortcuts="N"
-      className="group block rounded-[3px] p-3"
+      className="group block p-3"
       data-album=""
       href={hrefOf(route)}
       onClick={(event) => {

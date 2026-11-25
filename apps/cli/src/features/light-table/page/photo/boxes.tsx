@@ -185,7 +185,7 @@ const Tag = ({
         aria-describedby={howId}
         aria-label={`Box ${at + 1} of ${boxes.length}`}
         aria-pressed={isChosen}
-        className={`type-edge tabular grid h-7 pointer-coarse:h-9 min-w-7 pointer-coarse:min-w-9 place-items-center rounded-[3px] px-1.5 ${isChosen ? 'bg-wax-yellow text-sheet' : 'bg-ground text-wax-yellow'} ${boxes.length > 1 || isChosen ? '' : 'opacity-0 focus-visible:opacity-100'}`}
+        className={`type-edge tabular grid h-7 pointer-coarse:h-9 min-w-7 pointer-coarse:min-w-9 place-items-center px-1.5 ${isChosen ? 'bg-wax-yellow text-sheet' : 'bg-ground text-wax-yellow'} ${boxes.length > 1 || isChosen ? '' : 'opacity-0 focus-visible:opacity-100'}`}
         data-box-tag={at}
         onClick={() => props.onSelect(at)}
         onFocus={() => props.onSelect(at)}
@@ -197,7 +197,7 @@ const Tag = ({
       {isChosen ? (
         <button
           aria-label={`Remove box ${at + 1}`}
-          className="grid pointer-coarse:size-9 size-7 place-items-center rounded-[3px] bg-ground text-lamp hover:bg-wax-red hover:text-sheet"
+          className="grid pointer-coarse:size-9 size-7 place-items-center bg-ground text-lamp hover:bg-wax-red hover:text-sheet"
           onClick={() => props.onRemove(at)}
           title="Remove this box (Delete)"
           type="button"

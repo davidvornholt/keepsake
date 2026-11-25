@@ -103,7 +103,7 @@ export const Whole = ({
   readonly onWhole: () => void;
 }) => (
   <div
-    className={`absolute top-1.5 left-1.5 z-10 flex items-center rounded-[3px] bg-ground pr-3 transition-opacity duration-200 motion-reduce:transition-none sm:left-3 ${isShown ? '' : 'pointer-events-none opacity-0'}`}
+    className={`absolute top-1.5 left-1.5 z-10 flex items-center bg-ground pr-3 transition-opacity duration-200 motion-reduce:transition-none sm:left-3 ${isShown ? '' : 'pointer-events-none opacity-0'}`}
     inert={!isShown}
   >
     <button

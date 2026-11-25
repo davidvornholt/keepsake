@@ -58,7 +58,11 @@ export type Measure = {
   readonly inset: number;
   readonly margin: number;
   readonly head: number;
-  /** Whether the frames are large enough to carry their number and time. */
+  /** Whether the frames are large enough to show which of them are piles. */
+  readonly hasPiles: boolean;
+  /** Whether they are large enough for all the signs that lie on them. */
+  readonly hasSigns: boolean;
+  /** Whether they are large enough to carry their number and time. */
   readonly hasEdgePrint: boolean;
 };
 
@@ -80,7 +84,14 @@ const mostInset = 28;
 const leastMargin = 5;
 const mostMargin = 22;
 const headHeight = 26;
-/** From this height on a frame has room for its number and time below it. */
+/**
+ * From these heights on a frame has room to lie as a pile with its number,
+ * for the other signs on it, and for its own number and time below it.
+ * They go by the height all frames of a table are laid out for, so that rows
+ * which came out a little taller or lower say as much as the others.
+ */
+const pilesFrom = 26;
+const signsFrom = 60;
 export const edgePrintFrom = 88;
 const edgePrintHeight = 18;
 /** Below this height all frames lie evenly. */
@@ -122,6 +133,8 @@ export const measureOf = (
     inset: Math.round(clamp(frame * insetShare, leastInset, inset)),
     margin: Math.round(clamp(frame * marginShare, leastMargin, margin)),
     head: headHeight,
+    hasPiles: frame >= pilesFrom,
+    hasSigns: frame >= signsFrom,
     hasEdgePrint,
   };
 };

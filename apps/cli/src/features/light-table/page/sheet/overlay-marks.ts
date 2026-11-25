@@ -90,11 +90,23 @@ export type Drawn = {
   readonly ceiling: number;
 };
 
-/** The blue pencil: a dot for an answer to look at, a ring for a mark an agent has. */
-const drawBlue = (pencil: Pencil, rect: Rect, isAnswered: boolean) => {
+/**
+ * The blue pencil: a dot for an answer to look at, a ring for a mark an agent
+ * has. It lies in the upper left corner, below the heading like the heart:
+ * the lower right one is where a pile says how many lie in it.
+ */
+const drawBlue = (
+  { pencil, ceiling }: { readonly pencil: Pencil; readonly ceiling: number },
+  rect: Rect,
+  isAnswered: boolean,
+) => {
   const radius = clamp(Math.min(rect.w, rect.h) * dotShare, leastDot, mostDot);
-  const x = rect.x + rect.w - radius * dotInset;
-  const y = rect.y + rect.h - radius * dotInset;
+  const inset = radius * dotInset;
+  const x = rect.x + inset;
+  const y = Math.min(
+    Math.max(rect.y, ceiling) + inset,
+    rect.y + rect.h - inset,
+  );
   pencil.beginPath();
   pencil.arc(x, y, radius + dotEdge, 0, fullTurn);
   pencil.fillStyle = colorOf('--color-shade');
@@ -113,7 +125,7 @@ const drawBlue = (pencil: Pencil, rect: Rect, isAnswered: boolean) => {
 
 /** Draws one mark of a frame. Says whether the hand is still drawing it. */
 const drawMark = (
-  { pencil, madeAt, now, scale }: Drawn,
+  { pencil, madeAt, now, scale, ceiling }: Drawn,
   rect: Rect,
   shown: Frame['marks'][number] & { readonly photo: string },
 ): boolean => {
@@ -123,7 +135,7 @@ const drawMark = (
   const stamp = { shape: look.shape, seed: seedOf(key), wax: look.wax };
   const place = markPlace(rect);
   if (shown.state === 'news') {
-    drawBlue(pencil, rect, true);
+    drawBlue({ pencil, ceiling }, rect, true);
     return false;
   }
   const progress =
@@ -139,7 +151,7 @@ const drawMark = (
   }
   stampWax(pencil, stamp, place, scale);
   if (shown.state === 'waiting') {
-    drawBlue(pencil, rect, false);
+    drawBlue({ pencil, ceiling }, rect, false);
   }
   return false;
 };

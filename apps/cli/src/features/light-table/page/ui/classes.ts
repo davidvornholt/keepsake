@@ -7,19 +7,19 @@ export const quietButton =
 
 /** A button that is the next thing to do. */
 export const mainButton =
-  'type-label inline-flex h-10 items-center gap-2.5 rounded-[3px] bg-lamp px-4 text-sheet transition-transform duration-100 active:translate-y-px disabled:bg-rule disabled:text-table';
+  'type-label inline-flex h-10 items-center gap-2.5 bg-lamp px-4 text-sheet transition-transform duration-100 active:translate-y-px disabled:bg-rule disabled:text-table';
 
 /** A button beside the main one. */
 export const sideButton =
-  'type-label inline-flex h-10 items-center gap-2.5 rounded-[3px] border border-rule px-4 text-print transition-colors duration-150 hover:border-quiet hover:text-lamp active:translate-y-px';
+  'type-label inline-flex h-10 items-center gap-2.5 border border-rule px-4 text-print transition-colors duration-150 hover:border-quiet hover:text-lamp active:translate-y-px';
 
 /** A button that leads to what an agent did, in its blue pencil. */
 export const agentButton =
-  'type-label inline-flex h-10 items-center gap-2.5 rounded-[3px] border border-pencil-blue px-4 text-pencil-blue transition-colors duration-150 hover:bg-pencil-blue hover:text-sheet active:translate-y-px';
+  'type-label inline-flex h-10 items-center gap-2.5 border border-pencil-blue px-4 text-pencil-blue transition-colors duration-150 hover:bg-pencil-blue hover:text-sheet active:translate-y-px';
 
 /** A square button that holds one icon. */
 export const iconButton =
-  'inline-grid size-10 shrink-0 place-items-center rounded-[3px] text-quiet transition-colors duration-150 hover:bg-raised hover:text-lamp disabled:text-rule disabled:hover:bg-transparent';
+  'inline-grid size-10 shrink-0 place-items-center text-quiet transition-colors duration-150 hover:bg-raised hover:text-lamp disabled:text-rule disabled:hover:bg-transparent';
 
 /**
  * What surrounds a photo that is looked at. It comes and goes with the lights
@@ -34,4 +34,4 @@ export const tab =
 
 /** A line to type in. */
 export const field =
-  'h-11 w-full min-w-0 rounded-[3px] border border-rule bg-transparent px-3.5 text-[1.0625rem] text-lamp transition-colors duration-150 placeholder:text-quiet hover:border-quiet focus-visible:border-lamp';
+  'h-11 w-full min-w-0 border border-rule bg-transparent px-3.5 text-[1.0625rem] text-lamp transition-colors duration-150 placeholder:text-quiet hover:border-quiet focus-visible:border-lamp';

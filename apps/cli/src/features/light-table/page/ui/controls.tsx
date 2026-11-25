@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 /** The key that does the same as a button, printed small beside it. */
 export const Key = ({ children }: { readonly children: ReactNode }) => (
-  <kbd className="type-edge hidden rounded-[3px] border border-rule px-[5px] py-[2px] font-sans text-[0.625rem] text-quiet [@media(pointer:fine)]:inline-block">
+  <kbd className="type-edge hidden border border-rule px-[5px] py-[2px] font-sans text-[0.625rem] text-quiet [@media(pointer:fine)]:inline-block">
     {children}
   </kbd>
 );
