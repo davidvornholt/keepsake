@@ -183,7 +183,7 @@
     margin-block-start: -7px;
     appearance: none;
     background: var(--color-print);
-    border-radius: 1px;
+    border-radius: 0;
   }
 
   input[data-rule]::-moz-range-thumb {
@@ -191,7 +191,7 @@
     block-size: 16px;
     background: var(--color-print);
     border: 0;
-    border-radius: 1px;
+    border-radius: 0;
   }
 
   input[data-rule]:hover::-webkit-slider-thumb {

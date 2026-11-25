@@ -121,7 +121,7 @@ const Mine = ({
   const shape = 'flex min-w-0 flex-1 items-center gap-3 text-left';
   return mark.kind === 'change' ? (
     <button
-      className={`${shape} rounded-[3px] py-1.5 hover:bg-raised`}
+      className={`${shape} py-1.5 hover:bg-raised`}
       onClick={onEdit}
       title="Change the words"
       type="button"

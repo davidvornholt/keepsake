@@ -79,7 +79,7 @@ const KeepToo = ({
     <button
       aria-label={`Keep too: ${name}`}
       aria-pressed={isKept}
-      className="type-label flex h-9 items-center gap-2 rounded-[3px] pr-2.5 pl-1 text-[0.8125rem] text-quiet transition-colors duration-150 hover:text-lamp aria-pressed:text-lamp"
+      className="type-label flex h-9 items-center gap-2 pr-2.5 pl-1 text-[0.8125rem] text-quiet transition-colors duration-150 hover:text-lamp aria-pressed:text-lamp"
       onClick={onToggle}
       type="button"
     >

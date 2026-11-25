@@ -99,7 +99,7 @@ export const Composer = ({
       <div className="flex items-end gap-2">
         <textarea
           aria-label="What should change?"
-          className="field-sizing-content max-h-32 min-h-11 min-w-0 flex-1 resize-none rounded-[3px] border border-wax-yellow bg-sheet px-3 py-2.5 text-[0.9375rem] text-lamp leading-snug outline-none placeholder:text-quiet"
+          className="field-sizing-content max-h-32 min-h-11 min-w-0 flex-1 resize-none border border-wax-yellow bg-sheet px-3 py-2.5 text-[0.9375rem] text-lamp leading-snug outline-none placeholder:text-quiet"
           enterKeyHint="done"
           onChange={(event) => onDraft({ ...draft, note: event.target.value })}
           onKeyDown={onKeyDown}

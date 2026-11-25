@@ -43,8 +43,9 @@ export const pressed = (page: Page, name: string | RegExp) =>
 export const standing = (page: Page) => large(page).locator('[data-standing]');
 
 const everyAlbum = /\/api\/shoots$/u;
+const oneAlbum = /\/api\/shoots\/[^/]+$/u;
 
-/** Opens the shelf. The first time, the server looks at every cover for it. */
+/** Opens the shelf, and waits for the server to say what is on it. */
 export const shelf = async (page: Page) => {
   const answer = page.waitForResponse(everyAlbum);
   await page.goto('/');
@@ -59,7 +60,9 @@ export const open = async (page: Page, path: string) => {
 
 /** Opens an album and waits until its photos lie on the table. */
 export const lay = async (page: Page, path: string, name: string) => {
+  const answer = page.waitForResponse(oneAlbum);
   await page.goto(path);
+  await answer;
   await expect(title(page)).toHaveText(name);
   await expect(frame(page)).toBeVisible();
 };

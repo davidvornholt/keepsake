@@ -43,7 +43,7 @@ export const PhotoLink = ({
     >
       <Thumb
         alt={`Photo ${number}`}
-        className={`${className} w-auto rounded-[2px] outline-1 outline-transparent outline-offset-1 transition-[outline-color] group-hover/link:outline-lamp`}
+        className={`${className} w-auto outline-1 outline-transparent outline-offset-1 transition-[outline-color] group-hover/link:outline-lamp`}
         picture={view.edit?.picture ?? view.picture}
         width={small}
       />

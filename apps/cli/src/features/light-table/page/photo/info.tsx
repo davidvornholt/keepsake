@@ -111,7 +111,7 @@ const Edited = ({
             {edit.removed.map(({ what, box }) => (
               <li key={`${what}-${box.left}-${box.top}`}>
                 <button
-                  className="w-full rounded-[3px] px-2 py-1 text-left text-print hover:bg-raised hover:text-lamp"
+                  className="w-full px-2 py-1 text-left text-print hover:bg-raised hover:text-lamp"
                   onBlur={() => onPrinted(null)}
                   onFocus={() => onPrinted(box)}
                   onPointerEnter={() => onPrinted(box)}

@@ -1,5 +1,5 @@
 import { clamp } from '../motion/spring.ts';
-import type { Rect } from './layout.ts';
+import type { Measure, Rect } from './layout.ts';
 import { frameUnder, onScreen, type Table } from './table.ts';
 
 // A pile of photos that show the same, as it lies on the table: the one in
@@ -10,8 +10,6 @@ const mostEdges = 2;
 const edgeShare = 0.035;
 const leastEdge = 2;
 const mostEdge = 6;
-/** A frame lower than this is too small to show a pile. */
-const pileFrom = 26;
 
 export type Pile = {
   /** The photo in front, a little smaller than its frame. */
@@ -21,8 +19,12 @@ export type Pile = {
 };
 
 /** How a frame that stands for `count` photos lies in its place. */
-export const pileIn = (rect: Rect, count: number): Pile => {
-  const edges = rect.h < pileFrom ? 0 : Math.min(mostEdges, count - 1);
+export const pileIn = (
+  rect: Rect,
+  count: number,
+  { hasPiles }: Measure,
+): Pile => {
+  const edges = hasPiles ? Math.min(mostEdges, count - 1) : 0;
   if (edges <= 0) {
     return { face: rect, edges: [] };
   }
@@ -43,17 +45,21 @@ export const pileIn = (rect: Rect, count: number): Pile => {
   };
 };
 
-/** The corner of a pile that opens and closes it is at least this large, for a finger. */
+/**
+ * The corner of a pile that opens and closes it is at least this large, for
+ * a finger, but leaves most of a small photo to open the photo itself.
+ */
 const leastCorner = 28;
 const mostCorner = 48;
 const cornerShare = 0.45;
+const mostShare = 0.6;
 
 /** The lower right corner of a frame, where its pile is opened and closed. */
 export const cornerOf = (rect: Rect): Rect => {
+  const side = Math.min(rect.w, rect.h);
   const size = Math.min(
-    rect.w,
-    rect.h,
-    clamp(Math.min(rect.w, rect.h) * cornerShare, leastCorner, mostCorner),
+    side * mostShare,
+    clamp(side * cornerShare, leastCorner, mostCorner),
   );
   return {
     x: rect.x + rect.w - size,
@@ -78,8 +84,10 @@ export const pileUnder = (
   if (frame === undefined || rect === null) {
     return null;
   }
-  const isPile = frame.pile > 1 || frame.opened?.isFront === true;
-  const corner = cornerOf(pileIn(rect, frame.pile).face);
+  const { measure } = table.layout;
+  const isPile =
+    measure.hasPiles && (frame.pile > 1 || frame.opened?.isFront === true);
+  const corner = cornerOf(pileIn(rect, frame.pile, measure).face);
   const isOn =
     x >= corner.x &&
     y >= corner.y &&

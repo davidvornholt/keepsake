@@ -123,7 +123,7 @@ const Afloat = ({
   >
     {isNarrow ? (
       <Attention
-        className="pointer-events-auto m-3 max-w-[calc(100%-1.5rem)] flex-wrap justify-center rounded-[3px] bg-raised px-2 py-1 shadow-[0_6px_24px_var(--color-shade)]"
+        className="pointer-events-auto m-3 max-w-[calc(100%-1.5rem)] flex-wrap justify-center bg-raised px-2 py-1 shadow-[0_6px_24px_var(--color-shade)]"
         sheet={sheet}
       />
     ) : null}

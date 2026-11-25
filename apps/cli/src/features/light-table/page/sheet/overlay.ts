@@ -1,16 +1,9 @@
 import { seedTextOf } from '../marks/kinds.ts';
 import { mix } from '../motion/spring.ts';
 import { colorOf } from '../ui/theme.ts';
-import type { Rect } from './layout.ts';
+import type { Measure, Rect } from './layout.ts';
 import { type Drawn, drawMarks } from './overlay-marks.ts';
-import {
-  countFrom,
-  cropFrom,
-  drawCount,
-  drawCrop,
-  drawPrint,
-  printFont,
-} from './overlay-print.ts';
+import { drawCount, drawCrop, drawPrint, printFont } from './overlay-print.ts';
 import { pileIn } from './pile.ts';
 import {
   type Content,
@@ -129,22 +122,22 @@ const drawOutlines = (
   return frame.isWorkedOn;
 };
 
-/** How the frames of one layout are drawn: how clearly, and with what below them. */
+/** How the frames of one layout are drawn: how clearly, how far apart, and with what on them. */
 type Look = {
   readonly alpha: number;
   readonly gap: number;
-  readonly hasEdgePrint: boolean;
+  readonly measure: Measure;
 };
 
 /** How many lie in a pile, on the photo in front of it, where there is room to say so. */
 const drawPile = (
   { pencil, scale }: Drawn,
   state: OverlayState,
-  frame: Frame,
-  face: Rect,
+  { frame, face }: { readonly frame: Frame; readonly face: Rect },
+  { hasPiles, hasSigns }: Measure,
 ) => {
   const isOpen = frame.opened?.isFront === true;
-  if ((frame.pile > 1 || isOpen) && face.h >= countFrom) {
+  if ((frame.pile > 1 || isOpen) && hasPiles) {
     drawCount(
       pencil,
       face,
@@ -152,6 +145,7 @@ const drawPile = (
         count: frame.opened?.count ?? frame.pile,
         isOpen,
         isHot: state.hoverPile === frame.id,
+        isSmall: !hasSigns,
       },
       scale,
     );
@@ -167,13 +161,14 @@ const drawFrame = (
 ): boolean => {
   const { pencil } = drawn;
   const { frame } = placed;
-  const { face } = pileIn(whole, frame.pile);
-  if (frame.crop !== null && face.h >= cropFrom) {
+  const { measure } = look;
+  const { face } = pileIn(whole, frame.pile, measure);
+  if (frame.crop !== null && measure.hasSigns) {
     drawCrop(pencil, face, frame.crop);
   }
   const isDrawing = drawMarks(drawn, frame, face);
-  drawPile(drawn, state, frame, face);
-  if (look.hasEdgePrint && !placed.isLeaving) {
+  drawPile(drawn, state, { frame, face }, measure);
+  if (measure.hasEdgePrint && !placed.isLeaving) {
     drawPrint(pencil, frame, whole, look.gap);
   }
   const isPulsing = drawOutlines(drawn, state, frame, whole);
@@ -220,13 +215,13 @@ export const drawOverlay = (
     drawFrames(drawn, state, ghostInSight(table), {
       alpha: lights * (1 - table.fade),
       gap: ghost.layout.measure.gap * ghost.view.k,
-      hasEdgePrint: ghost.layout.measure.hasEdgePrint,
+      measure: ghost.layout.measure,
     });
   }
   const isChanging = drawFrames(drawn, state, inSight(table), {
     alpha: lights * (ghost === null ? 1 : table.fade),
     gap: measure.gap * view.k,
-    hasEdgePrint: measure.hasEdgePrint,
+    measure,
   });
   pencil.globalAlpha = 1;
   return isChanging;

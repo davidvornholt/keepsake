@@ -16,6 +16,23 @@ import { useShoots } from './use-shoots.ts';
 // and at its end the place where the next one goes.
 
 const iconSize = 16;
+
+/** The fewer albums there are, the larger they lie on the shelf. */
+const columns = {
+  few: 'grid-cols-[repeat(auto-fill,minmax(min(100%,max(34rem,30vw)),1fr))]',
+  some: 'grid-cols-[repeat(auto-fill,minmax(min(100%,max(28rem,22vw)),1fr))]',
+  many: 'grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))]',
+} as const;
+const fewUpTo = 2;
+const someUpTo = 5;
+
+const columnsFor = (albums: number): string => {
+  if (albums <= fewUpTo) {
+    return columns.few;
+  }
+  return albums <= someUpTo ? columns.some : columns.many;
+};
+
 const toNew: Route = { screen: 'new', folder: null };
 
 const Problem = ({
@@ -113,7 +130,7 @@ export const Shelf = () => {
       ) : null}
       {isReady ? (
         <ul
-          className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-x-4 gap-y-8 px-2 pt-4 pb-12 sm:px-5"
+          className={`grid ${columnsFor(shoots.length)} gap-x-4 gap-y-8 px-2 pt-4 pb-12 sm:px-5`}
           data-shelf={true}
           ref={listRef}
         >

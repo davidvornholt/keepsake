@@ -177,7 +177,7 @@ const pushUnder = (
     const there = placed.alpha.value * look.glow;
     const lit = mix(look.shade, 1, placed.light.value) * there;
     const [red, green, blue] = loader.colourOf(frame.picture);
-    const pile = pileIn(rect, frame.pile);
+    const pile = pileIn(rect, frame.pile, layout.measure);
     const dark = greys.paper * there;
     for (const [at, edge] of pile.edges.entries()) {
       const dim =
@@ -240,7 +240,7 @@ type Shown = {
 const pushFromAtlas = (
   { atlas, loader }: Scene,
   pictures: Rows,
-  { seen }: Layer,
+  { seen, layout }: Layer,
   { look, hidden }: Shown,
 ): Array<Range> => {
   const byTexture = new Map<WebGLTexture, Array<ReadonlyArray<number>>>();
@@ -251,7 +251,7 @@ const pushFromAtlas = (
     if (since !== undefined && frame.id !== hidden) {
       const appeared = clamp((look.now - since) / appearing, 0, 1);
       const { texture, uv } = atlas.spotOf(src, width / height);
-      const { face } = pileIn(rect, frame.pile);
+      const { face } = pileIn(rect, frame.pile, layout.measure);
       const row = [
         face.x,
         face.y,
@@ -284,7 +284,7 @@ const pushFromAtlas = (
 const pushFromTiles = (
   { tiles, atlas, scale }: Scene,
   pictures: Rows,
-  { seen }: Layer,
+  { seen, layout }: Layer,
   { look, hidden, wanted }: Shown,
 ): Array<Range> => {
   const ranges: Array<Range> = [];
@@ -301,7 +301,7 @@ const pushFromTiles = (
       const tile = tiles.get(picture.src, look.now);
       if (tile !== undefined) {
         const sharp = clamp((look.now - tile.since) / sharpening, 0, 1);
-        const { face } = pileIn(rect, pile);
+        const { face } = pileIn(rect, pile, layout.measure);
         const first = pictures.push([
           face.x,
           face.y,

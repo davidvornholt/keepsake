@@ -4,8 +4,7 @@ import { wipeSteps } from './apply.ts';
 // The line between the camera's picture and the finished photo. It is
 // dragged on the photo, or moved with the arrow keys once it has the focus.
 
-const printed =
-  'type-edge absolute top-2 rounded-[2px] bg-ground px-1.5 py-1 text-print';
+const printed = 'type-edge absolute top-2 bg-ground px-1.5 py-1 text-print';
 
 export const Divider = ({
   dividerRef,
@@ -34,7 +33,7 @@ export const Divider = ({
       type="range"
     />
     <span className="-translate-1/2 pointer-events-auto absolute top-1/2 left-1/2 grid h-16 w-11 cursor-ew-resize place-items-center peer-focus-visible:[&>span]:outline-2 peer-focus-visible:[&>span]:outline-lamp peer-focus-visible:[&>span]:outline-offset-3">
-      <span className="h-10 w-1.5 rounded-[2px] bg-lamp shadow-[0_0_0_1px_var(--color-shade)]" />
+      <span className="h-10 w-1.5 bg-lamp shadow-[0_0_0_1px_var(--color-shade)]" />
     </span>
   </div>
 );
