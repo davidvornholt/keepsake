@@ -1,0 +1,84 @@
+import { describe, expect, it } from 'bun:test';
+import { everything, hrefOf, routeOf, withFilters } from './route.ts';
+
+describe('routeOf', () => {
+  it('reads the start page and a shoot', () => {
+    expect(routeOf('/', '')).toEqual({ screen: 'shoots' });
+    expect(routeOf('/lisbon', '')).toEqual({
+      screen: 'sheet',
+      shoot: 'lisbon',
+      filters: everything,
+    });
+    expect(routeOf('/lisbon/hand-over', '').screen).toBe('hand-over');
+    expect(routeOf('/lisbon/answers', '').screen).toBe('answers');
+    expect(routeOf('/lisbon/rate', '').screen).toBe('rate');
+    expect(routeOf('/lisbon/anything', '').screen).toBe('sheet');
+  });
+
+  it('reads the photo an agent links to', () => {
+    expect(routeOf('/lisbon/photos/_DSC0001', '')).toEqual({
+      screen: 'photo',
+      shoot: 'lisbon',
+      photo: '_DSC0001',
+      filters: everything,
+      isPlaced: false,
+    });
+  });
+
+  it('reads a photo whose id has slashes, encoded or not', () => {
+    const encoded = routeOf('/lisbon/photos/day%201%2Fa%20b', '?show=album');
+    expect(encoded).toMatchObject({ photo: 'day 1/a b', isPlaced: true });
+    expect(routeOf('/lisbon/photos/day/a', '')).toMatchObject({
+      photo: 'day/a',
+    });
+  });
+
+  it('reads which photos lie on the table', () => {
+    const route = routeOf(
+      '/lisbon',
+      '?show=left&day=2026-05-01&why=repeat&label=for%20print',
+    );
+    expect(route).toMatchObject({
+      filters: {
+        show: 'left',
+        day: '2026-05-01',
+        why: 'repeat',
+        label: 'for print',
+      },
+    });
+  });
+
+  it('ignores what it does not know', () => {
+    expect(
+      routeOf('/lisbon', '?show=nothing&day=tomorrow&why=repeat'),
+    ).toMatchObject({ filters: everything });
+    expect(routeOf('/%E0%A4%A', '')).toMatchObject({ shoot: '%E0%A4%A' });
+  });
+});
+
+describe('hrefOf', () => {
+  it('writes what routeOf reads', () => {
+    const addresses = [
+      '/',
+      '/lisbon',
+      '/lisbon/hand-over',
+      '/lisbon?show=left&day=2026-05-01&why=score',
+      '/lisbon/photos/day%2Fa?show=all',
+      '/lisbon/photos/a?show=album&label=for+print',
+    ];
+    for (const address of addresses) {
+      const [path = '', query = ''] = address.split('?');
+      expect(hrefOf(routeOf(path, query))).toBe(address);
+    }
+  });
+
+  it('changes the filters and keeps the place', () => {
+    const route = withFilters(routeOf('/lisbon/photos/a', ''), {
+      show: 'album',
+    });
+    expect(hrefOf(route)).toBe('/lisbon/photos/a?show=album');
+    expect(withFilters({ screen: 'shoots' }, { show: 'left' })).toEqual({
+      screen: 'shoots',
+    });
+  });
+});

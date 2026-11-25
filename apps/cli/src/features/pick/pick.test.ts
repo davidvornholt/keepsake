@@ -10,7 +10,7 @@ describe('leftOut', () => {
         { photo: 1, insteadOf: 3 },
       ],
     };
-    expect([...leftOut(answer, 2, 4)]).toEqual([3]);
+    expect([...leftOut(answer, 2, 4)]).toEqual([[3, 1]]);
   });
 
   it('never loses two photos to each other', () => {
@@ -20,7 +20,7 @@ describe('leftOut', () => {
         { photo: 2, insteadOf: 1 },
       ],
     };
-    expect([...leftOut(answer, 0, 2)]).toEqual([1]);
+    expect([...leftOut(answer, 0, 2)]).toEqual([[1, 2]]);
   });
 
   it('ignores numbers that mean nothing', () => {

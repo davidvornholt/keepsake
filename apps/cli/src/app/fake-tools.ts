@@ -14,13 +14,23 @@ type Run = {
   readonly env: Readonly<Record<string, unknown>>;
 };
 
+type FakeAsset = {
+  readonly id: string;
+  readonly fileName: string;
+  readonly favorite: boolean;
+  readonly trashed: boolean;
+};
+
 const greyPixels = 72;
+const rgbaChannels = 4;
 const cameraSize = '7008 4672';
 /** Small, since pixels of it are computed with. */
 const editSize = '48 32';
 const editBytes = 4608;
 const editPattern =
   /(?:input(?:-\d+)?\.jpg|version-\d+(?:-kept|-mended)?\.png|(?:candidate-\d+|result)-\d+\.png|-keepsake\.jpg)$/u;
+
+const wantedSize = /(?<width>\d+)x(?<height>\d+)!/u;
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -30,6 +40,8 @@ const tagsOf = (file: string, taken: string) => ({
   FileModifyDate: taken,
   Model: 'ILCE-7M4',
   Orientation: 1,
+  ImageSize: '7040 4688',
+  FullImageSize: '7008 4672',
   JpgFromRawLength: 1000,
 });
 
@@ -43,6 +55,8 @@ export const fakeTools = {
   files: [] as Array<{ readonly file: string; readonly second: number }>,
   /** Assets the photos command has uploaded, by file. */
   uploads: [] as Array<string>,
+  /** The album in Immich, once it was created. */
+  album: undefined as ReadonlyArray<FakeAsset> | undefined,
   /** RAW files ImageMagick can't read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
@@ -55,6 +69,7 @@ export const resetTools = () => {
   fakeTools.runs = [];
   fakeTools.files = [];
   fakeTools.uploads = [];
+  fakeTools.album = undefined;
   fakeTools.broken = new Set();
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
@@ -86,6 +101,10 @@ const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
   if (target === 'rgb:-') {
     return new Uint8Array(editBytes);
   }
+  if (target === 'rgba:-') {
+    const { width, height } = wantedSize.exec(args.join(' '))?.groups ?? {};
+    return new Uint8Array(Number(width) * Number(height) * rgbaChannels);
+  }
   if (target === 'gray:-') {
     return new Uint8Array(greyPixels);
   }
@@ -99,24 +118,39 @@ const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
 
 const album = { id: 'album-1', name: 'Lisbon, May 2026' };
 
+const upload = ([, file = '', inAlbum]: ReadonlyArray<string>) => {
+  fakeTools.uploads.push(file);
+  const id = `asset-${fakeTools.uploads.length}`;
+  if (inAlbum === '--album') {
+    const fileName = file.slice(file.lastIndexOf('/') + 1);
+    fakeTools.album = [
+      ...(fakeTools.album ?? []),
+      { id, fileName, favorite: false, trashed: false },
+    ];
+  }
+  return { files: [{ status: 'created', assetId: id }] };
+};
+
 const photos = (args: ReadonlyArray<string>): unknown => {
   switch (`${args[0]} ${args[1]}`) {
     case 'albums list':
-      return [];
+      return fakeTools.album === undefined ? [] : [album];
     case 'albums create':
+      fakeTools.album = [];
       return { ...album, name: args[2] };
+    case 'albums show':
+      return { album, assets: fakeTools.album, nextCursor: null };
+    case 'albums remove':
+      fakeTools.album = fakeTools.album?.filter(
+        ({ id }) => !args.slice(2).includes(id),
+      );
+      return {};
     case 'tags list':
       return [];
+    case 'status undefined':
+      return { server: 'https://photos.example.com' };
     default:
-      if (args[0] !== 'upload') {
-        return {};
-      }
-      fakeTools.uploads.push(args[1] ?? '');
-      return {
-        files: [
-          { status: 'created', assetId: `asset-${fakeTools.uploads.length}` },
-        ],
-      };
+      return args[0] === 'upload' ? upload(args) : {};
   }
 };
 

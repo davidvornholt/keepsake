@@ -20,6 +20,9 @@ const prices: ReadonlyMap<string, Price> = new Map([
   ['gpt-image-2.5-flare', { input: 8, output: 30 }],
 ]);
 
+/** About what editing or changing one photo costs. */
+export const dollarsForOneEdit = 0.75;
+
 export const ModelSpending = Schema.Struct({
   calls: Schema.Int,
   inputTokens: Schema.Int,

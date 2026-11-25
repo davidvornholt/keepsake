@@ -28,12 +28,22 @@ export const Photo = Schema.Struct({
   file: Schema.String,
   /** The camera's clock without a time zone: 2026-03-30T18:04:05.120. */
   takenAt: Schema.String,
+  /** How far that clock was from UTC, such as +02:00, if the camera said so. */
+  utcOffset: Schema.NullOr(Schema.String),
   camera: Schema.NullOr(Schema.String),
   lens: Schema.NullOr(Schema.String),
   /** In millimetres. */
   focalLength: Schema.NullOr(Schema.Finite),
+  /** The f-number. */
+  aperture: Schema.NullOr(Schema.Finite),
+  /** In seconds. */
+  exposure: Schema.NullOr(Schema.Finite),
+  iso: Schema.NullOr(Schema.Finite),
   /** The EXIF orientation, 1 to 8. */
   orientation: Schema.Int,
+  /** In pixels, the right way up. */
+  width: Schema.Int,
+  height: Schema.Int,
   raw: Schema.Boolean,
   /** Whether the RAW file holds the camera's own full-size JPEG. */
   cameraJpeg: Schema.Boolean,
@@ -103,16 +113,61 @@ export const Pick = Schema.Struct({
 });
 export type Pick = typeof Pick.Type;
 
+/** A candidate that wasn't picked. */
+export const LeftOut = Schema.Struct({
+  photo: Schema.String,
+  /** The candidate that shows the same better, or null for lack of room. */
+  insteadOf: Schema.NullOr(Schema.String),
+});
+export type LeftOut = typeof LeftOut.Type;
+
 export const PickList = Schema.Struct({
   model: Schema.String,
+  minimumScore: Schema.Int,
   maximum: Schema.NullOr(Schema.Int),
   /** Every photo that scored high enough. */
   candidates: Schema.Array(Pick),
   picks: Schema.Array(Pick),
-  /** Photos left out because a pick shows the same thing better. */
-  redundant: Schema.Array(Schema.String),
+  leftOut: Schema.Array(LeftOut),
 });
 export type PickList = typeof PickList.Type;
+
+/** Why a photo isn't in the album, found by looking at it next to the album. */
+export const Reason = Schema.Struct({
+  photo: Schema.String,
+  /** A photo of the album that shows the same better. */
+  repeats: Schema.NullOr(Schema.String),
+  because: Schema.String,
+  model: Schema.String,
+});
+export type Reason = typeof Reason.Type;
+
+/** A photo of the album in Immich. */
+export const AlbumPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+  favorite: Schema.Boolean,
+});
+export type AlbumPhoto = typeof AlbumPhoto.Type;
+
+/** The album as Immich last had it. */
+export const Album = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  /** The web address of Immich. */
+  server: Schema.String,
+  readAt: Schema.String,
+  photos: Schema.Array(AlbumPhoto),
+});
+export type Album = typeof Album.Type;
+
+/** A photo that was taken out of the album. */
+export const Removed = Schema.Struct({
+  photo: Schema.String,
+  at: Schema.String,
+  because: Schema.NullOr(Schema.String),
+});
+export type Removed = typeof Removed.Type;
 
 /** The shapes a photo can be cropped to, as width to height. */
 export const aspectNames = [

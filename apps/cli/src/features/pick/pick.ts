@@ -1,5 +1,10 @@
 import { Effect, Option, Schema } from 'effect';
-import { Pick, PickList, type Verdict } from '../../shared/domain.ts';
+import {
+  type LeftOut,
+  Pick,
+  PickList,
+  type Verdict,
+} from '../../shared/domain.ts';
 import { StepMissing } from '../../shared/errors/errors.ts';
 import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
@@ -46,13 +51,16 @@ const asPicks = (verdict: Verdict): ReadonlyArray<Pick> => {
     );
 };
 
-/** The numbers, counted from 1, of the photos to leave out. */
+/**
+ * The numbers, counted from 1, of the photos to leave out, each with that of
+ * the photo that stays instead.
+ */
 export const leftOut = (
   answer: typeof Answer.Type,
   before: number,
   total: number,
-): ReadonlySet<number> => {
-  const out = new Set<number>();
+): ReadonlyMap<number, number> => {
+  const out = new Map<number, number>();
   for (const { photo, insteadOf } of answer.leaveOut) {
     const isCandidate = photo > before && photo <= total;
     const stays =
@@ -62,7 +70,7 @@ export const leftOut = (
       !out.has(insteadOf);
     // Two photos that are each left out for the other would both be lost.
     if (isCandidate && stays) {
-      out.add(photo);
+      out.set(photo, insteadOf);
     }
   }
   return out;
@@ -74,7 +82,7 @@ const withoutRepeats = Effect.fn('withoutRepeats')(function* (
 ) {
   const vision = yield* Vision;
   const kept: Array<Pick> = [];
-  const redundant: Array<string> = [];
+  const repeats: Array<LeftOut> = [];
   const rounds = Array.from(
     { length: Math.ceil(candidates.length / mostCandidates) },
     (_, index) =>
@@ -111,15 +119,19 @@ const withoutRepeats = Effect.fn('withoutRepeats')(function* (
       });
       const out = leftOut(answer, before.length, shown.length);
       for (const [index, candidate] of round.entries()) {
-        if (out.has(before.length + index + 1)) {
-          redundant.push(candidate.photo);
-        } else {
+        const insteadOf = out.get(before.length + index + 1);
+        if (insteadOf === undefined) {
           kept.push(candidate);
+        } else {
+          repeats.push({
+            photo: candidate.photo,
+            insteadOf: shown[insteadOf - 1]?.photo ?? null,
+          });
         }
       }
     }),
   );
-  return { kept, redundant };
+  return { kept, repeats };
 });
 
 type PickOptions = {
@@ -153,28 +165,34 @@ export const pick = Effect.fn('pick')(function* (
     Option.isSome(before) &&
     !options.again &&
     before.value.model === model &&
+    before.value.minimumScore === options.minimumScore &&
     before.value.maximum === maximum &&
     samePhotos(before.value.candidates, candidates);
   const list = isSame
     ? before.value
     : yield* Effect.gen(function* () {
         const first = yield* withoutRepeats(open, candidates);
-        const { kept, redundant } = yield* withoutSameMotifs(open, first.kept);
+        const { kept, repeats } = yield* withoutSameMotifs(open, first.kept);
         const picks =
           maximum === null ? kept : yield* bestOf(open, kept, maximum);
+        const noRoom = kept
+          .filter((one) => !picks.includes(one))
+          .map(({ photo }): LeftOut => ({ photo, insteadOf: null }));
         return {
           model,
+          minimumScore: options.minimumScore,
           maximum,
           candidates,
           picks,
-          redundant: [...first.redundant, ...redundant],
+          leftOut: [...first.repeats, ...repeats, ...noRoom],
         };
       });
   yield* writeJson(PickList, open.files.picks, list);
   return {
     shoot: name,
     candidates: candidates.length,
-    redundant: list.redundant.length,
+    repeats: list.leftOut.filter(({ insteadOf }) => insteadOf !== null).length,
+    noRoom: list.leftOut.filter(({ insteadOf }) => insteadOf === null).length,
     picked: list.picks.length,
     notJudged: open.moments.length - judged.length,
   };

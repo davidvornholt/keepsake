@@ -4,10 +4,12 @@ import { Console, Effect } from 'effect';
 import { CliError, CliOutput, Command } from 'effect/cli';
 import packageJson from '../../package.json' with { type: 'json' };
 import { login, logout, status } from './account-commands.ts';
+import { serve } from './light-table-commands.ts';
+import { answer, marks, takeOut } from './mark-commands.ts';
 import { report } from './output.ts';
 import { bench, rate } from './rating-commands.ts';
 import { scan, shoots, show } from './shoot-commands.ts';
-import { cull, edit, pick, publish, run } from './step-commands.ts';
+import { cull, edit, explain, pick, publish, run } from './step-commands.ts';
 
 export const keepsake = Command.make('keepsake').pipe(
   Command.withDescription(
@@ -25,6 +27,11 @@ export const keepsake = Command.make('keepsake').pipe(
     pick,
     edit,
     publish,
+    takeOut,
+    explain,
+    serve,
+    marks,
+    answer,
     rate,
     bench,
   ]),

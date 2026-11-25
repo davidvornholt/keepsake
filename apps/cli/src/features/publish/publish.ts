@@ -1,9 +1,18 @@
 import { createHash } from 'node:crypto';
 import { Effect, Option } from 'effect';
+import { readAlbum } from '../../shared/album.ts';
 import { Publication } from '../../shared/domain.ts';
 import { StepMissing } from '../../shared/errors/errors.ts';
+import {
+  albumNamed,
+  ensureTag,
+  stackPhotos,
+  tagPhoto,
+  uploadPhoto,
+} from '../../shared/immich.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
+import { readRemoved } from '../../shared/standing.ts';
 import {
   exists,
   type OpenShoot,
@@ -12,13 +21,6 @@ import {
   readPicks,
   writeJson,
 } from '../../shared/store.ts';
-import {
-  albumNamed,
-  ensureTag,
-  stackPhotos,
-  tagPhoto,
-  uploadPhoto,
-} from './immich.ts';
 
 /** Marks every photo keepsake put into the library. */
 const tag = 'keepsake';
@@ -37,19 +39,28 @@ const digestOf = (file: string) =>
     createHash('sha256').update(bytes).digest('hex'),
   );
 
+/** The photos named, or those that were picked and not taken out since. */
+const photosToSend = Effect.fn('photosToSend')(function* (
+  open: OpenShoot,
+  names: ReadonlyArray<string>,
+) {
+  if (names.length > 0) {
+    const photos = yield* Effect.forEach(names, (name) =>
+      photoNamed(open, name),
+    );
+    return photos.map(({ id }) => id);
+  }
+  const { picks } = yield* readPicks(open.files, open.shoot.name);
+  const removed = new Set((yield* readRemoved(open)).map(({ photo }) => photo));
+  return picks.map(({ photo }) => photo).filter((photo) => !removed.has(photo));
+});
+
 const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   published: ReadonlyArray<Published>,
 ) {
-  const photos =
-    names.length === 0
-      ? (yield* readPicks(open.files, open.shoot.name)).picks.map(
-          ({ photo }) => photo,
-        )
-      : (yield* Effect.forEach(names, (name) => photoNamed(open, name))).map(
-          ({ id }) => id,
-        );
+  const photos = yield* photosToSend(open, names);
   const found = yield* Effect.forEach(photos, (photo) =>
     Effect.gen(function* () {
       const files = open.files.edit(photo);
@@ -103,13 +114,20 @@ export const publish = Effect.fn('publish')(function* (
     onNone: (): ReadonlyArray<Published> => [],
     onSome: ({ photos }) => photos,
   });
+  const there = yield* readAlbum(open);
+  const inAlbum = new Set(
+    there?.name === albumName ? there.photos.map(({ photo }) => photo) : [],
+  );
   const ready = yield* jobs(open, names, published);
   if (ready.length === 0) {
     return yield* new StepMissing({
       message: `${names.length === 0 ? `No photo of ${name} is` : 'None of these photos is'} finished yet. Run \`keepsake edit ${[name, ...names].join(' ')}\` first.`,
     });
   }
-  const todo = ready.filter((job) => job.before?.digest !== job.digest);
+  const todo = ready.filter(
+    ({ photo, digest, before: earlier }) =>
+      earlier?.digest !== digest || !inAlbum.has(photo),
+  );
   const album = yield* albumNamed(albumName);
   yield* ensureTag(tag);
   // One at a time, and noted right away, so nothing is uploaded twice.
@@ -127,14 +145,18 @@ export const publish = Effect.fn('publish')(function* (
       return done;
     }),
   );
+  yield* readAlbum(open);
   return {
     shoot: name,
     album: { id: album.id, name: albumName },
     published: sent.length,
     alreadyThere: ready.length - todo.length,
     /** Earlier versions, which keepsake leaves in the library. */
-    outdated: todo.flatMap(({ before: earlier }) =>
-      earlier === undefined ? [] : [earlier.asset],
+    outdated: todo.flatMap(({ before: earlier, photo }) =>
+      earlier === undefined ||
+      sent.some((one) => one.photo === photo && one.asset === earlier.asset)
+        ? []
+        : [earlier.asset],
     ),
   };
 });

@@ -1,0 +1,283 @@
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "@fontsource-variable/archivo/wdth.css" layer(base);
+
+/*
+ * A table for looking at photographs. Everything on it is a neutral grey, so
+ * that the colours of the photos are judged against nothing. The only colours
+ * that aren't photographs are the wax pencils the owner marks with, and the
+ * blue pencil of the agent that answers.
+ */
+@theme static {
+  --color-table: oklch(0.27 0 0);
+  --color-dark: oklch(0.135 0 0);
+  --color-sheet: oklch(0.105 0 0);
+  --color-raised: oklch(0.33 0 0);
+  --color-rule: oklch(0.42 0 0);
+  --color-quiet: oklch(0.74 0 0);
+  --color-print: oklch(0.93 0 0);
+  --color-lamp: oklch(0.985 0 0);
+  --color-wax-red: oklch(0.67 0.21 27);
+  --color-wax-yellow: oklch(0.89 0.165 96);
+  --color-wax-white: oklch(0.965 0.012 95);
+  --color-pencil-blue: oklch(0.76 0.115 238);
+  /* What lies under wax and under anything that floats over a photo. */
+  --color-shade: oklch(0 0 0 / 0.5);
+  /* Under print that lies on a photo: it reads on white as on black. */
+  --color-ground: oklch(0.105 0 0 / 0.86);
+
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    block-size: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    color-scheme: dark;
+    background: var(--color-table);
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    block-size: 100%;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--color-print);
+    font-optical-sizing: auto;
+    font-kerning: normal;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    block-size: 100%;
+  }
+
+  ::selection {
+    color: var(--color-sheet);
+    background: var(--color-wax-yellow);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-lamp);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px var(--color-sheet);
+  }
+
+  button,
+  a {
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+}
+
+/* Names of shoots and days: wide, like the engraving on a lens. */
+@utility type-name {
+  font-stretch: 122%;
+  font-weight: 620;
+  letter-spacing: -0.012em;
+  line-height: 1.1;
+}
+
+/* What the machine prints: narrow capitals, like the edge of a film. */
+@utility type-edge {
+  font-size: 0.6875rem;
+  font-stretch: 70%;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.075em;
+}
+
+/* What can be pressed. */
+@utility type-label {
+  font-stretch: 94%;
+  font-weight: 580;
+  letter-spacing: 0.002em;
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer components {
+  /*
+   * A photo that is looked at. The strip above it and the pencils below make
+   * room for the notes beside it.
+   */
+  [data-view] {
+    --beside: 0px;
+  }
+
+  [data-view][data-wide="true"][data-info="true"] {
+    --beside: 22rem;
+  }
+
+  [data-view] > header,
+  [data-view] > footer {
+    inset-inline: 0 var(--beside);
+  }
+
+  /* The notes about a photo: beside it, or over it on a small screen. */
+  [data-about][data-wide="true"] {
+    inset-block: 0;
+    inset-inline-end: 0;
+    inline-size: 22rem;
+    padding: 1.125rem 1.375rem 2rem;
+    transform: translateX(100%);
+  }
+
+  [data-about][data-wide="false"] {
+    inset-inline: 0;
+    inset-block-end: 0;
+    max-block-size: 74%;
+    padding: 1.125rem 1.125rem 2rem;
+    border-block-start: 1px solid var(--color-rule);
+    transform: translateY(100%);
+  }
+
+  [data-about][data-shown="true"] {
+    transform: none;
+  }
+
+  /* A slider as a thin rule with a mark on it, like the scale of a loupe. */
+  input[data-rule] {
+    block-size: 2.5rem;
+    appearance: none;
+    cursor: pointer;
+    background: transparent;
+  }
+
+  input[data-rule]::-webkit-slider-runnable-track {
+    block-size: 2px;
+    background: var(--color-rule);
+  }
+
+  input[data-rule]::-moz-range-track {
+    block-size: 2px;
+    background: var(--color-rule);
+  }
+
+  input[data-rule]::-webkit-slider-thumb {
+    inline-size: 4px;
+    block-size: 16px;
+    margin-block-start: -7px;
+    appearance: none;
+    background: var(--color-print);
+    border-radius: 1px;
+  }
+
+  input[data-rule]::-moz-range-thumb {
+    inline-size: 4px;
+    block-size: 16px;
+    background: var(--color-print);
+    border: 0;
+    border-radius: 1px;
+  }
+
+  input[data-rule]:hover::-webkit-slider-thumb {
+    background: var(--color-lamp);
+  }
+
+  input[data-rule]:hover::-moz-range-thumb {
+    background: var(--color-lamp);
+  }
+
+  /* The shoots at the start. Looking at one puts the others in the shade. */
+  [data-strip] {
+    transition: opacity 240ms var(--ease-out);
+  }
+
+  @media (hover: hover) {
+    [data-shelf]:has([data-shoot]:hover) [data-shoot]:not(:hover) [data-strip] {
+      opacity: 0.34;
+    }
+  }
+
+  [data-shelf]:has([data-shoot]:focus-visible)
+    [data-shoot]:not(:focus-visible, :hover)
+    [data-strip] {
+    opacity: 0.34;
+  }
+
+  /* They are laid on the table one after the other. */
+  @media (prefers-reduced-motion: no-preference) {
+    [data-shelf] > li {
+      animation: laid-down 520ms var(--ease-out) both;
+    }
+
+    [data-shelf] > li:nth-child(2) {
+      animation-delay: 60ms;
+    }
+
+    [data-shelf] > li:nth-child(3) {
+      animation-delay: 120ms;
+    }
+
+    [data-shelf] > li:nth-child(4) {
+      animation-delay: 180ms;
+    }
+
+    [data-shelf] > li:nth-child(n + 5) {
+      animation-delay: 240ms;
+    }
+  }
+}
+
+@keyframes laid-down {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* An agent at work: its blue pencil, moving. */
+@utility agent-pulse {
+  animation: agent-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Something that is only worth showing when the wait gets long. */
+/* A sheet of paper that waits for its photos, under a lamp that warms up. */
+@utility paper-waits {
+  animation: paper-waits 1800ms ease-in-out infinite alternate;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes paper-waits {
+  from {
+    opacity: 0.55;
+  }
+}
+
+@utility late-arrival {
+  animation: late-arrival 300ms 600ms both;
+}
+
+@keyframes late-arrival {
+  from {
+    opacity: 0;
+  }
+}

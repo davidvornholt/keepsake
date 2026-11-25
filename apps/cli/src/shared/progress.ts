@@ -1,10 +1,14 @@
 import { Clock, Console, Effect, Ref } from 'effect';
+import { tellStep } from './activity.ts';
 
 /** Progress is told at most this often, in milliseconds. */
 const interval = 2000;
 
 const tell = (step: string, done: number, total: number) =>
-  Console.error(JSON.stringify({ progress: { step, done, total } }));
+  Effect.andThen(
+    Console.error(JSON.stringify({ progress: { step, done, total } })),
+    tellStep(step, done, total),
+  );
 
 /**
  * Runs every item, several at once, and tells on stderr as a JSON line how
@@ -18,6 +22,7 @@ export const inSteps = Effect.fn('inSteps')(function* <A, B, E, R>(
 ) {
   const total = items.length;
   const state = yield* Ref.make({ done: 0, told: 0 });
+  yield* tellStep(step, 0, total);
   const advance = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const done = yield* Ref.modify(state, (before) => {

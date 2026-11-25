@@ -1,6 +1,6 @@
 ---
 name: keepsake
-description: Turn a folder of the user's photos, such as a trip or a birding day, into a small album of finished ones with the keepsake command, which lets vision models choose the best frames, crops and edits them with an image model, and publishes them to Immich. Use when the user wants a shoot culled, its best photos chosen, rated, cropped or edited with AI, or finished photos published, or wants to compare how well vision models judge their photos. Not for photos already in Immich, which the photos skill covers.
+description: Turn a folder of the user's photos, such as a trip or a birding day, into a small album of finished ones with the keepsake command, which lets vision models choose the best frames, crops and edits them with an image model, and publishes them to Immich. Use when the user wants a shoot culled, its best photos chosen, rated, cropped or edited with AI, or finished photos published, wants to know why a photo is or isn't in the album, has marked or handed over photos on keepsake's page or wants you to wait for that, gives you a link to that page, or wants to compare how well vision models judge their photos. Not for photos already in Immich, which the photos skill covers.
 ---
 
 # keepsake
@@ -27,9 +27,30 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 2. `cull` finds the best frames of each moment and scores it from 1 to 10. Models are generous: from 7 on a photo is good, and only a few get more than 8. Frames that show something clearly different from the best one are listed under `further`, each with its own score.
 3. `pick` takes the best and the `further` photos of every moment from `--minimum-score` on and leaves out repeats, also of the same thing a few minutes later. With `--maximum` it compares them with each other and keeps the best, with a variety of places, people, animals and the rest. For an album of a certain size give it together with a lower `--minimum-score`, such as 5, so there is enough to choose from.
 4. `edit` crops each pick to an interesting composition, with more room in front of an animal or a person than behind, which may reach a little beyond the photo where a subject is cut off or has no room; the image model continues the scene there. It finds what only distracts, such as strangers in the background or a chair at the edge, and has it removed (listed in the photo's `removals.json`). It makes `--versions` of it, puts the original's people, changed signs and forests back into them, and has them reviewed. People who can be recognised keep their own pixels and get only the light of the edit, so their features can't change; small people in the background and in reflections come back as patches. The versions that pass are inspected part by part at full size, and what is wrong, such as a melted person or woven grass, is put back from the original and inspected again. Where no version passes, it keeps the camera's own picture, listed under `keptFromCamera` with the reason.
-5. `publish` uploads the finished photos to an album in Immich, each stacked on the camera's own picture and tagged `keepsake`. Publish only when the user asks for it.
+5. `explain` says of every photo that was good enough and isn't in the album why, for the page. It asks the model that culled the shoot, about photos without a reason only, so run it again after the album changed. Put a reason the user gave themselves into `take-out --because`.
+6. `publish` uploads the finished photos to an album in Immich, each stacked on the camera's own picture and tagged `keepsake`. Publish only when the user asks for it. The album may be changed in Immich too: `publish` puts nothing back that was taken out there unless it is named.
 
-`show <shoot>` says where a shoot stands and where the files are, and `show <shoot> <photo>` gives everything about one photo. Look at a few finished photos yourself before you call them done, and at every one with people, close up and beside the camera's picture: their edges should look natural, with no halo and no second outline.
+`show <shoot>` says where a shoot stands and where the files are, and `show <shoot> <photo>` gives everything about one photo, with its `standing` and its `link` on the page. Look at a few finished photos yourself before you call them done, and at every one with people, close up and beside the camera's picture: their edges should look natural, with no halo and no second outline.
+
+## The page
+
+`keepsake serve` serves a page where the user looks through their shoots: every photo with where it stands and why, every edit beside the camera's picture and the edits before it, and what it cost. There they mark what should change and hand the marks over. Nothing changes until an agent acts on them, which is you.
+
+When you write to the user about photos, link to them on the page with the `link` that `show` and `marks` give, instead of naming files. A `link` is null while the page isn't served. Then it is for this machine only, unless something passes it on and `--address` says where it is reached from. Where it is set up as a service, restart that instead of serving it a second time.
+
+When the user handed marks over, or asks you to go through them:
+
+1. `marks <shoot>` lists them with their `note`, `boxes` and the photo's files. When the user wants to go through photos while you act on them, run `marks <shoot> --wait` in the background: it ends as soon as they hand something over, and the page shows them that you are waiting. Start it again when you are done with those.
+2. Add up what they cost before you start: a `change` about $0.45, twice that when a place needs a second attempt, and a photo without a `final` about $0.75. Tell the user and go on when they agree or have named a budget. Everything else is free, so do that right away.
+3. Act on each, and look at what came of it as you would without a mark:
+   - `change`: `edit <shoot> --mark <id>`, which takes the note as the wish and changes only what is in the boxes, if there are any. Give `--wish` when the note needs to be clearer. Then `publish <shoot> <photo>`.
+   - `put-in`: `edit <shoot> --mark <id>`, unless it has a `final` and the mark no note, then `publish <shoot> <photo>`.
+   - `take-out`: `take-out <shoot> <photo> --because "<the note, or what the user said about it>"`.
+   - `swap`: put in `photo`, and take out `other` for it.
+   - `favorite` and `not-favorite`: `photos update <asset> --favorite` or `--no-favorite`.
+4. `answer <shoot> <id> --done "<what changed, in a sentence>"`, or `--not-done "<why>"`, right after each one. The page shows it to the user with the photo, so they know where to look again.
+
+Do the same when they tell you in the chat instead: `take-out` with their reason, so the page can show it.
 
 ## Changing the result
 
@@ -43,7 +64,7 @@ After each of these the earlier upload stays in Immich and its id is listed unde
 
 ## Comparing vision models
 
-`keepsake rate <shoot>` serves a page where the user chooses the best photo of each moment, gives it stars and marks others worth keeping, 60 moments of up to 12 photos unless `--moments` says otherwise. Start it in the background, give the user the printed address, and stop it when they are done. Never rate for them. The page is for this machine. When the user sits at another one, pass it on in a private network, such as with `tailscale serve --bg --https=<port> http://127.0.0.1:<port of --port>`, give `rate` that `--address`, and turn it off again afterwards.
+`keepsake rate <shoot>` asks the user on the page to choose the best photo of each moment, give it stars and mark others worth keeping, 60 moments of up to 12 photos unless `--moments` says otherwise. Give them the printed `link`. Never rate for them.
 
 `keepsake bench <shoot> --model <provider/model> --model …` then asks each model about the rated moments, at the price of culling them (nothing extra on a subscription):
 

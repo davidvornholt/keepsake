@@ -3,6 +3,8 @@ import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
 import { edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
+import { explain as explainShoot } from '../features/explain/explain.ts';
+import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
@@ -112,6 +114,41 @@ const editInput = (flags: {
     };
   });
 
+/** The photos to edit, and what is wanted of them and where. */
+const whatToEdit = Effect.fn('whatToEdit')(function* (
+  shoot: string,
+  asked: {
+    readonly photos: ReadonlyArray<string>;
+    readonly wish: Option.Option<string>;
+    readonly mark: Option.Option<string>;
+  },
+) {
+  const { photos, mark } = asked;
+  const own = Option.getOrNull(asked.wish);
+  if (Option.isNone(mark)) {
+    if (own !== null && photos.length === 0) {
+      return yield* new InvalidInput({
+        message: 'Name the photos the wish is for.',
+      });
+    }
+    return { photos, wish: own, areas: [] };
+  }
+  if (photos.length > 0) {
+    return yield* new InvalidInput({
+      message: 'Name no photos with --mark, which is about one already.',
+    });
+  }
+  const { files } = yield* openShoot(shoot);
+  const { photo, note, boxes } = yield* markWith(files, mark.value);
+  const wish = own ?? (note === '' ? null : note);
+  if (wish === null && boxes.length > 0) {
+    return yield* new InvalidInput({
+      message: `The mark ${mark.value} has no note. Say with --wish what to do at the places it marks.`,
+    });
+  }
+  return { photos: [photo], wish, areas: boxes };
+});
+
 /** The models that edit and that look after the edits. */
 const editLayer = (flags: {
   readonly imageModel: Option.Option<string>;
@@ -177,21 +214,22 @@ export const edit = Command.make(
       'wish',
       'What you want to be done with the named photos, such as what to remove. Changes only the places of a finished photo that it is about, or edits all of it anew in the frame it has; with --again, the frame follows it too',
     ),
+    mark: optionalString(
+      'mark',
+      'Edit the photo that a mark of the owner is about, with its note as the wish and at the places it marks. `keepsake marks` lists the marks.',
+    ),
     again,
   },
-  ({ shoot, photos, model, wish, again: startOver, ...flags }) =>
+  ({ shoot, photos, model, wish, mark, again: startOver, ...flags }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
-      if (Option.isSome(wish) && photos.length === 0) {
-        return yield* new InvalidInput({
-          message: 'Name the photos the wish is for.',
-        });
-      }
+      const asked = yield* whatToEdit(shoot, { photos, wish, mark });
       yield* workOn(shoot, (open) =>
-        editShoot(open, photos, {
+        editShoot(open, asked.photos, {
           ...input,
           again: startOver,
-          wish: Option.getOrNull(wish),
+          wish: asked.wish,
+          areas: asked.areas,
         }),
       ).pipe(
         Effect.flatMap(emitWithCost),
@@ -228,6 +266,21 @@ export const publish = Command.make(
   ),
 );
 
+export const explain = Command.make(
+  'explain',
+  { shoot: shootArgument, model: visionModel, again },
+  ({ shoot, model, again: startOver }) =>
+    workOn(shoot, (open) => explainShoot(open, startOver)).pipe(
+      Effect.flatMap(emitWithCost),
+      withVision(shoot, model),
+      Effect.provide(Spending.layer),
+    ),
+).pipe(
+  Command.withDescription(
+    'Let the vision model say of every photo that scored high enough and isn’t in the album why that is, next to what the album has. Photos it has explained before are kept unless the album has changed.',
+  ),
+);
+
 export const run = Command.make(
   'run',
   {
@@ -251,16 +304,31 @@ export const run = Command.make(
           pickShoot(open, { ...picking, again: false }),
         );
         const edited = yield* workOn(shoot, (open) =>
-          editShoot(open, [], { ...editing, again: false, wish: null }),
+          editShoot(open, [], {
+            ...editing,
+            again: false,
+            wish: null,
+            areas: [],
+          }),
         );
         const published = flags.publish
           ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
           : null;
-        yield* emitWithCost({ scanned, culled, picked, edited, published });
+        const explained = yield* workOn(shoot, (open) =>
+          explainShoot(open, false),
+        );
+        yield* emitWithCost({
+          scanned,
+          culled,
+          picked,
+          edited,
+          published,
+          explained,
+        });
       }).pipe(Effect.provide(editLayer(flags)), withVision(shoot, flags.model));
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(
-    'Do everything with a folder of photos: scan, cull, pick and edit, and publish if asked. Running it again goes on where it stopped.',
+    'Do everything with a folder of photos: scan, cull, pick and edit, publish if asked, and explain why the other good photos were left out. Running it again goes on where it stopped.',
   ),
 );

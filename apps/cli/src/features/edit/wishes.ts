@@ -1,22 +1,6 @@
-import { Effect, FileSystem, Option, Schema } from 'effect';
+import { Effect, FileSystem } from 'effect';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import { readJson, writeJson } from '../../shared/store.ts';
 import { sentence } from './prompt.ts';
-
-const Wish = Schema.Struct({ wish: Schema.String });
-
-/** What the user wants to be done with a photo, if anything. */
-export const wishIn = (file: string) =>
-  Effect.map(
-    readJson(Wish, file),
-    Option.match({
-      onNone: () => null,
-      onSome: ({ wish }) => (wish === '' ? null : wish),
-    }),
-  );
-
-export const writeWish = (file: string, wish: string) =>
-  writeJson(Wish, file, { wish });
 
 /** What the user wanted before and what they want now. */
 export const bothWishes = (before: string | null, now: string): string =>
