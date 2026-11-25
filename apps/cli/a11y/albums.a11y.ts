@@ -10,8 +10,10 @@ import { lay, scan, shelf, title } from './page.ts';
 const albumCount = /^\d+ albums$/u;
 const editAll = /^Edit 10 photos, about \$7\.50$/u;
 const coimbra = /Coimbra/u;
+const tavira = /Tavira/u;
 const stopped = /has stopped$/u;
-const newAlbumName = /^New album N$/u;
+const newAlbum = /^New album From/u;
+const newAlbumWithKey = /^New album N$/u;
 
 test('shows every album on a shelf, with what waits at each', async ({
   page,
@@ -42,6 +44,20 @@ test('shows every album on a shelf, with what waits at each', async ({
   await expect(title(page)).toHaveText('Keepsake');
 });
 
+test('fits the shelf and a new album on a phone', {
+  tag: mobileDeviceTag,
+}, async ({ page }) => {
+  await shelf(page);
+  await expect(page.getByRole('link', { name: 'Braga, July' })).toBeVisible();
+  await scan(page);
+  await page.getByRole('link', { name: newAlbum }).click();
+  await expect(title(page)).toHaveText('New album');
+  await expect(
+    page.getByRole('list', { name: 'Folders, the newest first' }),
+  ).toBeVisible();
+  await scan(page);
+});
+
 test('says when an album is not there', async ({ page }) => {
   await page.goto('/nowhere');
   await expect(title(page)).toHaveText('There is no album called nowhere.');
@@ -50,9 +66,9 @@ test('says when an album is not there', async ({ page }) => {
   await expect(title(page)).toHaveText('Keepsake');
 });
 
-test('makes a new album of a folder, and throws it away', async ({ page }) => {
+test('finds the folder a new album is made of', async ({ page }) => {
   await shelf(page);
-  await expect(page.getByRole('link', { name: newAlbumName })).toBeVisible();
+  await expect(page.getByRole('link', { name: newAlbumWithKey })).toBeVisible();
   await page.keyboard.press('n');
   await expect(title(page)).toHaveText('New album');
   await expect(
@@ -62,15 +78,22 @@ test('makes a new album of a folder, and throws it away', async ({ page }) => {
   await expect(folders.getByRole('link')).toHaveCount(5);
   await scan(page);
 
-  await page.getByRole('searchbox', { name: 'Search folders' }).fill('coim');
+  await page.getByRole('searchbox', { name: 'Search folders' }).fill('tav');
   await expect(folders.getByRole('link')).toHaveCount(1);
-  await folders.getByRole('link', { name: coimbra }).click();
-  const about = page.getByRole('textbox', { name: 'What is it about?' });
-  await expect(about).toBeFocused();
-  await expect(page.getByText('09:00 on 3 October')).toBeVisible();
+  await folders.getByRole('link', { name: tavira }).click();
+  await expect(
+    page.getByRole('textbox', { name: 'What is it about?' }),
+  ).toBeFocused();
+  await expect(page.getByText('09:00 on 18 October')).toBeVisible();
   await scan(page);
+});
 
-  await about.fill('Coimbra, October 2026');
+test('makes a new album of a folder, and throws it away', async ({ page }) => {
+  await page.goto('/?new');
+  await page.getByRole('link', { name: coimbra }).click();
+  await page
+    .getByRole('textbox', { name: 'What is it about?' })
+    .fill('Coimbra, October 2026');
   await page.getByRole('button', { name: 'Make the album' }).click();
   await expect(title(page)).toHaveText('Coimbra, October 2026');
   const making = page.getByRole('region', { name: 'Getting the album ready' });
@@ -94,9 +117,7 @@ test('makes a new album of a folder, and throws it away', async ({ page }) => {
   await expect(page.getByRole('link', { name: coimbra })).toHaveCount(0);
 });
 
-test('says how far an album is that keepsake or an agent works on', async ({
-  page,
-}) => {
+test('says how far a new album is', async ({ page }) => {
   await lay(page, '/aveiro', 'Aveiro, September 2026');
   const ready = page.getByRole('region', { name: 'Getting the album ready' });
   await expect(ready.getByRole('heading', { name: stopped })).toBeVisible();
@@ -107,7 +128,9 @@ test('says how far an album is that keepsake or an agent works on', async ({
     'Reading the photos',
   );
   await scan(page);
+});
 
+test('says how far an album is that an agent works on', async ({ page }) => {
   await lay(page, '/obidos', 'Óbidos, October 2026');
   const edited = page.getByRole('region', {
     name: 'The album is being edited',
@@ -128,14 +151,10 @@ test('says how far an album is that keepsake or an agent works on', async ({
   await scan(page);
 });
 
-test('goes over what was chosen and orders the album', {
+test('goes over what was chosen for an album', {
   tag: mobileDeviceTag,
-}, async ({ page, isMobile }) => {
-  // The phone has an album of its own, which is as far as the desktop's.
-  const [path, name] = isMobile
-    ? ['/faro', 'Faro, July 2026']
-    : ['/sagres', 'Sagres, September 2026'];
-  await lay(page, path, name);
+}, async ({ page }) => {
+  await lay(page, '/faro', 'Faro, July 2026');
   const choice = page.getByRole('region', { name: 'The choice' });
   await expect(
     choice.getByRole('heading', {
@@ -150,11 +169,15 @@ test('goes over what was chosen and orders the album', {
   await expect(order).toContainText('10 photos are chosen.');
   await expect(order).toContainText('An agent is started for it');
   await scan(page);
-  if (isMobile) {
-    return;
-  }
+});
 
-  await order.getByRole('button', { name: editAll }).click();
+test('orders an album, which an agent is started for', async ({ page }) => {
+  await lay(page, '/sagres', 'Sagres, September 2026');
+  await page.getByRole('button', { name: 'Order the album' }).click();
+  await page
+    .getByRole('region', { name: 'Order the album' })
+    .getByRole('button', { name: editAll })
+    .click();
   // The agent that is started says where it can be read along.
   const along = page.getByRole('link', { name: 'Read along' }).first();
   await expect(along).toHaveAttribute(

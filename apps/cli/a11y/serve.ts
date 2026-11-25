@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { writeFolders } from './made-up/folders.ts';
 import { type Wanted, writeShoot } from './made-up/shoot.ts';
+import { warm } from './warm.ts';
 
 const [, , port = ''] = process.argv;
 const home = await mkdtemp(join(tmpdir(), 'keepsake-a11y-'));
@@ -72,6 +73,13 @@ const wanted: ReadonlyArray<Wanted> = [
     isOrdered: true,
     seed: 19,
   },
+  {
+    name: 'tomar',
+    about: 'Tomar, November 2026',
+    month: '2026-11',
+    step: 'edited',
+    seed: 23,
+  },
 ];
 for (const shoot of wanted) {
   await writeShoot(join(home, 'keepsake', 'shoots'), shoot);
@@ -95,34 +103,47 @@ await standIn('photos', 'photos.ts');
 const agent = await standIn('agent', 'agent.ts');
 await writeFolders(photos);
 
-const server = Bun.spawn(
-  [
-    process.execPath,
-    join(import.meta.dir, '..', 'src', 'app', 'cli.ts'),
-    'serve',
-    '--port',
-    port,
-    '--photos',
-    photos,
-    '--agent',
-    agent,
-  ],
-  {
-    // Built from entries because environment variable names are not camelCase.
-    env: Object.fromEntries([
-      ['HOME', home],
-      ['XDG_DATA_HOME', home],
-      ['XDG_CACHE_HOME', join(home, 'cache')],
-      ['NODE_ENV', 'production'],
-      ['PATH', tools],
-    ]),
-    cwd: join(import.meta.dir, '..'),
-    stdout: 'inherit',
-    stderr: 'inherit',
-  },
-);
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => server.kill(signal));
+const serveOn = (at: number) =>
+  Bun.spawn(
+    [
+      process.execPath,
+      join(import.meta.dir, '..', 'src', 'app', 'cli.ts'),
+      'serve',
+      '--port',
+      String(at),
+      '--photos',
+      photos,
+      '--agent',
+      agent,
+    ],
+    {
+      // Built from entries because environment variable names are not camelCase.
+      env: Object.fromEntries([
+        ['HOME', home],
+        ['XDG_DATA_HOME', home],
+        ['XDG_CACHE_HOME', join(home, 'cache')],
+        ['NODE_ENV', 'production'],
+        ['PATH', tools],
+      ]),
+      cwd: join(import.meta.dir, '..'),
+      stdout: 'pipe',
+      stderr: 'inherit',
+    },
+  );
+
+// One server makes what is kept from then on. The tests get the one after it,
+// which has all of it from the start.
+let server = serveOn(Number(port) + 1);
+const stop = () => server.kill();
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);
+// It says where it is once it can be reached.
+for await (const said of server.stdout.pipeThrough(new TextDecoderStream())) {
+  await warm(String(JSON.parse(said).url));
+  break;
 }
+server.kill();
+await server.exited;
+server = serveOn(Number(port));
 await server.exited;
 await rm(home, { recursive: true, force: true });
