@@ -106,7 +106,7 @@ export const StackStrip = ({
 }) => (
   <nav
     aria-label={`Stack of ${pile.photos.length} photos that show the same`}
-    className="mx-auto flex h-[66px] w-full max-w-[46rem] items-start gap-3 px-4"
+    className="mx-auto flex h-[74px] w-full max-w-[46rem] items-start gap-3 px-4 pt-2"
     data-stack={pile.photos.length}
   >
     <p className="type-edge flex h-11 shrink-0 flex-col justify-center gap-0.5 text-quiet">
@@ -118,7 +118,7 @@ export const StackStrip = ({
         ↑ ↓ go through them
       </span>
     </p>
-    <ul className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden pb-[18px] [scrollbar-width:none]">
+    <ul className="-mt-1 -ml-1 flex min-w-0 flex-1 gap-1.5 overflow-x-auto overflow-y-hidden px-1 pt-1 pb-[18px] [scrollbar-width:none]">
       {pile.photos.map((photo) => (
         <Frame
           isShown={photo.id === shown}

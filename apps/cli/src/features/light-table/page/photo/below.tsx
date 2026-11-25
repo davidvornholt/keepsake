@@ -54,19 +54,25 @@ export const Below = ({
       inert={isAside}
       ref={footRef}
     >
-      {isComposing ? null : <StandingLine photo={photo} />}
+      {isComposing ? null : (
+        <div data-standing={photo.standing.kind}>
+          <StandingLine photo={photo} />
+        </div>
+      )}
       {isComposing || pile.photos.length < 2 ? null : (
         <StackStrip onShow={onShow} pile={pile} shown={photo.id} />
       )}
-      {word === null ? null : (
-        <Words
-          hasBefore={(photo.edit?.earlier.length ?? 0) > 0}
-          onBefore={shown.stepBack}
-          onEdit={() => marking.onKind('change')}
-          onSeen={marking.seen}
-          word={word}
-        />
-      )}
+      <div aria-live="polite">
+        {word === null ? null : (
+          <Words
+            hasBefore={(photo.edit?.earlier.length ?? 0) > 0}
+            onBefore={shown.stepBack}
+            onEdit={() => marking.onKind('change')}
+            onSeen={marking.seen}
+            word={word}
+          />
+        )}
+      </div>
       {composing.draft === null ? (
         <MarkBar onKind={marking.onKind} photo={photo} />
       ) : (

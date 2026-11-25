@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { large, lay, pressed, scan, title } from './page.ts';
+import { cutOff, large, lay, pressed, scan, title } from './page.ts';
 
 // What an agent sends back to the table: answers to look at, and moments it
 // asks the owner to rate.
@@ -20,6 +20,7 @@ test('goes through the answers of an agent', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.getByText('Answer 2 of 2')).toBeVisible();
   await expect(large(page).getByText('Not done').first()).toBeVisible();
+  expect(await cutOff(page)).toEqual([]);
   await scan(page);
   await page.getByRole('button', { name: seenName }).click();
   await expect(large(page)).toBeHidden();

@@ -1,6 +1,6 @@
 import type { PhotoView } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
-import { frontOf, type Index, pileAround } from '../data/derive.ts';
+import { frontOf, pileAround } from '../data/derive.ts';
 import {
   roomOf,
   roomsOf,
@@ -9,17 +9,12 @@ import {
   wordHeight,
 } from './room.ts';
 import type { Around } from './use-photo.ts';
-import { wordOf } from './word.ts';
+import type { SaidHeights } from './use-said-heights.ts';
+import { type Word, wordOf } from './word.ts';
 
 // Where a photo has room in the window, given what stands around it: what
 // is said about it above the pencils, the photo it is measured against,
 // and what is known about it at the side.
-
-/** The room what stands above the pencils of a photo takes. */
-const aboveOf = (index: Index, photo: PhotoView, hasWord: boolean): number =>
-  (hasWord ? wordHeight : 0) +
-  standingHeight +
-  (pileAround(index, photo).photos.length > 1 ? stackHeight : 0);
 
 export const useRooms = (
   photo: PhotoView,
@@ -29,23 +24,33 @@ export const useRooms = (
     readonly isComposing: boolean;
     /** How tall what stands below the photo was measured to be. */
     readonly measured: number;
+    /** How tall what is said about each photo is, as far as that is known. */
+    readonly saidHeights: SaidHeights;
   },
 ) => {
   const { index, state } = useShootContext();
-  const { isComposing, measured } = about;
-  const isWorkedOn = state.activity?.photos.includes(photo.id) ?? false;
-  const word = wordOf(index, photo, { isWorkedOn, isComposing });
+  const { isComposing, measured, saidHeights } = about;
+  /** What an agent or the owner says about a photo that is looked at. */
+  const wordFor = (asked: PhotoView, isWriting: boolean): Word | null =>
+    wordOf(index, asked, {
+      isWorkedOn: state.activity?.photos.includes(asked.id) ?? false,
+      isComposing: isWriting,
+    });
+  /** The room what stands above the pencils of a photo takes. */
+  const aboveOf = (asked: PhotoView): number =>
+    (saidHeights.get(asked.id) ??
+      standingHeight + (wordFor(asked, false) === null ? 0 : wordHeight)) +
+    (pileAround(index, asked).photos.length > 1 ? stackHeight : 0);
+  const word = wordFor(photo, isComposing);
   const other = frontOf(index, photo);
-  const hasWord = word !== null;
   const rooms = roomsOf(
     size,
     {
       isInfoShown,
       isComposing,
-      extra: isComposing
-        ? Number(hasWord) * wordHeight
-        : aboveOf(index, photo, hasWord),
-      measured,
+      extra: isComposing ? Number(word !== null) * wordHeight : aboveOf(photo),
+      // The words of a change grow while they are written.
+      measured: isComposing ? measured : 0,
     },
     other !== null,
   );
@@ -54,13 +59,8 @@ export const useRooms = (
     roomOf(size, {
       isInfoShown,
       isComposing: false,
-      extra: aboveOf(
-        index,
-        beside,
-        wordOf(index, beside, { isWorkedOn: false, isComposing: false }) !==
-          null,
-      ),
+      extra: aboveOf(beside),
       measured: 0,
     });
-  return { word, other, rooms, roomBeside };
+  return { word, wordFor, other, rooms, roomBeside };
 };

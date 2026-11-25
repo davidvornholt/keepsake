@@ -25,6 +25,7 @@ import {
   type Still,
 } from './stage.tsx';
 import { Strip } from './strip.tsx';
+import { Unseen } from './unseen.tsx';
 import { useFollowing } from './use-following.ts';
 import { useInk } from './use-ink.ts';
 import {
@@ -39,6 +40,7 @@ import {
   useVersion,
 } from './use-photo.ts';
 import { useRooms } from './use-rooms.ts';
+import { useSaidHeights } from './use-said-heights.ts';
 
 // One photo, looked at: the picture itself, what is known about it beside
 // it, and the owner's pencils below.
@@ -287,17 +289,17 @@ export const Body = ({
   const labelRef = useRef<HTMLInputElement>(null);
   const following = useFollowing(around);
   const foot = useHeight<HTMLElement>(0);
+  const said = useSaidHeights();
   useNeighbours(around, photo.id);
 
   const isComposing = composing.draft !== null;
-  const { word, other, rooms, roomBeside } = useRooms(photo, around, {
+  const { word, wordFor, other, rooms, roomBeside } = useRooms(photo, around, {
     isComposing,
     measured: foot.height,
+    saidHeights: said.heights,
   });
   const ink = useInk({ index, photo, draft: composing.draft, printed });
-  // The words of a change stay where they are written, on a ground.
   const isAside = isClose && !isComposing;
-  const isOnPhoto = isClose && isComposing;
   const toggleZoom = () => stageRef.current?.toggleZoom();
   useBodyKeys(around, {
     photo,
@@ -357,7 +359,7 @@ export const Body = ({
       <Above
         around={around}
         isAside={isAside}
-        isOnPhoto={isOnPhoto}
+        isOnPhoto={isClose && isComposing}
         photo={photo}
         shown={shown}
       />
@@ -378,11 +380,16 @@ export const Body = ({
         doing={{ shown, composing, marking }}
         footRef={foot.ref}
         isAside={isAside}
-        isOnPhoto={isOnPhoto}
+        isOnPhoto={isClose && isComposing}
         onShow={around.onShow}
         photo={photo}
         pile={around.pile}
         word={word}
+      />
+      <Unseen
+        photos={[photo, order[at - 1], order[at + 1]]}
+        unseenRef={said.ref}
+        wordFor={wordFor}
       />
     </>
   );

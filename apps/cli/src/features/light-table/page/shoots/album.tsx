@@ -140,7 +140,7 @@ const Waiting = ({ waits }: { readonly waits: ReadonlyArray<Waits> }) =>
         <span className="flex flex-wrap items-baseline gap-x-2" key={text}>
           <span className={`type-label ${tones[who]}`}>{text}</span>
           {more === null ? null : (
-            <span className="line-clamp-2 text-quiet text-xs">{more}</span>
+            <span className="text-quiet text-xs">{more}</span>
           )}
         </span>
       ))}
@@ -196,10 +196,7 @@ export const Album = ({
           share={share}
         />
       )}
-      <span
-        className="type-name mt-2.5 line-clamp-2 break-words text-[1.1875rem] text-lamp"
-        title={name}
-      >
+      <span className="type-name mt-2.5 block break-words text-[1.1875rem] text-lamp">
         {name}
       </span>
       <span className="type-edge mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-quiet">

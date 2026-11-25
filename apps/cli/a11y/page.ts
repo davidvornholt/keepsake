@@ -54,3 +54,13 @@ export const lay = async (page: Page, path: string, name: string) => {
   await expect(title(page)).toHaveText(name);
   await expect(frame(page)).toBeVisible();
 };
+
+/** What is said below a photo and can't be read whole. */
+export const cutOff = (page: Page) =>
+  large(page)
+    .locator('footer p')
+    .evaluateAll((lines) =>
+      lines
+        .filter((line) => line.scrollHeight > line.clientHeight + 1)
+        .map((line) => line.textContent),
+    );

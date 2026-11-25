@@ -50,7 +50,7 @@ export const marks: ReadonlyArray<Mark> = [
     handedOverAt: handed,
     answer: {
       outcome: 'not-done',
-      note: 'The shadow is the cat’s own, so it would look wrong without it.',
+      note: 'The shadow is the cat’s own, so it would look wrong without it. I tried it twice: the first time the paws floated above the stones, the second time a lighter patch was left where the shadow had been. A darker cat hides it better, if you would like to try that.',
       at: answered,
     },
   }),

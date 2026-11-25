@@ -154,6 +154,11 @@
     transform: none;
   }
 
+  /* They fade out at the foot of the window while there is more below. */
+  [data-about] {
+    mask-image: linear-gradient(to top, transparent, black 2.5rem);
+  }
+
   /* A slider as a thin rule with a mark on it, like the scale of a loupe. */
   input[data-rule] {
     block-size: 2.5rem;

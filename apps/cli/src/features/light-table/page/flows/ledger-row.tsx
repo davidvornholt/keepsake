@@ -43,7 +43,7 @@ const Asked = ({ line }: { readonly line: Line }) => {
         )}
       </p>
       {mark.note === '' ? null : (
-        <p className="mt-0.5 line-clamp-3 text-print">{mark.note}</p>
+        <p className="mt-0.5 text-print">{mark.note}</p>
       )}
       {boxes === 0 ? null : (
         <p className="type-edge mt-1 text-quiet">

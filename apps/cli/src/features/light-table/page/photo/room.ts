@@ -11,7 +11,7 @@ export const composerHeight = 116;
 /** The line that says where a photo stands, and why. */
 export const standingHeight = 48;
 /** The strip of the photos that show the same. */
-export const stackHeight = 66;
+export const stackHeight = 74;
 /** What an agent answered, or what the owner said, above the pencils. */
 export const wordHeight = 64;
 export const infoWidth = 352;
