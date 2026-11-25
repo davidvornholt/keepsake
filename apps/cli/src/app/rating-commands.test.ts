@@ -7,6 +7,7 @@ import {
   scanLisbon,
   setUp,
   shootFile,
+  shootJson,
   tearDown,
 } from './command-fixtures.ts';
 import { fakeModels, verdictAnswer } from './fake-models.ts';
@@ -64,14 +65,16 @@ describe('keepsake bench', () => {
 });
 
 describe('keepsake rate', () => {
-  it.each(['server', 'ftp://server.example.ts.net'])(
-    'refuses %s as an address',
-    async (address) => {
-      await scanLisbon();
-      const failure = await failureOf('rate', 'lisbon', '--address', address);
-      expect(failure._tag).toBe('InvalidInput');
-    },
-  );
+  it('asks the owner about moments of the shoot', async () => {
+    await scanLisbon();
+    expect(await runOk('rate', 'lisbon', '--moments', '2')).toEqual({
+      shoot: 'lisbon',
+      link: null,
+      moments: 2,
+      rated: 0,
+    });
+    expect(await shootJson('to-rate.json')).toHaveLength(2);
+  });
 
   it.each([1, 3])('refuses to compare %d models', async (count) => {
     await scanLisbon();

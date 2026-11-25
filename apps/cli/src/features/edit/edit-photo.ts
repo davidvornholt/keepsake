@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
-import { EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
+import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import { askReviewer } from '../../shared/review-vision.ts';
 import {
@@ -10,14 +10,16 @@ import {
   readJson,
   writeJson,
 } from '../../shared/store.ts';
+import { wishIn, writeWish } from '../../shared/wishes.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
 import { type CorrectionFiles, correct } from './correct/correct.ts';
 import { Change, findPlaces, type Place } from './correct/places.ts';
+import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
 import { remembered } from './prepare.ts';
 import { sentence } from './prompt.ts';
-import { bothWishes, emptied, wishIn, writeWish } from './wishes.ts';
+import { bothWishes, emptied } from './wishes.ts';
 
 export type EditOptions = {
   /** How many versions the image model makes at once. */
@@ -26,6 +28,8 @@ export type EditOptions = {
   readonly again: boolean;
   /** What the user wants to be done. */
   readonly wish: string | null;
+  /** Where they want it, in fractions of the finished photo. */
+  readonly areas: ReadonlyArray<Box>;
 };
 
 /** A photo to edit. */
@@ -51,10 +55,14 @@ const forget = Effect.fn('forget')(function* (
   { again, wish }: EditOptions,
 ) {
   if (again) {
-    yield* emptied(files.directory, [files.camera, files.wish]);
+    yield* emptied(files.directory, [files.camera, files.wish, files.earlier]);
   } else if (wish !== null) {
-    const kept = [files.camera, files.crop, files.input];
-    yield* emptied(files.directory, kept);
+    yield* emptied(files.directory, [
+      files.camera,
+      files.crop,
+      files.input,
+      files.earlier,
+    ]);
   }
   if (wish !== null) {
     yield* writeWish(files.wish, wish);
@@ -71,24 +79,33 @@ type Outcome = typeof Outcome.Type;
 /** A photo's edit, and what was wanted of it and didn't work. */
 export type Edited = Outcome & { readonly record: EditRecord };
 
-/** Forgets an earlier change, but goes on with one that isn't over. */
-const begin = Effect.fn('begin')(function* (
-  files: CorrectionFiles,
-  wish: string,
-) {
-  const before = yield* wishIn(files.wish);
-  if (before !== wish || (yield* exists(files.outcome))) {
-    yield* emptied(files.directory, []);
-    yield* writeWish(files.wish, wish);
-  }
-});
+const Areas = Schema.Array(Box);
+const sameAreas = Schema.toEquivalence(Areas);
 
 type ToChange = {
   readonly job: Job;
   readonly former: EditRecord;
   readonly files: CorrectionFiles;
   readonly wish: string;
+  readonly areas: ReadonlyArray<Box>;
 };
+
+/** Forgets an earlier change, but goes on with one that isn't over. */
+const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
+  const before = yield* wishIn(files.wish);
+  const areasBefore = yield* readJson(Areas, files.areas);
+  const isSame =
+    before === wish &&
+    sameAreas(
+      Option.getOrElse(areasBefore, () => []),
+      areas,
+    );
+  if (!isSame || (yield* exists(files.outcome))) {
+    yield* emptied(files.directory, []);
+    yield* writeJson(Areas, files.areas, areas);
+    yield* writeWish(files.wish, wish);
+  }
+});
 
 /** Changes single places of a finished photo. */
 const changePlaces = Effect.fn('changePlaces')(function* (
@@ -136,6 +153,7 @@ const moved = (from: EditFiles, to: EditFiles) =>
       to.input,
       to.final,
       to.record,
+      to.earlier,
       from.directory,
     ]);
     for (const name of yield* fs.readDirectory(from.directory)) {
@@ -174,12 +192,12 @@ const changeAll = Effect.fn('changeAll')(function* ({
 
 /** Changes a finished photo, as little of it as the wish is about. */
 const change = Effect.fn('change')(function* (toChange: ToChange) {
-  const { files, wish } = toChange;
-  yield* begin(files, wish);
+  const { files, wish, areas } = toChange;
+  yield* begin(toChange);
   const { everywhere, places } = yield* remembered(
     Change,
     files.places,
-    askReviewer(findPlaces(files.final, wish)),
+    askReviewer(findPlaces(files.final, wish, areas)),
   );
   if (!everywhere && places.length === 0) {
     const nothing = 'The photo shows nothing that the wish is about.';
@@ -213,8 +231,9 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     wish: wanted,
     versions: options.versions,
   });
-  const { wish, again } = options;
+  const { wish, areas, again } = options;
   const former = Option.getOrNull(yield* editOf(open, photo.id));
+  yield* keepEarlier(files);
   if (wish !== null && wish !== '' && !again && former?.version === 'ai') {
     const { correction } = files;
     const changed = yield* change({
@@ -222,6 +241,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
       former,
       files: correction,
       wish,
+      areas,
     });
     yield* writeJson(Outcome, correction.outcome, {
       notDone: changed.notDone,

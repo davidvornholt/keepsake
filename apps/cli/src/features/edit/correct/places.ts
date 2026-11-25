@@ -1,6 +1,7 @@
 import { Effect, Schema } from 'effect';
 import {
   around,
+  clamp,
   coverage,
   tidyBox,
   wholePicture,
@@ -42,8 +43,28 @@ const Found = Schema.Struct({
   ),
 });
 
-const question = (wish: string) =>
-  `Whoever took this photo wants this to be changed: “${wish}”
+/** How much is shown around what the user marked, in fractions of it. */
+const margin = 0.15;
+
+/** What the user marked, with a little around it. */
+const withMargin = ({ left, top, right, bottom }: Box): Box => {
+  const across = (right - left) * margin;
+  const down = (bottom - top) * margin;
+  return {
+    left: clamp(left - across, 0, 1),
+    top: clamp(top - down, 0, 1),
+    right: clamp(right + across, 0, 1),
+    bottom: clamp(bottom + down, 0, 1),
+  };
+};
+
+const aboutMarked = (marked: number): string =>
+  marked === 0
+    ? ''
+    : ` They marked where: ${marked === 1 ? 'the last part shows what is' : `the last ${marked} parts show what is`} in their ${marked === 1 ? 'mark' : 'marks'}, with a little around it. They mean what is there, even where their words alone could mean something else, and drew the marks roughly.`;
+
+const question = (wish: string, marked: number) =>
+  `Whoever took this photo wants this to be changed: “${wish}”${aboutMarked(marked)}
 
 When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.`;
 
@@ -95,14 +116,15 @@ export const apart = (places: ReadonlyArray<Place>): ReadonlyArray<Place> =>
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
   wish: string,
+  areas: ReadonlyArray<Box>,
 ) {
   const vision = yield* Vision;
-  const { parts, pieces } = yield* inParts(file);
+  const { parts, pieces } = yield* inParts(file, areas.map(withMargin));
   const answer = yield* vision.ask({
     role,
     name: 'places',
     schema: Found,
-    pieces: [...pieces, question(wish)],
+    pieces: [...pieces, question(wish, areas.length)],
   });
   const places = apart(
     answer.places.flatMap(({ part, what, isRemoval, box }) => {

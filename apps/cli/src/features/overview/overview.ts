@@ -1,7 +1,9 @@
 import { Effect, Option } from 'effect';
+import { photoLinks } from '../../shared/address.ts';
 import { EditRecord, PickList, Publication } from '../../shared/domain.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { SpendingRecord, totalDollars } from '../../shared/spending.ts';
+import { standings } from '../../shared/standing.ts';
 import {
   type OpenShoot,
   openShoot,
@@ -109,8 +111,12 @@ export const showPhoto = Effect.fn('showPhoto')(function* (
       : Option.getOrNull(yield* verdictOn(open, model, moment));
   const files = open.files.edit(photo.id);
   const { hash: _, ...shown } = photo;
+  const known = yield* standings(open, model);
+  const linkTo = yield* photoLinks(open.shoot.name);
   return {
     ...shown,
+    link: linkTo(photo.id),
+    standing: known.of.get(photo.id) ?? null,
     preview: open.files.preview(photo.id),
     moment: moment ?? null,
     verdict,

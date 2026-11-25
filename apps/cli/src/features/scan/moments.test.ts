@@ -8,10 +8,16 @@ const photo = (id: string, seconds: number, overrides = {}): Photo => ({
   takenAt: new Date(Date.UTC(2026, 2, 30, 10, 0, seconds))
     .toISOString()
     .slice(0, -1),
+  utcOffset: null,
   camera: null,
   lens: null,
   focalLength: 600,
+  aperture: null,
+  exposure: null,
+  iso: null,
   orientation: 1,
+  width: 6000,
+  height: 4000,
   raw: true,
   cameraJpeg: true,
   hash: '0000000000000000',

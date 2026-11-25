@@ -1,4 +1,5 @@
 import { Effect } from 'effect';
+import { noted } from './activity.ts';
 import { exclusively } from './lock.ts';
 import { saveSpending } from './spending.ts';
 import { type OpenShoot, openShoot } from './store.ts';
@@ -14,6 +15,7 @@ export const workOn = <A, E, R>(
   Effect.gen(function* () {
     const open = yield* openShoot(name);
     return yield* step(open).pipe(
+      noted(open),
       Effect.ensuring(Effect.ignore(saveSpending(open.files))),
       exclusively(open.files),
     );

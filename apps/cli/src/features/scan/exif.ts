@@ -30,7 +30,13 @@ const Exif = Schema.Struct({
   Model: Schema.optionalKey(Text),
   LensModel: Schema.optionalKey(Text),
   FocalLength: Schema.optionalKey(Text),
+  FNumber: Schema.optionalKey(Text),
+  ExposureTime: Schema.optionalKey(Text),
+  ISO: Schema.optionalKey(Text),
+  OffsetTimeOriginal: Schema.optionalKey(Text),
   Orientation: Schema.optionalKey(Text),
+  ImageSize: Schema.optionalKey(Text),
+  FullImageSize: Schema.optionalKey(Text),
   JpgFromRawLength: Schema.optionalKey(Text),
 });
 export type Exif = typeof Exif.Type;
@@ -62,6 +68,13 @@ const number = (value: string | number | undefined) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const offsetPattern = /^(?:Z|[+-]\d\d:\d\d)$/u;
+
+const offsetOf = (value: string | number | undefined) => {
+  const offset = text(value);
+  return offset !== null && offsetPattern.test(offset) ? offset : null;
+};
+
 const uprightOrientation = 1;
 const lastOrientation = 8;
 
@@ -73,6 +86,23 @@ const orientationOf = (value: string | number | undefined) => {
     parsed <= lastOrientation
     ? parsed
     : uprightOrientation;
+};
+
+const sizePattern = /^(?<across>\d+)[ x](?<down>\d+)$/u;
+const firstTurned = 5;
+
+/**
+ * How large the picture is. Sony's RAW files say separately how much of the
+ * sensor is the picture.
+ */
+const sizeOf = (exif: Exif) => {
+  const size = text(exif.FullImageSize) ?? text(exif.ImageSize) ?? '';
+  const found = sizePattern.exec(size)?.groups;
+  const across = Number(found?.across ?? 0);
+  const down = Number(found?.down ?? 0);
+  return orientationOf(exif.Orientation) < firstTurned
+    ? { width: across, height: down }
+    : { width: down, height: across };
 };
 
 /** A photo without its hash, which takes its picture to compute. */
@@ -100,7 +130,12 @@ export const foundPhotos = (
         camera: text(exif.Model),
         lens: text(exif.LensModel),
         focalLength: number(exif.FocalLength ?? 'none'),
+        aperture: number(exif.FNumber ?? 'none'),
+        exposure: number(exif.ExposureTime ?? 'none'),
+        iso: number(exif.ISO ?? 'none'),
+        utcOffset: offsetOf(exif.OffsetTimeOriginal),
         orientation: orientationOf(exif.Orientation),
+        ...sizeOf(exif),
         raw,
         cameraJpeg: raw && exif.JpgFromRawLength !== undefined,
       });
@@ -130,7 +165,13 @@ export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
     '-Model',
     '-LensModel',
     '-FocalLength',
+    '-FNumber',
+    '-ExposureTime',
+    '-ISO',
+    '-OffsetTimeOriginal',
     '-Orientation',
+    '-ImageSize',
+    '-FullImageSize',
     '-JpgFromRawLength',
     source,
   ]);

@@ -181,7 +181,7 @@ describe('keepsake pick', () => {
     fakeModels.answers.album = { leaveOut: [{ photo: 2, insteadOf: 1 }] };
     await runOk('cull', 'lisbon');
     const result = await runOk('pick', 'lisbon');
-    expect(result).toMatchObject({ candidates: 2, redundant: 1, picked: 1 });
+    expect(result).toMatchObject({ candidates: 2, repeats: 1, picked: 1 });
   });
 
   it('takes further frames of a moment that score high enough', async () => {

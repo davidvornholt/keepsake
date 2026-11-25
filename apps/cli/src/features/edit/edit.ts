@@ -1,8 +1,13 @@
 import { Effect, Option, Ref } from 'effect';
+import { during } from '../../shared/activity.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
-import { Spending, totalDollars } from '../../shared/spending.ts';
+import {
+  dollarsForOneEdit,
+  Spending,
+  totalDollars,
+} from '../../shared/spending.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
@@ -63,9 +68,6 @@ type Outcome =
       readonly reason: string;
     };
 
-/** About what one photo costs, set aside while it is being edited. */
-const dollarsForOne = 0.75;
-
 /**
  * Keeps what is spent within a budget, counting the photos that are being
  * edited right now at what they usually cost.
@@ -76,7 +78,7 @@ const makeBudget = Effect.fn('makeBudget')(function* (dollars: number) {
   const running = yield* Ref.make(0);
   const isLeft = Effect.gen(function* () {
     const spent = totalDollars(yield* spending.soFar) - before;
-    return spent + (yield* Ref.get(running)) * dollarsForOne < dollars;
+    return spent + (yield* Ref.get(running)) * dollarsForOneEdit < dollars;
   });
   return <A, E, R>(work: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
@@ -110,7 +112,9 @@ export const edit = Effect.fn('edit')(function* (
           notDone: [],
         } satisfies Outcome;
       }
-      const edited = yield* withinBudget(editPhoto(open, toEdit, options));
+      const edited = yield* withinBudget(
+        editPhoto(open, toEdit, options).pipe(during(toEdit.photo.id)),
+      );
       return Option.match(edited, {
         onNone: (): Outcome => ({
           kind: 'overBudget',

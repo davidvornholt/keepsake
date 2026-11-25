@@ -136,6 +136,8 @@ const editFiles = (path: Path.Path, directory: string, base: string) => ({
   versionMended: (number: number) =>
     path.join(directory, `version-${number}-mended.png`),
   final: path.join(directory, `${base}-keepsake.jpg`),
+  /** The finished photos that newer ones replaced. */
+  earlier: path.join(directory, 'earlier'),
   record: path.join(directory, 'edit.json'),
 });
 export type EditFiles = ReturnType<typeof editFiles>;
@@ -158,11 +160,27 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     photos: path.join(root, 'photos.json'),
     moments: path.join(root, 'moments.json'),
     picks: path.join(root, 'picks.json'),
+    /** Why photos that could have been in the album aren't. */
+    reasons: path.join(root, 'reasons.json'),
     ratings: path.join(root, 'ratings.json'),
+    /** The moments the owner was asked to rate. */
+    toRate: path.join(root, 'to-rate.json'),
     publication: path.join(root, 'publication.json'),
+    /** What Immich last had in the album, and what was taken out of it. */
+    album: path.join(root, 'album.json'),
+    removed: path.join(root, 'removed.json'),
+    /** What the owner wants, a file for each mark. */
+    marks: path.join(root, 'marks'),
+    labels: path.join(root, 'labels.json'),
     spending: path.join(root, 'spending.json'),
     lock: path.join(root, 'lock'),
+    /** What the command that holds the lock is doing. */
+    activity: path.join(root, 'activity.json'),
+    /** The agent that waits for marks. */
+    waiting: path.join(root, 'waiting.json'),
     preview: (photo: string) => path.join(root, 'previews', `${photo}.jpg`),
+    verdicts: (model: string) =>
+      path.join(root, 'verdicts', model.replaceAll('/', '--')),
     verdict: (model: string, moment: string) =>
       path.join(
         root,
@@ -182,6 +200,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
           ...editFiles(path, changes, base),
           camera: files.camera,
           final: files.final,
+          /** Where the user wants a change. */
+          areas: path.join(changes, 'areas.json'),
           /** What has to change, and where. */
           places: path.join(changes, 'places.json'),
           /** What an attempt starts from, in the size the image model makes. */

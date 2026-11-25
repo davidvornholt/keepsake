@@ -39,9 +39,13 @@ export const inPhoto = (part: Box, box: Box): Box => {
 };
 
 /** A photo as a model sees it when nothing small may be missed. */
-export const inParts = Effect.fn('inParts')(function* (file: string) {
+export const inParts = Effect.fn('inParts')(function* (
+  file: string,
+  /** Further parts that the user marked. */
+  marked: ReadonlyArray<Box> = [],
+) {
   const size = yield* sizeOf(file);
-  const parts = partsOf(size);
+  const parts = [...partsOf(size), ...marked];
   const pictures = yield* Effect.forEach(parts, (part) =>
     rendered(file, { frame: frameOf(part, size) }),
   );

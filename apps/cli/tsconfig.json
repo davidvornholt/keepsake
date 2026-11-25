@@ -5,7 +5,8 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "jsx": "react-jsx"
   },
   "include": ["src", "scripts", "a11y", "playwright.config.ts"],
   "exclude": ["node_modules"]

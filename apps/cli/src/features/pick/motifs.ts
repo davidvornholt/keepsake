@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import type { Pick } from '../../shared/domain.ts';
+import type { LeftOut, Pick } from '../../shared/domain.ts';
 import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import type { OpenShoot } from '../../shared/store.ts';
@@ -27,10 +27,19 @@ const Motifs = Schema.Struct({
 const groupingQuestion =
   'Put together the photos that may show the same motif, so that they can be compared: the same building, view or place, even from another spot, at another time or in other light; the same people at the same place; the same animal, or animals of the same kind; the same plants, food or thing. They needn’t follow each other. Each photo belongs to one motif. Leave out the photos whose motif no other photo shows.';
 
-const Kept = Schema.Struct({ keep: Schema.Array(Schema.Int) });
+const Answer = Schema.Struct({
+  keep: Schema.Array(Schema.Int),
+  repeats: Schema.Array(
+    Schema.Struct({
+      photo: Schema.Int,
+      /** The number of the photo that is kept instead. */
+      insteadOf: Schema.Int,
+    }),
+  ),
+});
 
 const keepingQuestion = (motif: string) =>
-  `These photos of the album show ${motif}. Which of them are repeats, so that somebody who has just seen another one of them would find nothing new in them? A photo is a repeat when it shows the same subject at the same place doing the same thing, even when it is closer, further away, turned, upright instead of wide, or in slightly different light. It isn’t a repeat when something else happens in it, when other people or animals are in it, or when it shows another side or part of the place. Of each set of repeats the album keeps the most interesting one: the one in which most happens, the subject is seen best, close enough and with its face and eyes towards the camera, the light and the colours are strongest, and nothing distracts. Give the numbers of all photos that the album keeps.`;
+  `These photos of the album show ${motif}. Which of them are repeats, so that somebody who has just seen another one of them would find nothing new in them? A photo is a repeat when it shows the same subject at the same place doing the same thing, even when it is closer, further away, turned, upright instead of wide, or in slightly different light. It isn’t a repeat when something else happens in it, when other people or animals are in it, or when it shows another side or part of the place. Of each set of repeats the album keeps the most interesting one: the one in which most happens, the subject is seen best, close enough and with its face and eyes towards the camera, the light and the colours are strongest, and nothing distracts. Give the numbers of all photos that the album keeps, and for each of the others its number and that of the kept photo it repeats.`;
 
 type Motif = {
   readonly motif: string;
@@ -102,10 +111,10 @@ const dispensable = Effect.fn('dispensable')(function* (
   const pictures = yield* Effect.forEach(picks, ({ photo }) =>
     rendered(open.files.preview(photo), { longSide: pictureSide }),
   );
-  const { keep } = yield* vision.ask({
+  const { keep, repeats } = yield* vision.ask({
     role,
     name: 'motif',
-    schema: Kept,
+    schema: Answer,
     pieces: [
       ...pictures.flatMap(
         (picture, index): Array<Piece> => [`Photo ${index + 1}:`, picture],
@@ -113,8 +122,26 @@ const dispensable = Effect.fn('dispensable')(function* (
       keepingQuestion(motif),
     ],
   });
-  const out = picks.filter((_, index) => !keep.includes(index + 1));
-  return out.length === picks.length ? [] : out;
+  const kept = picks.filter((_, index) => keep.includes(index + 1));
+  const [first] = kept;
+  if (first === undefined) {
+    return [];
+  }
+  return picks.flatMap((pick, index): ReadonlyArray<LeftOut> => {
+    const named = repeats.find(({ photo }) => photo === index + 1);
+    const instead = picks[(named?.insteadOf ?? 0) - 1];
+    return kept.includes(pick)
+      ? []
+      : [
+          {
+            photo: pick.photo,
+            insteadOf: (instead !== undefined && kept.includes(instead)
+              ? instead
+              : first
+            ).photo,
+          },
+        ];
+  });
 });
 
 /** Leaves out photos that show again what others of them show better. */
@@ -129,9 +156,10 @@ export const withoutSameMotifs = Effect.fn('withoutSameMotifs')(function* (
     concurrency,
     (motif) => dispensable(open, motif),
   );
-  const redundant = new Set(out.flat().map(({ photo }) => photo));
+  const repeats = out.flat();
+  const gone = new Set(repeats.map(({ photo }) => photo));
   return {
-    kept: picks.filter(({ photo }) => !redundant.has(photo)),
-    redundant: [...redundant],
+    kept: picks.filter(({ photo }) => !gone.has(photo)),
+    repeats,
   };
 });

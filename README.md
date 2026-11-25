@@ -12,6 +12,7 @@
 6. The vision model reviews every edit against the original, and then looks through it part by part at full size for what would bother someone: a melted person, a woven lawn, a ghost, a seam. keepsake puts such a place back from the original and looks again. Where that doesn't help, where the subject, its pose, the people or the place changed, or where the edit isn't better, it asks for another, and in the end falls back to the camera's own picture.
 7. You can tell it with `--wish` what else you want to be done with a finished photo, such as another thing to remove. It finds the places that is about, has the image model make versions, checks each place close up in all of them, and takes only what changed there into the photo. Everything else stays as it is.
 8. It publishes the result to an album in [Immich](https://immich.app), each photo stacked on the camera's own picture.
+9. On a page of its own you see all of it: what was taken on each day and what became of it, each edit beside the camera's picture, and every photo that was left out with the reason. You mark what should change, hand that over to your agent, and look at what came of it.
 
 keepsake never changes the photos themselves. Models see re-encoded pictures without metadata. The finished photos keep the camera's data, get a caption and a star rating, and carry IPTC's mark for photos edited with AI.
 
@@ -54,13 +55,15 @@ keepsake run ~/photos/lisbon --about "Lisbon, May 2026" --maximum 40 --budget 30
 
 It can take hours. When it stops, run it again and it goes on where it stopped. Editing costs about $0.75 per photo, and a change to a finished one about $0.45. Culling costs nothing extra on a subscription, and about $2.50 per 100 photos with `azure/gpt-6-astra`. `--budget` limits what the edits cost.
 
-`keepsake rate` and `keepsake bench` measure which vision model agrees best with your own taste: you rate some moments on a local page, and each model is compared with your ratings.
+`keepsake serve` serves the page on this machine, and only to it. To reach it from others, let a reverse proxy with TLS in a private network pass it on, and tell keepsake with `--address` where it is reached then; it has no login of its own. Run it as a service with a fixed `--port`, so it is always there. An agent that waits with `keepsake marks <shoot> --wait` starts as soon as you hand something over.
+
+`keepsake rate` and `keepsake bench` measure which vision model agrees best with your own taste: you rate some moments on the page, and each model is compared with your ratings.
 
 Run `keepsake --help` for the commands and `keepsake <command> --help` for their options. The skill in [`apps/cli/skills/keepsake`](apps/cli/skills/keepsake/SKILL.md) tells agents how to use them.
 
 ## Develop
 
-`bun run check` runs the standards drift check, lint, type checks, tests, the build, and the accessibility checks of the rating page. It must pass before a change is done. Run the command from source with `bun apps/cli/src/app/cli.ts`.
+`bun run check` runs the standards drift check, lint, type checks, tests, the build, and the accessibility checks of the page. It must pass before a change is done. Run the command from source with `bun apps/cli/src/app/cli.ts`. `bun a11y/serve.ts 3190` in `apps/cli` serves the page with generated pictures, and reloads it when its source changes.
 
 ## License
 

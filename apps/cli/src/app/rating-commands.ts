@@ -4,9 +4,10 @@ import { compareWithOwner } from '../features/benchmark/benchmark.ts';
 import { judgeMoments } from '../features/cull/cull.ts';
 import { disputedBetween } from '../features/rating/disputed.ts';
 import { sampleOf } from '../features/rating/sample.ts';
-import { readRatings, serveRatingPage } from '../features/rating/server.ts';
+import { ratingLink } from '../shared/address.ts';
 import { StepMissing } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
+import { askToRate, readRatings } from '../shared/ratings.ts';
 import { Spending } from '../shared/spending.ts';
 import { type OpenShoot, openShoot } from '../shared/store.ts';
 import { verdicts } from '../shared/verdicts.ts';
@@ -17,7 +18,6 @@ import {
   fail,
   flag,
   optionalInt,
-  optionalString,
   shootArgument,
   visionModel,
 } from './command-inputs.ts';
@@ -25,22 +25,6 @@ import { emit, emitWithCost } from './output.ts';
 
 const defaultSample = 60;
 const mostMoments = 1000;
-const highestPort = 65_535;
-const webProtocols = new Set(['http:', 'https:']);
-
-const webAddress = (text: string) =>
-  Effect.try({
-    try: () => new URL(text),
-    catch: () => undefined,
-  }).pipe(
-    Effect.filterOrFail(({ protocol }) => webProtocols.has(protocol)),
-    Effect.catch(() =>
-      fail(
-        `${JSON.stringify(text)} is not an address of a web page. Write it with https://.`,
-      ),
-    ),
-  );
-
 /** What a model that is to be compared thinks of the shoot. */
 const verdictsToCompare = Effect.fn('verdictsToCompare')(function* (
   open: OpenShoot,
@@ -96,49 +80,30 @@ export const rate = Command.make(
       ),
       Flag.atLeast(0),
     ),
-    port: optionalInt('port', 'The port of the page (default: any free one)'),
-    address: optionalString(
-      'address',
-      'Where the page is reached from another machine, when something on this one passes it on to the port, such as https://server.example.ts.net:8443',
-    ),
   },
-  ({ shoot, moments, model, between, port, address }) =>
+  ({ shoot, moments, model, between }) =>
     Effect.gen(function* () {
       const count = yield* bounded('moments', moments, {
         fallback: defaultSample,
         min: 1,
         max: mostMoments,
       });
-      const chosenPort = yield* bounded('port', port, {
-        fallback: 0,
-        min: 0,
-        max: highestPort,
-      });
-      const elsewhere = Option.getOrUndefined(address);
-      const reachedAt =
-        elsewhere === undefined ? undefined : yield* webAddress(elsewhere);
       const open = yield* openShoot(shoot);
       const sample = yield* momentsToRate(open, model, between, count);
-      const server = yield* serveRatingPage({
-        open,
-        sample,
-        port: chosenPort,
-        address: reachedAt,
-      });
+      yield* askToRate(open, sample);
       const rated = new Set(
         (yield* readRatings(open)).map(({ moment }) => moment),
       );
       yield* emit({
         shoot,
-        url: reachedAt?.href ?? `http://127.0.0.1:${server.port}/`,
+        link: yield* ratingLink(shoot),
         moments: sample.length,
         rated: sample.filter(({ id }) => rated.has(id)).length,
       });
-      return yield* Effect.never;
-    }).pipe(Effect.scoped),
+    }),
 ).pipe(
   Command.withDescription(
-    'Serve a page on this machine where the owner of the photos chooses the best photo of each moment, gives it stars and marks others worth keeping, without seeing what a model thinks. Runs until it is stopped; every rating is saved right away.',
+    'Ask the owner on the page to choose the best photo of some moments, give it stars and say which others are worth keeping, without seeing what a model thinks.',
   ),
 );
 

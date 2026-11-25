@@ -1,5 +1,5 @@
-import { Effect, Option, Schema } from 'effect';
-import { whatToDescribe } from '../../shared/describing.ts';
+import { Effect, Option } from 'effect';
+import { Description, whatToDescribe } from '../../shared/describing.ts';
 import type { Box, Shoot } from '../../shared/domain.ts';
 import { rendered } from '../../shared/pictures.ts';
 import { type EditFiles, readJson, writeJson } from '../../shared/store.ts';
@@ -11,8 +11,6 @@ const pictureSide = 1024;
 
 const role =
   'You describe photos for someone who edits them without having seen them, so say only what each one really shows.';
-
-const Description = Schema.Struct({ description: Schema.String });
 
 /**
  * Says what a photo shows once it is framed, unless it has said so before. What

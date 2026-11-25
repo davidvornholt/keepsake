@@ -26,10 +26,15 @@ describe('keepsake pick', () => {
     fakeModels.answers.motifs = {
       motifs: [{ motif: 'a heron', photos: [3, 1, 3] }],
     };
-    fakeModels.answers.motif = { keep: [2] };
+    fakeModels.answers.motif = {
+      keep: [2],
+      repeats: [{ photo: 1, insteadOf: 2 }],
+    };
     const result = await runOk('pick', 'lisbon');
-    expect(result).toMatchObject({ candidates: 3, redundant: 1, picked: 2 });
+    expect(result).toMatchObject({ candidates: 3, repeats: 1, picked: 2 });
     expect(await picked()).toEqual(['B', 'C']);
+    const { leftOut } = await shootJson('picks.json');
+    expect(leftOut).toEqual([{ photo: 'A1', insteadOf: 'C' }]);
     const [question] = asked('motif');
     expect(question?.images).toBe(2);
     expect(question?.texts.at(-1)).toContain('a heron');
