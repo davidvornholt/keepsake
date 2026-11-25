@@ -193,18 +193,21 @@ describe('keepsake edit, with signs', () => {
       signs: [
         { part: 1, text: 'HOTEL', box },
         { part: 1, text: 'PARK', box },
+        { part: 1, text: 'SALE', box },
         // Neither a part that isn't there nor an empty box can be kept.
         { part: 9, text: 'BAR', box },
         { part: 1, text: 'CAFE', box: { ...box, right: 0.2 } },
       ],
     };
     fakeModels.answers['changed-signs'] = () => ({
-      changed: asked('changed-signs').length === 1 ? [1, 7] : [],
+      changed: asked('changed-signs').length === 1 ? [1, 3, 7] : [],
+      // The banner it was on isn't there any more either.
+      gone: [3],
     });
     const result = await editLisbon('B');
     expect(result.edited).toBe(1);
     const signs = (name: string) => shootJson('edits', 'B', name);
-    expect(await signs('signs.json')).toHaveLength(2);
+    expect(await signs('signs.json')).toHaveLength(3);
     expect(await signs('version-1-signs.json')).toEqual([
       { text: 'HOTEL', box },
     ]);
@@ -227,7 +230,7 @@ describe('keepsake edit, with signs', () => {
         box: { left: 0.2, top: 0.2, right: 0.4, bottom: 0.3 },
       })),
     };
-    fakeModels.answers['changed-signs'] = { changed: [2] };
+    fakeModels.answers['changed-signs'] = { changed: [2], gone: [] };
     await editLisbon('B', '--versions', '1');
     expect(asked('changed-signs').map(({ images }) => images)).toEqual([
       40, 10,

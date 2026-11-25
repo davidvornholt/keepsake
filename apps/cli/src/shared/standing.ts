@@ -20,20 +20,22 @@ export type Standing =
     }
   /** Chosen for the album, but not published yet. */
   | { readonly kind: 'picked' }
+  /** Nothing was chosen yet. */
+  | { readonly kind: 'open' }
   | {
       readonly kind: 'taken-out';
       readonly at: string;
       readonly because: string | null;
     }
-  /** Another frame of its moment is better. */
-  | { readonly kind: 'other-frame'; readonly of: string }
+  /** It shows the same as another photo, which stands for it. */
   | {
-      readonly kind: 'left-out';
-      readonly rule: 'repeat' | 'weaker' | 'score' | 'no-room' | 'unknown';
-      /** The photo of the album that shows the same. */
-      readonly repeats: string | null;
+      readonly kind: 'similar';
+      readonly to: string;
+      /** What the other one does better, if a model was asked. */
       readonly because: string | null;
-    };
+    }
+  /** Not strong enough for the album. */
+  | { readonly kind: 'left-out'; readonly because: string | null };
 
 const Reasons = Schema.Array(Reason);
 const Removals = Schema.Array(Removed);
@@ -57,81 +59,138 @@ type Known = {
   readonly reasons: ReadonlyArray<Reason>;
 };
 
-/** Why a photo that is the best of its moment isn't in the album. */
-const whyLeftOut = (
-  { picks, reasons }: Known,
-  verdict: Verdict | undefined,
+const byPhoto = <A extends { readonly photo: string }>(
+  list: ReadonlyArray<A>,
+): ReadonlyMap<string, A> => new Map(list.map((one) => [one.photo, one]));
+
+/** What is known, by photo. */
+const factsOf = ({ album, picks, removed, reasons }: Known) => ({
+  server: album?.server ?? '',
+  inAlbum: byPhoto(album?.photos ?? []),
+  removed: byPhoto(removed),
+  reasons: byPhoto(reasons),
+  picked: new Set(picks?.picks.map(({ photo }) => photo)),
+  instead: new Map(
+    picks?.leftOut.map(({ photo, insteadOf }) => [photo, insteadOf]),
+  ),
+  isDecided: picks !== null || album !== null,
+});
+type Facts = ReturnType<typeof factsOf>;
+
+const isChosen = ({ inAlbum, picked, removed }: Facts, photo: string) =>
+  inAlbum.has(photo) || (picked.has(photo) && !removed.has(photo));
+
+/** The photo of these that was taken closest to another one of the moment. */
+const closest = (
+  { photos }: Moment,
+  candidates: ReadonlyArray<string>,
   photo: string,
-): Standing => {
-  const reason = reasons.find((one) => one.photo === photo);
-  const out = picks?.leftOut.find((one) => one.photo === photo);
-  const own = verdict?.further.find((one) => one.photo === photo);
-  const score = own?.score ?? verdict?.score;
-  const isLow =
-    picks !== null && score !== undefined && score < picks.minimumScore;
-  // A reason was found with the album as it is now, so it counts more.
-  const repeats =
-    reason === undefined ? (out?.insteadOf ?? null) : reason.repeats;
-  const because = reason?.because ?? null;
-  const left = { kind: 'left-out', repeats, because } as const;
-  if (repeats !== null) {
-    return { ...left, rule: 'repeat' };
-  }
-  if (isLow) {
-    return { ...left, rule: 'score' };
-  }
-  if (reason !== undefined) {
-    return { ...left, rule: 'weaker' };
-  }
-  return { ...left, rule: out === undefined ? 'unknown' : 'no-room' };
+): string | undefined => {
+  const at = photos.indexOf(photo);
+  const away = (one: string) => Math.abs(photos.indexOf(one) - at);
+  return candidates.toSorted((left, right) => away(left) - away(right))[0];
 };
 
-const standingsIn = (
-  known: Known,
+/** The photos of a moment that stand for the others. */
+const frontsOf = (
+  facts: Facts,
   verdict: Verdict | undefined,
   { photos }: Moment,
-): ReadonlyArray<readonly [string, Standing]> => {
-  const inAlbum = new Map(
-    (known.album?.photos ?? []).map((one) => [one.photo, one] as const),
-  );
-  const ownBest = [
-    ...(verdict?.best.slice(0, 1) ?? photos.slice(0, 1)),
-    ...(verdict?.further.map(({ photo }) => photo) ?? []),
-  ];
-  const removed = new Map(
-    known.removed.map((one) => [one.photo, one] as const),
-  );
-  const isPicked = new Set(known.picks?.picks.map(({ photo }) => photo));
-  const inIt = photos.filter((photo) => inAlbum.has(photo));
-  const shown =
-    inIt.length > 0
-      ? inIt
-      : photos.filter((photo) => isPicked.has(photo) && !removed.has(photo));
-  const [best] = shown.length > 0 ? shown : ownBest;
-  return photos.map((photo) => {
-    const there = inAlbum.get(photo);
-    if (there !== undefined) {
-      return [
-        photo,
-        {
-          kind: 'album',
-          url: `${known.album?.server}/photos/${there.asset}`,
-          favorite: there.favorite,
-        },
+): ReadonlyArray<string> => {
+  const chosen = photos.filter((photo) => isChosen(facts, photo));
+  return chosen.length > 0
+    ? chosen
+    : [
+        ...(verdict?.best.slice(0, 1) ?? photos.slice(0, 1)),
+        ...(verdict?.further.map(({ photo }) => photo) ?? []),
       ];
+};
+
+/** Where a photo stands that was neither chosen nor taken out. */
+const notChosen = (
+  facts: Facts,
+  moment: Moment,
+  fronts: ReadonlyArray<string>,
+  photo: string,
+): Standing => {
+  const reason = facts.reasons.get(photo);
+  const said =
+    // A reason was found with the album as it is now, so it counts more.
+    reason === undefined ? facts.instead.get(photo) : reason.repeats;
+  const to = fronts.includes(photo)
+    ? (said ?? undefined)
+    : closest(moment, fronts, photo);
+  if (to !== undefined) {
+    return { kind: 'similar', to, because: null };
+  }
+  return facts.isDecided
+    ? { kind: 'left-out', because: null }
+    : { kind: 'open' };
+};
+
+/** Where the photos of a moment stand, and which of them stand for others. */
+const within = (facts: Facts, verdict: Verdict | undefined, moment: Moment) => {
+  const fronts = frontsOf(facts, verdict, moment);
+  const standingOf = (photo: string): Standing => {
+    const there = facts.inAlbum.get(photo);
+    if (there !== undefined) {
+      const { asset, favorite } = there;
+      return {
+        kind: 'album',
+        url: `${facts.server}/photos/${asset}`,
+        favorite,
+      };
     }
-    const gone = removed.get(photo);
+    const gone = facts.removed.get(photo);
     if (gone !== undefined) {
-      return [photo, { kind: 'taken-out', at: gone.at, because: gone.because }];
+      return { kind: 'taken-out', at: gone.at, because: gone.because };
     }
-    if (isPicked.has(photo)) {
-      return [photo, { kind: 'picked' }];
+    return facts.picked.has(photo)
+      ? { kind: 'picked' }
+      : notChosen(facts, moment, fronts, photo);
+  };
+  return {
+    fronts,
+    of: moment.photos.map((photo) => [photo, standingOf(photo)] as const),
+  };
+};
+
+/**
+ * Lets every photo that shows the same as another one point right at the one
+ * that stands for all of them, also when there are others in between, and
+ * gives the reasons that are about that one.
+ */
+const resolved = (
+  { reasons }: Facts,
+  found: ReadonlyMap<string, Standing>,
+): ReadonlyMap<string, Standing> => {
+  const frontOf = (photo: string, passed: ReadonlySet<string>): string => {
+    const standing = found.get(photo);
+    return standing?.kind === 'similar' && !passed.has(standing.to)
+      ? frontOf(standing.to, new Set([...passed, standing.to]))
+      : photo;
+  };
+  const because = (photo: string, to: string | null) => {
+    const reason = reasons.get(photo);
+    return reason?.repeats === to ? reason.because : null;
+  };
+  const final = (photo: string, standing: Standing): Standing => {
+    if (standing.kind === 'left-out') {
+      return { kind: 'left-out', because: because(photo, null) };
     }
-    const isOwn = shown.length === 0 && ownBest.includes(photo);
-    return best === undefined || best === photo || isOwn
-      ? [photo, whyLeftOut(known, verdict, photo)]
-      : [photo, { kind: 'other-frame', of: best }];
-  });
+    if (standing.kind !== 'similar') {
+      return standing;
+    }
+    const to = frontOf(photo, new Set([photo]));
+    // Two that each point at the other stand for nothing.
+    const isLost = found.get(to)?.kind === 'similar' || !found.has(to);
+    return isLost
+      ? { kind: 'left-out', because: because(photo, null) }
+      : { kind: 'similar', to, because: because(photo, to) };
+  };
+  return new Map(
+    [...found].map(([photo, standing]) => [photo, final(photo, standing)]),
+  );
 };
 
 /** Where every photo of a shoot stands. */
@@ -150,14 +209,22 @@ export const standings = Effect.fn('standings')(function* (
     removed: yield* readRemoved(open),
     reasons: yield* readReasons(open),
   };
+  const facts = factsOf(known);
+  const moments = open.moments.map((moment) =>
+    within(facts, judged.get(moment.id), moment),
+  );
   return {
     ...known,
     verdicts: judged,
-    of: new Map(
-      open.moments.flatMap((moment) =>
-        standingsIn(known, judged.get(moment.id), moment),
-      ),
-    ),
+    /** The photos that stand for others of their moment, chosen or not. */
+    fronts: new Set(moments.flatMap(({ fronts }) => fronts)),
+    of: resolved(facts, new Map(moments.flatMap(({ of }) => of))),
   };
 });
 export type Standings = Effect.Success<ReturnType<typeof standings>>;
+
+/** The photo in front of the stack that a photo is in. */
+export const frontOf = ({ of }: Pick<Standings, 'of'>, photo: string) => {
+  const standing = of.get(photo);
+  return standing?.kind === 'similar' ? standing.to : photo;
+};

@@ -8,6 +8,7 @@ import {
 } from './command-fixtures.ts';
 import {
   change,
+  handOver,
   marksOf,
   send,
   shootOf,
@@ -23,34 +24,43 @@ describe('marks on the light table', () => {
     await pickLisbon();
     const [open, handed] = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon/marks`;
-      await send('PUT', path, { ...change, kind: 'keep', note: '' });
-      await send('PUT', path, { ...change, kind: 'favorite', note: '' });
+      await send('PUT', path, { ...change, kind: 'put-in', note: '' });
       await send('PUT', path, change);
       const before = await marksOf(address);
-      await send('POST', `${address}/api/shoots/lisbon/hand-over`);
+      await handOver(address);
       await send('PUT', path, { ...change, kind: 'take-out' });
       return [before, await marksOf(address)];
     });
     const kinds = (all: ReadonlyArray<{ readonly kind: string }>) =>
       all.map(({ kind }) => kind);
-    expect(kinds(open)).toEqual(['favorite', 'change']);
-    expect(open[1]).toMatchObject({ ...change, note: 'Remove the chair' });
-    expect(kinds(handed)).toEqual(['favorite', 'change', 'take-out']);
+    expect(kinds(open)).toEqual(['change']);
+    expect(open[0]).toMatchObject({ ...change, note: 'Remove the chair' });
+    expect(kinds(handed)).toEqual(['change', 'take-out']);
   });
 
-  it('are handed over, except for opinions', async () => {
+  it('are handed over with the price that was shown', async () => {
     await pickLisbon();
     const handed = await whileServing(async (address) => {
-      const path = `${address}/api/shoots/lisbon`;
-      await send('PUT', `${path}/marks`, change);
-      const keep = { ...change, photo: 'C', kind: 'keep', note: '', boxes: [] };
-      await send('PUT', `${path}/marks`, keep);
-      return (await send('POST', `${path}/hand-over`)).json();
+      await send('PUT', `${address}/api/shoots/lisbon/marks`, change);
+      return (await handOver(address, { dollars: 0.75 })).json();
     });
     expect(handed).toMatchObject([{ photo: 'B', answer: null }]);
     expect(handed[0].handedOverAt).not.toBeNull();
-    const { marks: waiting } = await runOk('marks', 'lisbon');
-    expect(waiting).toMatchObject([{ photo: 'B', note: 'Remove the chair' }]);
+    const waiting = await runOk('marks', 'lisbon');
+    expect(waiting).toMatchObject({
+      agreedDollars: 0.75,
+      album: null,
+      marks: [{ photo: 'B', note: 'Remove the chair' }],
+    });
+    const { id } = handed[0];
+    await runOk('answer', 'lisbon', id, '--done', 'The chair is gone.');
+    expect(await runOk('marks', 'lisbon')).toMatchObject({ agreedDollars: 0 });
+  });
+
+  it('can’t be handed over when there are none', async () => {
+    await pickLisbon();
+    const status = await whileServing((address) => statusOf(handOver(address)));
+    expect(status).toBe(400);
   });
 
   it('can be taken back before that', async () => {
@@ -63,7 +73,7 @@ describe('marks on the light table', () => {
         statusOf(send('DELETE', `${path}/marks/${id}`));
       const first = await takeBack(await make());
       const second = await make();
-      await send('POST', `${path}/hand-over`);
+      await handOver(address);
       return [first, await takeBack(second), (await marksOf(address)).length];
     });
     expect(statuses).toEqual([204, 400, 1]);
@@ -74,7 +84,7 @@ describe('marks on the light table', () => {
     const news = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon`;
       const { id } = await (await send('PUT', `${path}/marks`, change)).json();
-      await send('POST', `${path}/hand-over`);
+      await handOver(address);
       await runOk('answer', 'lisbon', id, '--done', 'The chair is gone.');
       const [before] = await marksOf(address);
       await send('POST', `${path}/marks/${id}/seen`);

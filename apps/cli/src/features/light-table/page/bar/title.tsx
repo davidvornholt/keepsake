@@ -20,22 +20,43 @@ type Total = {
   readonly isMinor?: boolean;
 };
 
+/** Whether its photos were looked at by nobody yet: no album, and none chosen for one. */
+const isUnchosen = ({ shoot, chosen, hasAlbum }: Index): boolean =>
+  !hasAlbum &&
+  chosen === 0 &&
+  shoot.photos.length > 0 &&
+  shoot.preparation === null &&
+  shoot.activity === null;
+
+/** "43 photos in 19 stacks", or less where there is less to say. */
+const photosOf = ({ shoot, piles }: Index): string => {
+  if (shoot.photos.length === 0) {
+    return 'No photos yet';
+  }
+  const photos = count(shoot.photos.length, 'photo');
+  return piles.length === shoot.photos.length
+    ? photos
+    : `${photos} in ${count(piles.length, 'stack')}`;
+};
+
 const totalsOf = (index: Index): ReadonlyArray<Total> => {
   const { shoot } = index;
   const edited = shoot.photos.filter(({ edit }) => edit !== null).length;
   const most = shoot.picked?.maximum ?? null;
   const picked = index.chosen - index.inAlbum;
   return [
-    { text: `${shoot.photos.length} taken` },
+    {
+      text: photosOf(index),
+    },
     ...(index.hasAlbum
       ? [
           {
-            text: `${index.inAlbum} in the album${most === null ? '' : ` of ${most}`}`,
+            text: `${index.inAlbum} in the album${most === null || index.inAlbum > most ? '' : ` of at most ${most}`}`,
           },
         ]
       : []),
     ...(picked > 0 ? [{ text: `${picked} chosen` }] : []),
-    { text: count(shoot.moments.length, 'moment'), isMinor: true },
+    ...(isUnchosen(index) ? [{ text: 'Nothing chosen yet' }] : []),
     ...(edited > 0 ? [{ text: `${edited} edited`, isMinor: true }] : []),
     ...(shoot.dollars.spent > 0
       ? [{ text: `${dollarsOf(shoot.dollars.spent)} spent` }]
@@ -46,7 +67,7 @@ const totalsOf = (index: Index): ReadonlyArray<Total> => {
 export const Title = ({ index }: { readonly index: Index }) => (
   <div className="flex min-w-0 flex-1 basis-60 items-center gap-1 lg:basis-[28.5rem]">
     <a
-      aria-label="All shoots"
+      aria-label="All albums"
       className={iconButton}
       href="/"
       onClick={(event) => {
@@ -55,7 +76,7 @@ export const Title = ({ index }: { readonly index: Index }) => (
           go({ screen: 'shoots' });
         }
       }}
-      title="All shoots"
+      title="All albums"
     >
       <ChevronLeft aria-hidden="true" size={iconSize} />
     </a>

@@ -154,6 +154,11 @@
     transform: none;
   }
 
+  /* They fade out at the foot of the window while there is more below. */
+  [data-about] {
+    mask-image: linear-gradient(to top, transparent, black 2.5rem);
+  }
+
   /* A slider as a thin rule with a mark on it, like the scale of a loupe. */
   input[data-rule] {
     block-size: 2.5rem;
@@ -197,24 +202,7 @@
     background: var(--color-lamp);
   }
 
-  /* The shoots at the start. Looking at one puts the others in the shade. */
-  [data-strip] {
-    transition: opacity 240ms var(--ease-out);
-  }
-
-  @media (hover: hover) {
-    [data-shelf]:has([data-shoot]:hover) [data-shoot]:not(:hover) [data-strip] {
-      opacity: 0.34;
-    }
-  }
-
-  [data-shelf]:has([data-shoot]:focus-visible)
-    [data-shoot]:not(:focus-visible, :hover)
-    [data-strip] {
-    opacity: 0.34;
-  }
-
-  /* They are laid on the table one after the other. */
+  /* The albums on the shelf are laid down one after the other. */
   @media (prefers-reduced-motion: no-preference) {
     [data-shelf] > li {
       animation: laid-down 520ms var(--ease-out) both;
@@ -242,6 +230,23 @@
   from {
     opacity: 0;
     transform: translateY(14px);
+  }
+}
+
+/* A heart that was just set: it swells for a moment, like one that beats once. */
+@utility heart-set {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: heart-set 420ms var(--ease-out);
+  }
+}
+
+@keyframes heart-set {
+  0% {
+    transform: scale(0.6);
+  }
+
+  45% {
+    transform: scale(1.28);
   }
 }
 

@@ -4,15 +4,8 @@
 export const shows = ['all', 'album', 'left'] as const;
 export type Show = (typeof shows)[number];
 
-export const whys = [
-  'repeat',
-  'weaker',
-  'score',
-  'no-room',
-  'unknown',
-  'taken-out',
-  'other-frame',
-] as const;
+/** Why a photo was left out: it wasn't strong enough, or the owner took it out. */
+export const whys = ['weak', 'taken-out'] as const;
 export type Why = (typeof whys)[number];
 
 /** Which photos lie on the table. */
@@ -32,6 +25,8 @@ export const everything: Filters = {
 
 export type Route =
   | { readonly screen: 'shoots' }
+  /** Making an album: of a folder still to be chosen, or of this one. */
+  | { readonly screen: 'new'; readonly folder: string | null }
   | {
       readonly screen: 'sheet' | 'hand-over' | 'answers' | 'rate';
       readonly shoot: string;
@@ -46,11 +41,11 @@ export type Route =
       readonly isPlaced: boolean;
     };
 
+/** Somewhere in a shoot: its table, what lies over it, or one of its photos. */
+export type Within = Extract<Route, { readonly shoot: string }>;
+
 /** A shoot with something of its own shown: the table, or what lies over it. */
-export type Place = Exclude<
-  Route,
-  { readonly screen: 'shoots' } | { readonly screen: 'photo' }
->;
+export type Place = Exclude<Within, { readonly screen: 'photo' }>;
 
 const oneOf = <Name extends string>(
   names: ReadonlyArray<Name>,
@@ -86,10 +81,13 @@ export const routeOf = (pathname: string, query: string): Route => {
     .split('/')
     .filter((part) => part !== '')
     .map(decoded);
-  if (shoot === undefined) {
-    return { screen: 'shoots' };
-  }
   const search = new URLSearchParams(query);
+  if (shoot === undefined) {
+    const folder = search.get('new');
+    return folder === null
+      ? { screen: 'shoots' }
+      : { screen: 'new', folder: folder === '' ? null : folder };
+  }
   const filters = filtersOf(search);
   if (kind === 'photos' && rest.length > 0) {
     return {
@@ -127,6 +125,11 @@ export const hrefOf = (route: Route): string => {
   if (route.screen === 'shoots') {
     return '/';
   }
+  if (route.screen === 'new') {
+    return route.folder === null
+      ? '/?new'
+      : `/?new=${encodeURIComponent(route.folder)}`;
+  }
   const shoot = `/${encodeURIComponent(route.shoot)}`;
   if (route.screen === 'photo') {
     return `${shoot}/photos/${encodeURIComponent(route.photo)}${queryOf(route.filters, route.isPlaced)}`;
@@ -137,6 +140,6 @@ export const hrefOf = (route: Route): string => {
 
 /** The same place with other photos on the table. */
 export const withFilters = (route: Route, change: Partial<Filters>): Route =>
-  route.screen === 'shoots'
-    ? route
-    : { ...route, filters: { ...route.filters, ...change } };
+  'shoot' in route
+    ? { ...route, filters: { ...route.filters, ...change } }
+    : route;

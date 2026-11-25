@@ -1,13 +1,12 @@
 import { useEffect } from 'react';
 import { endArrival, isArriving } from '../shoots/arrival.ts';
+import { noteOpened } from '../shoots/opened.ts';
 import { mainButton, sideButton } from '../ui/classes.ts';
 import { useTitle } from '../ui/use-title.ts';
 import { Loaded } from './loaded.tsx';
-import type { Route } from './route.ts';
+import type { Within } from './route.ts';
 import { go } from './router.ts';
 import { useShoot } from './use-shoot.ts';
-
-type Placed = Exclude<Route, { readonly screen: 'shoots' }>;
 
 /** What is shown while there is no shoot to show. */
 const Waiting = ({
@@ -33,14 +32,14 @@ const Waiting = ({
       <main className="grid h-full place-items-center p-6">
         <div className="max-w-[28rem]">
           <h1 className="type-name text-lamp text-xl">
-            There is no shoot called {name}.
+            There is no album called {name}.
           </h1>
           <button
             className={`${mainButton} mt-6`}
             onClick={() => go({ screen: 'shoots' }, 'replace')}
             type="button"
           >
-            All shoots
+            All albums
           </button>
         </div>
       </main>
@@ -51,7 +50,7 @@ const Waiting = ({
       <main className="grid h-full place-items-center p-6">
         <div className="max-w-[28rem]">
           <h1 className="type-name text-lamp text-xl">
-            Keepsake doesn't answer.
+            Keepsake doesn’t answer.
           </h1>
           {problem === null ? null : (
             <p className="mt-2 text-quiet">{problem}</p>
@@ -82,8 +81,9 @@ const Waiting = ({
   );
 };
 
-export const Shoot = ({ route }: { readonly route: Placed }) => {
+export const Shoot = ({ route }: { readonly route: Within }) => {
   const { state, store } = useShoot(route.shoot);
+  useEffect(() => noteOpened(route.shoot), [route.shoot]);
   if (state.index === null) {
     return (
       <Waiting

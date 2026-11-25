@@ -1,5 +1,5 @@
+import type { Shown } from './gliding.ts';
 import { drawInk, type Ink } from './ink.ts';
-import type { Shown } from './motion.ts';
 import { onScreen, type View } from './plane.ts';
 import { dividerOn, type Setting } from './setting.ts';
 
@@ -26,6 +26,8 @@ export type Live = {
   isClose: boolean;
   /** Where the photo is, told every frame, and whether it goes close. */
   onSeen: (view: View, isClose: boolean) => void;
+  /** The pictures that are shown right now. */
+  srcs: { camera: string | null; edit: string | null };
 };
 
 const mostScale = 3;

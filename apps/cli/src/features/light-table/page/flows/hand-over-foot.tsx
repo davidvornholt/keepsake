@@ -18,10 +18,48 @@ const Album = ({ ledger }: { readonly ledger: Ledger }) => {
   const isOver = limit !== null && chosenAfter > limit;
   return (
     <span className={isOver ? 'text-wax-yellow' : ''}>
-      Album {chosen} to {chosenAfter}
+      {ledger.isFirst ? 'Chosen' : 'Album'} {chosen} to {chosenAfter}
       {limit === null ? '' : ` of ${limit}`}
     </span>
   );
+};
+
+/** Who acts on it, said before it is handed over. */
+const whoOf = ({
+  waitsSince,
+  canStart,
+}: {
+  readonly waitsSince: string | null;
+  readonly canStart: boolean;
+}): string => {
+  if (waitsSince !== null) {
+    return 'An agent waits and starts at once';
+  }
+  return canStart
+    ? 'An agent is started for it'
+    : 'You get a sentence to give to an agent';
+};
+
+/** What the button says and what pressing it costs at most. */
+const askOf = (ledger: Ledger): { readonly says: string; cost: string } => {
+  const marks = ledger.open.length;
+  const about = `about ${dollarsOf(ledger.dollars)}`;
+  if (ledger.edits === 0) {
+    const says = ledger.isFirst ? 'Make the album' : 'Put into the album';
+    return {
+      says: ledger.ordersAlbum ? says : `Hand over ${count(marks, 'mark')}`,
+      cost: 'Costs nothing',
+    };
+  }
+  return ledger.ordersAlbum
+    ? {
+        says: `Edit ${count(ledger.edits, 'photo')}, ${about}`,
+        cost: `About ${dollarsOf(ledger.dollars)} at most`,
+      }
+    : {
+        says: `Hand over ${count(marks, 'mark')}`,
+        cost: `${count(ledger.edits, 'edit')}, ${about}`,
+      };
 };
 
 type Props = {
@@ -41,29 +79,22 @@ export const HandOverFoot = ({
   onClose,
 }: Props) => {
   const { state, store } = useShootContext();
-  const marks = ledger.open.length;
+  const hasSomething = ledger.open.length > 0 || ledger.ordersAlbum;
+  const ask = askOf(ledger);
   return (
     <footer className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 border-raised border-t px-5 py-3.5 sm:px-7">
       <p aria-live="polite" className="sr-only">
-        {handed === null ? '' : `${count(handed, 'mark')} handed over.`}
+        {handed === null ? '' : 'Handed over.'}
       </p>
-      {marks === 0 ? (
-        <p className="type-edge mr-auto text-quiet">
-          Nothing changes until an agent has acted
+      {hasSomething ? (
+        <p className="type-edge tabular mr-auto flex flex-wrap gap-x-4 gap-y-1 text-quiet">
+          <span>{ask.cost}</span>
+          <Album ledger={ledger} />
+          <span>{whoOf(state.agent)}</span>
         </p>
       ) : (
-        <p className="type-edge tabular mr-auto flex flex-wrap gap-x-4 gap-y-1 text-quiet">
-          <span>
-            {ledger.edits === 0
-              ? 'Costs nothing'
-              : `${count(ledger.edits, 'edit')}, about ${dollarsOf(ledger.dollars)}`}
-          </span>
-          <Album ledger={ledger} />
-          <span>
-            {state.agentWaitsSince === null
-              ? 'No agent is waiting'
-              : 'An agent starts at once'}
-          </span>
+        <p className="type-edge mr-auto text-quiet">
+          Nothing changes until an agent has acted
         </p>
       )}
       {state.undoable === null ? null : (
@@ -79,16 +110,7 @@ export const HandOverFoot = ({
           Undo <Key>U</Key>
         </button>
       )}
-      {marks === 0 ? (
-        <button
-          aria-keyshortcuts="Escape"
-          className={`${mainButton}`}
-          onClick={onClose}
-          type="button"
-        >
-          Back to the table
-        </button>
-      ) : (
+      {hasSomething ? (
         <button
           aria-keyshortcuts="Enter"
           className={`${mainButton} whitespace-nowrap`}
@@ -96,7 +118,16 @@ export const HandOverFoot = ({
           onClick={onHandOver}
           type="button"
         >
-          {isGoing ? 'Handing over' : `Hand over ${count(marks, 'mark')}`}
+          {isGoing ? 'Handing over' : ask.says}
+        </button>
+      ) : (
+        <button
+          aria-keyshortcuts="Escape"
+          className={mainButton}
+          onClick={onClose}
+          type="button"
+        >
+          Back to the table
         </button>
       )}
     </footer>

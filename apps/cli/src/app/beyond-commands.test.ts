@@ -16,9 +16,9 @@ afterEach(tearDown);
 const beyondLeftEdge = /^\d+x\d+-\d+\+\d+$/u;
 
 describe('a crop beyond the photo', () => {
-  const beyond = () => {
+  const beyond = (subjectLeft = 0) => {
     fakeModels.answers.crops = {
-      subject: { left: 0, top: 0.4, right: 0.5, bottom: 0.6 },
+      subject: { left: subjectLeft, top: 0.4, right: 0.5, bottom: 0.6 },
       facing: 'neither',
       belongings: [],
       crops: [
@@ -49,6 +49,15 @@ describe('a crop beyond the photo', () => {
       args.filter((arg) => beyondLeftEdge.test(arg)),
     );
     expect(frames.length).toBeGreaterThan(0);
+  });
+
+  it('uses the room the photo has before it continues the scene', async () => {
+    await pickLisbon();
+    beyond(0.3);
+    await editLisbon('B');
+    const { box } = await shootJson('edits', 'B', 'crop.json');
+    expect(box.left).toBeCloseTo(0);
+    expect(fakeModels.edits[0]?.prompt).not.toContain('grey area');
   });
 
   it('keeps only what there is of the camera’s own picture', async () => {

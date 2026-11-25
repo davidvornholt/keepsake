@@ -58,7 +58,7 @@ export const makeCore = (name: string) => {
     if (inFlight > 0) {
       return;
     }
-    const { activity, agentWaitsSince } = shoot;
+    const { activity, preparation, agent } = shoot;
     const { problem } = get();
     known = shoot;
     isAhead = false;
@@ -66,7 +66,8 @@ export const makeCore = (name: string) => {
       status: 'ready',
       index: indexOf(shoot),
       activity,
-      agentWaitsSince,
+      preparation,
+      agent,
       // It answers again, so the notice that it doesn't has had its day.
       problem: problem === unreachable ? null : problem,
     });

@@ -3,7 +3,7 @@ import { type RefObject, useEffect, useId, useRef, useState } from 'react';
 import type { Place } from '../app/route.ts';
 import { go, goBack } from '../app/router.ts';
 import { useShootContext } from '../app/shoot-context.ts';
-import { count } from '../data/format.ts';
+import { count, dollarsOf } from '../data/format.ts';
 import { drawingTime } from '../marks/wax.ts';
 import type { Engine } from '../sheet/engine.ts';
 import { agentButton, iconButton } from '../ui/classes.ts';
@@ -12,13 +12,12 @@ import { type Keys, useKeys } from '../ui/keys.ts';
 import { prefersReducedMotion } from '../ui/theme.ts';
 import { useLingering } from '../ui/use-lingering.ts';
 import { useTitle } from '../ui/use-title.ts';
+import { AgentStatus } from './agent-status.tsx';
 import { HandOverFoot } from './hand-over-foot.tsx';
 import { type Ledger, ledgerOf, staggerOf } from './ledger.ts';
 import { LedgerRow } from './ledger-row.tsx';
-import { Sentence } from './sentence.tsx';
 import { useFlip } from './use-flip.ts';
 import { useLights } from './use-lights.ts';
-import { Working } from './working.tsx';
 
 // The marks for an agent, as a sheet laid over the table: gone over, handed
 // over, and followed while the agent works. Nothing here changes a photo.
@@ -51,7 +50,7 @@ const useLedger = () => {
     going,
     handed,
     start: () => {
-      if (going !== null || marks === 0) {
+      if (going !== null || (marks === 0 && !ledger.ordersAlbum)) {
         return;
       }
       const isStill = prefersReducedMotion();
@@ -63,7 +62,7 @@ const useLedger = () => {
         stagger,
       });
       Promise.all([
-        store.handOver(),
+        store.handOver({ dollars: ledger.dollars, album: ledger.ordersAlbum }),
         new Promise((done) => setTimeout(done, drawn)),
       ])
         .then(([many]) => {
@@ -73,28 +72,6 @@ const useLedger = () => {
         .catch(() => setGoing(null));
     },
   };
-};
-
-/** What the agent does about the marks it has, or what the owner does to get one. */
-const Agent = ({ ledger }: { readonly ledger: Ledger }) => {
-  const { state } = useShootContext();
-  if (state.activity !== null) {
-    return <Working activity={state.activity} />;
-  }
-  if (ledger.waiting.length === 0) {
-    return null;
-  }
-  return state.agentWaitsSince === null ? (
-    <Sentence />
-  ) : (
-    <p className="flex items-center gap-2.5 text-pencil-blue">
-      <span
-        aria-hidden="true"
-        className="agent-pulse size-2.5 rounded-full border-2 border-pencil-blue"
-      />
-      An agent is picking them up.
-    </p>
-  );
 };
 
 /** A mark with its key, where there is a keyboard. */
@@ -114,11 +91,55 @@ const Named = ({
   </>
 );
 
-const titleOf = (ledger: Ledger): string => {
-  if (ledger.open.length > 0) {
+const titleOf = (ledger: Ledger, isOrdered: boolean): string => {
+  if (ledger.ordersAlbum && ledger.isFirst) {
+    return 'Order the album';
+  }
+  if (ledger.open.length > 0 || ledger.ordersAlbum) {
     return 'Hand over';
   }
+  if (isOrdered) {
+    return ledger.isFirst ? 'The album is ordered' : 'Handed over';
+  }
   return ledger.waiting.length > 0 ? 'Handed over' : 'Nothing to hand over';
+};
+
+/** What an agent does with so many chosen photos, and what that costs. */
+const workOf = (ledger: Ledger, chosen: number, each: string): string => {
+  const into = ledger.isFirst ? 'a new album in Immich' : 'the album';
+  const them = chosen === 1 ? 'it' : 'them';
+  const owed = ledger.isFirst ? ledger.edits : ledger.firstEdits;
+  if (owed === 0) {
+    return `${chosen === 1 ? 'It is' : 'They are'} edited already, so an agent only puts ${them} into ${into}, which costs nothing.`;
+  }
+  const which =
+    owed >= chosen
+      ? `${chosen === 1 ? 'it' : 'each one'}`
+      : `the ${count(owed, 'photo')} that ${owed === 1 ? 'isn’t' : 'aren’t'} edited yet`;
+  return `An agent has an image model edit ${which}, which costs about ${each} a photo, and puts ${them} into ${into}.`;
+};
+
+/** What ordering the album leads to, said before it costs anything. */
+const Order = ({ ledger }: { readonly ledger: Ledger }) => {
+  const { index } = useShootContext();
+  const each = dollarsOf(index.shoot.dollars.perEdit);
+  const chosen = ledger.isFirst ? ledger.chosenAfter : ledger.picked;
+  return (
+    <div className="max-w-[36rem] pb-5 text-print">
+      <p>
+        {count(chosen, 'photo')} {chosen === 1 ? 'is' : 'are'} chosen
+        {ledger.isFirst ? '' : ' and not in the album yet'}.{' '}
+        {workOf(ledger, chosen, each)}
+      </p>
+      <p className="mt-2 text-quiet">
+        Nothing is edited and nothing is spent until you press the button below,
+        and never more than it says.
+        {ledger.isFirst
+          ? ' The photos that weren’t chosen stay where they are; you can put one in later.'
+          : ''}
+      </p>
+    </div>
+  );
 };
 
 const Lists = ({
@@ -135,8 +156,12 @@ const Lists = ({
     <>
       {ledger.open.length === 0 ? null : (
         <section aria-label="To hand over">
-          {both ? (
-            <h2 className="type-edge pt-1 pb-2 text-quiet">To hand over</h2>
+          {both || ledger.ordersAlbum ? (
+            <h2 className="type-edge pt-1 pb-2 text-quiet">
+              {ledger.ordersAlbum && ledger.isFirst
+                ? 'Your changes to the choice'
+                : 'To hand over'}
+            </h2>
           ) : null}
           <ul>
             {ledger.open.map((line, at) => (
@@ -179,33 +204,25 @@ const Lists = ({
   );
 };
 
-/** What there is besides the list: answers to look at, marks that stay. */
+/** What there is besides the list: answers to look at. */
 const Notes = ({
   ledger,
   sheet,
 }: {
   readonly ledger: Ledger;
   readonly sheet: Place;
-}) => (
-  <div className="flex flex-col items-start gap-3 pt-5 pb-2 empty:hidden">
-    {ledger.news > 0 ? (
+}) =>
+  ledger.news > 0 ? (
+    <div className="pt-5 pb-2">
       <button
-        className={`${agentButton}`}
+        className={agentButton}
         onClick={() => go({ ...sheet, screen: 'answers' }, 'replace')}
         type="button"
       >
         Look at {count(ledger.news, 'answer')}
       </button>
-    ) : null}
-    {ledger.opinions > 0 ? (
-      <p className="text-quiet">
-        {ledger.opinions === 1
-          ? 'One more mark only says what you think of a photo. It stays with you.'
-          : `${ledger.opinions} more marks only say what you think of a photo. They stay with you.`}
-      </p>
-    ) : null}
-  </div>
-);
+    </div>
+  ) : null;
 
 const scrolledTo = new Map<string, number>();
 
@@ -254,7 +271,8 @@ const Sheet = ({
   useLights(engineRef, isLeaving ? null : lights);
   useFlip(listRef);
   useScrollKept(listRef, sheet.shoot);
-  useTitle(titleOf(ledger), index.shoot.about ?? index.shoot.name);
+  const title = titleOf(ledger, index.shoot.ordered !== null);
+  useTitle(title, index.shoot.about ?? index.shoot.name);
 
   useEffect(() => {
     viewRef.current?.focus({ preventScroll: true });
@@ -291,10 +309,10 @@ const Sheet = ({
         <header className="flex shrink-0 items-start gap-2 px-3 pt-3 pb-4 sm:px-5">
           <div className="min-w-0 flex-1 pt-1.5 pl-2">
             <h1 className="type-name text-[1.375rem] text-lamp" id={titleId}>
-              {titleOf(ledger)}
+              {title}
             </h1>
             <div aria-live="polite" className="mt-3 empty:hidden">
-              <Agent ledger={ledger} />
+              <AgentStatus />
             </div>
           </div>
           <button
@@ -312,16 +330,19 @@ const Sheet = ({
           className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 sm:px-7"
           ref={listRef}
         >
+          {ledger.ordersAlbum ? <Order ledger={ledger} /> : null}
           <Lists going={handing.going} ledger={ledger} />
-          {ledger.open.length + ledger.waiting.length === 0 ? (
-            <p className="text-print">
-              No photo carries a mark for an agent.{' '}
+          {ledger.open.length + ledger.waiting.length === 0 &&
+          !ledger.ordersAlbum &&
+          index.shoot.ordered === null ? (
+            <p className="max-w-[36rem] text-print">
+              No photo carries a mark. Mark what you want different, and an
+              agent does it:{' '}
               <span className="text-quiet">
                 <Named letter="C" says="Change" />,{' '}
                 <Named letter="X" says="Take out" />,{' '}
-                <Named letter="P" says="Put in" />,{' '}
-                <Named letter="S" says="Swap" /> and{' '}
-                <Named letter="F" says="Favorite" /> turn up here.
+                <Named letter="P" says="Put in" /> and{' '}
+                <Named letter="S" says="Use this one instead" />.
               </span>
             </p>
           ) : null}

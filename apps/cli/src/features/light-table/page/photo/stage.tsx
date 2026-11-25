@@ -3,6 +3,7 @@ import {
   useEffect,
   useEffectEvent,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -10,7 +11,12 @@ import type { PhotoView, Picture } from '../../contract.ts';
 import { blurOf } from '../data/pictures.ts';
 import type { Rect } from '../sheet/layout.ts';
 import { apply, type Live, scaleOf } from './apply.ts';
-import { type Control, makeControl, type Wanted } from './control.ts';
+import {
+  type Control,
+  type Entry,
+  makeControl,
+  type Wanted,
+} from './control.ts';
 import { Divider } from './divider.tsx';
 import { listenToGestures } from './gestures.ts';
 import type { Ink } from './ink.ts';
@@ -37,10 +43,18 @@ export type FrameOnTable = {
   readonly shows: 'camera' | 'edit';
 };
 
+/** A picture as it is on the screen at one moment. */
+export type Still = { readonly src: string; readonly rect: Rect };
+
 export type StageHandle = {
-  /** Lets the photo travel back to a frame of the table. */
-  readonly leave: (to: FrameOnTable | null, then: () => void) => void;
+  /**
+   * Lets the photo travel back to a frame of the table, which is asked for
+   * every frame, since the table may move meanwhile. Nothing stops it then.
+   */
+  readonly leave: (to: () => FrameOnTable | null, then: () => void) => void;
   readonly toggleZoom: () => void;
+  /** The photo as it is seen this instant, for when another takes its place. */
+  readonly still: () => Still | null;
 };
 
 type Props = {
@@ -56,8 +70,8 @@ type Props = {
   readonly finished: Picture | null;
   /** The frame of the table the photo comes from, when it was opened there. */
   readonly from: FrameOnTable | null;
-  /** The side it comes in from when the page is turned. */
-  readonly side: -1 | 0 | 1;
+  /** How it comes in from the side when the page is turned to it. */
+  readonly entry: Entry | null;
   readonly ink: Omit<Ink, 'draft'>;
   readonly isDrawing: boolean;
   readonly wanted: Omit<Wanted, 'onDraft' | 'onWipe'>;
@@ -66,6 +80,8 @@ type Props = {
   readonly onClose: (isClose: boolean) => void;
   /** Called every frame the photo moves in. */
   readonly onSeen: ((seen: Seen) => void) | null;
+  /** Called every frame with how far the whole photo is off to the side. */
+  readonly onOffset: (offset: number) => void;
 };
 
 const viewOnto = (plane: Plane, frame: FrameOnTable): View =>
@@ -102,7 +118,8 @@ const useMachine = (refs: Refs, live: Live, wanted: Props['wanted']) => {
   const onPull = useEffectEvent(wanted.onPull);
   const onBox = useEffectEvent(wanted.onBox);
 
-  useEffect(() => {
+  // Before the first frame is shown, so that none shows the photo unplaced.
+  useLayoutEffect(() => {
     const stage = refs.stageRef.current;
     const plane = refs.planeRef.current;
     const camera = refs.cameraRef.current;
@@ -125,6 +142,7 @@ const useMachine = (refs: Refs, live: Live, wanted: Props['wanted']) => {
       live.onPixels(part.w * motion.target().s * scaleOf());
       if (live.hasArrived) {
         live.onSeen(view, isCloser(live.setting, motion.target()));
+        plane.style.visibility = 'visible';
       }
       if (apply(elements, live, { view, shown, now })) {
         motion.request();
@@ -181,15 +199,15 @@ const arrive = (
   setting: Setting,
   how: {
     readonly from: FrameOnTable | null;
-    readonly isFirst: boolean;
-    readonly side: -1 | 0 | 1;
+    readonly entry: Entry | null;
   },
 ) => {
-  const { from, isFirst, side } = how;
+  const { from, entry } = how;
   const camera = from?.shows === 'camera' ? 1 : cameraShown(setting);
-  motion.show({ camera, all: isFirst && from === null ? 0 : 1 }, true);
+  const isPlain = from === null && entry === null;
+  motion.show({ camera, all: isPlain ? 0 : 1 }, true);
   motion.show({ all: 1 });
-  control.enter(from === null ? null : viewOnto(setting.plane, from), side);
+  control.enter(from === null ? null : viewOnto(setting.plane, from), entry);
 };
 
 /** Keeps the springs up to date with what is to be shown. */
@@ -198,20 +216,21 @@ const useFollowing = (
   live: Live,
   props: Props,
 ) => {
-  const { photo, room, wide, look, from, side, ink, isDrawing, handleRef } =
+  const { photo, room, wide, look, from, entry, ink, isDrawing, handleRef } =
     props;
   const shownRef = useRef<string | null>(null);
   // On its way back to the table nothing may call the photo back, such as
   // an answer of the server that arrives meanwhile.
   const isLeavingRef = useRef(false);
 
-  useEffect(() => {
+  // How it comes in is the same for as long as this photo is shown.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `from` and `entry` are read once, when the photo arrives
+  useLayoutEffect(() => {
     if (machine === null || isLeavingRef.current) {
       return;
     }
     const { setting } = live;
     const isNew = shownRef.current !== photo.id;
-    const isFirst = shownRef.current === null;
     shownRef.current = photo.id;
     // Asked before the room changes: a smaller room doesn't make it close.
     const wasClose = !isNew && machine.control.zoom.isZoomed();
@@ -220,14 +239,14 @@ const useFollowing = (
     setting.wide = wide;
     setting.look = look;
     setting.full = fullOf(photo, setting.plane);
+    live.hasArrived = true;
     if (isNew) {
-      arrive(machine, setting, { from: isFirst ? from : null, isFirst, side });
+      arrive(machine, setting, { from, entry });
     } else {
       machine.control.rest(false, wasClose);
     }
-    live.hasArrived = true;
     machine.motion.show({ camera: cameraShown(setting) });
-  }, [machine, live, photo, room, wide, look, from, side]);
+  }, [machine, live, photo, room, wide, look]);
 
   useEffect(() => {
     live.ink = { ...ink, draft: live.ink.draft };
@@ -242,13 +261,25 @@ const useFollowing = (
         return;
       }
       isLeavingRef.current = true;
-      if (to !== null) {
-        machine.motion.show({ camera: to.shows === 'camera' ? 1 : 0 });
+      const first = to();
+      if (first !== null) {
+        machine.motion.show({ camera: first.shows === 'camera' ? 1 : 0 });
       }
-      machine.control.leave(
-        to === null ? null : viewOnto(live.setting.plane, to),
-        then,
-      );
+      machine.control.leave(() => {
+        const frame = to();
+        return frame === null ? null : viewOnto(live.setting.plane, frame);
+      }, then);
+    },
+    still: () => {
+      if (machine === null) {
+        return null;
+      }
+      const { plane, look: shown } = live.setting;
+      const view = machine.motion.view();
+      const showsEdit = shown === 'edit' && plane.edit !== null;
+      const src = showsEdit ? live.srcs.edit : live.srcs.camera;
+      const part = showsEdit ? (plane.edit ?? plane.camera) : plane.camera;
+      return src === null ? null : { src, rect: onScreen(part, view) };
     },
     toggleZoom: () => {
       const { room: now } = live.setting;
@@ -286,6 +317,7 @@ export const Stage = (props: Props) => {
     hasArrived: false,
     isClose: false,
     onSeen: () => undefined,
+    srcs: { camera: null, edit: null },
   }));
   live.onPixels = (wanted) => {
     // Asked for in steps, so that a spring on its way doesn't ask every frame.
@@ -300,11 +332,17 @@ export const Stage = (props: Props) => {
       live.isClose = isClose;
       props.onClose(isClose);
     }
+    const rest = restOf(setting);
     props.onSeen?.({
       now: onScreen(partOf(setting), view),
-      rest: onScreen(partOf(setting), restOf(setting)),
+      rest: onScreen(partOf(setting), rest),
+      edit: onScreen(setting.plane.edit ?? setting.plane.camera, view),
       share: view.s / setting.full,
     });
+    // Only a photo that is seen whole is ever off to the side as a whole, and
+    // not one that flies from its frame on the table or back to it.
+    const isAside = !isClose && machine?.control.isAside() === true;
+    props.onOffset(isAside ? view.x - rest.x : 0);
   };
   const machine = useMachine(
     { stageRef, planeRef, cameraRef, inkRef, dividerRef, rangeRef },
@@ -317,6 +355,7 @@ export const Stage = (props: Props) => {
   const plane = planeOf(photo);
   const camera = useCamera(photo, look, pixels);
   const finishedSrc = usePicture(finished, pixels);
+  live.srcs = { camera: camera.src, edit: finishedSrc };
 
   return (
     <div
@@ -325,7 +364,7 @@ export const Stage = (props: Props) => {
       ref={stageRef}
     >
       <div
-        className="absolute top-0 left-0 origin-top-left will-change-transform"
+        className="invisible absolute top-0 left-0 origin-top-left will-change-transform"
         ref={planeRef}
       >
         {plane.edit === null || finished === null ? null : (

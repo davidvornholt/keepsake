@@ -11,7 +11,7 @@ export const Answer = Schema.Struct({
 
 /**
  * What the owner wants to be done with a photo. A photo has at most one mark
- * that isn't handed over, besides one about being a favourite.
+ * that isn't handed over.
  */
 export const Mark = Schema.Struct({
   id: Schema.String,
@@ -46,3 +46,38 @@ export const NewLabels = Schema.Struct({
   labels: Schema.Array(Schema.String),
 });
 export type NewLabels = typeof NewLabels.Type;
+
+/** What the page sends when the owner likes a photo of the album most: PUT /api/shoots/<shoot>/favorites */
+export const Favorite = Schema.Struct({
+  photo: Schema.String,
+  favorite: Schema.Boolean,
+});
+export type Favorite = typeof Favorite.Type;
+
+/** What the page sends to hand everything over: POST /api/shoots/<shoot>/hand-over */
+export const HandOver = Schema.Struct({
+  /** What the edits cost at most, as the owner was told. */
+  dollars: Schema.Finite,
+  /** Whether the chosen photos are to be edited and put into an album. */
+  album: Schema.Boolean,
+});
+export type HandOver = typeof HandOver.Type;
+
+/** That the owner handed something over. */
+export const HandOverRecord = Schema.Struct({
+  at: Schema.String,
+  ...HandOver.fields,
+});
+
+/** What the page sends to make an album of a folder: POST /api/shoots */
+export const NewShoot = Schema.Struct({
+  /** The path of one of the folders it was told of. */
+  folder: Schema.String,
+  /** Where and when: "Lisbon, May 2026" */
+  about: Schema.String,
+  /** Where the photos were taken, if the camera's clock was set elsewhere. */
+  timeZone: Schema.NullOr(Schema.String),
+  /** How many photos the album has at most. */
+  maximum: Schema.NullOr(Schema.Int),
+});
+export type NewShoot = typeof NewShoot.Type;

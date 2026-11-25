@@ -50,10 +50,13 @@ export const Img = ({
   alt = '',
   className,
   isUrgent = false,
+  size,
 }: {
   readonly src: string;
   readonly alt?: string;
   readonly className?: string;
+  /** Its size in pixels, so that it keeps its shape before it has arrived. */
+  readonly size?: { readonly width: number; readonly height: number };
   /** Whether it is decoded before the frame it appears in, at the cost of that frame. */
   readonly isUrgent?: boolean;
 }) => (
@@ -63,7 +66,9 @@ export const Img = ({
     className={className}
     decoding={isUrgent ? 'sync' : 'async'}
     draggable={false}
+    height={size?.height}
     src={src}
+    width={size?.width}
   />
 );
 

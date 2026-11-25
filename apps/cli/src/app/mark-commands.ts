@@ -1,12 +1,13 @@
 import { Effect, Option } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
+import { agreedDollars, orderOf } from '../features/light-table/hand-over.ts';
 import {
   answerMark,
   isWaiting,
   readMarks,
 } from '../features/light-table/marks.ts';
 import type { Mark } from '../features/light-table/schemas.ts';
-import { waitForMarks } from '../features/light-table/waiting.ts';
+import { waitForHandOver } from '../features/light-table/waiting.ts';
 import { takeOut as takeOutOfAlbum } from '../features/publish/take-out.ts';
 import { photoLinks, shootLink } from '../shared/address.ts';
 import { readAlbum } from '../shared/album.ts';
@@ -38,12 +39,12 @@ const aboutPhoto = Effect.fn('aboutPhoto')(function* (
   };
 });
 
+/** The marks, each with what an agent needs to know of its photos. */
 const shown = Effect.fn('shown')(function* (
   open: OpenShoot,
+  known: Standings,
   toShow: ReadonlyArray<Mark>,
 ) {
-  const model = yield* judgeOf(open, Option.none());
-  const known = yield* standings(open, model);
   return yield* Effect.forEach(toShow, ({ photo, other, ...mark }) =>
     Effect.gen(function* () {
       return {
@@ -55,11 +56,36 @@ const shown = Effect.fn('shown')(function* (
   );
 });
 
+/** The photos that the owner wants edited and put into an album. */
+const ordered = Effect.fn('ordered')(function* (
+  open: OpenShoot,
+  known: Standings,
+) {
+  const order = yield* orderOf(open.files, known);
+  if (order === null) {
+    return null;
+  }
+  const picked = [...known.of].flatMap(([photo, { kind }]) =>
+    kind === 'picked' ? [photo] : [],
+  );
+  const isEdited = yield* Effect.forEach(picked, (photo) =>
+    exists(open.files.edit(photo).record),
+  );
+  return {
+    at: order.at,
+    photos: picked.length,
+    edited: isEdited.filter(Boolean).length,
+  };
+});
+
 export const marks = Command.make(
   'marks',
   {
     shoot: shootArgument,
-    wait: flag('wait', 'Wait until there are some, however long that takes'),
+    wait: flag(
+      'wait',
+      'Wait until there is something, however long that takes',
+    ),
     all: flag(
       'all',
       'Also list marks that aren’t handed over yet or are answered already',
@@ -71,20 +97,35 @@ export const marks = Command.make(
         return yield* fail('Give either --wait or --all.');
       }
       const open = yield* openShoot(shoot);
-      const found = wait
-        ? yield* waitForMarks(open.files)
-        : (yield* readMarks(open.files)).filter(
-            (mark) => all || isWaiting(mark),
-          );
+      const model = yield* judgeOf(open, Option.none());
+      const current = Effect.gen(function* () {
+        const known = yield* standings(yield* openShoot(shoot), model);
+        const every = yield* readMarks(open.files);
+        return {
+          known,
+          found: every.filter((mark) => all || isWaiting(mark)),
+          album: yield* ordered(open, known),
+        };
+      });
+      const { known, found, album } = wait
+        ? yield* waitForHandOver(
+            open.files,
+            current,
+            (now) => now.found.length > 0 || now.album !== null,
+          )
+        : yield* current;
       yield* emit({
         shoot,
         link: yield* shootLink(shoot),
-        marks: yield* shown(open, found),
+        /** What the owner agreed to pay for all of it. */
+        agreedDollars: yield* agreedDollars(open.files, known),
+        album,
+        marks: yield* shown(open, known, found),
       });
     }),
 ).pipe(
   Command.withDescription(
-    'List what the owner marked on the page and handed over, for an agent to act on. Boxes are in fractions of the finished photo.',
+    'List what the owner handed over on the page, for an agent to act on: whether the chosen photos are to be edited and put into an album, their marks, and what they agreed to pay. Boxes are in fractions of the finished photo.',
   ),
 );
 
@@ -127,7 +168,7 @@ export const takeOut = Command.make(
   {
     shoot: shootArgument,
     photos: Argument.String('photo').pipe(
-      Argument.withDescription('A photo of the album'),
+      Argument.withDescription('A photo that is, or is to be, in the album'),
       Argument.variadic({ min: 1 }),
     ),
     because: Flag.String('because').pipe(
@@ -141,6 +182,6 @@ export const takeOut = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    'Take photos out of the album in Immich and note why. They stay in the library. With photos taken out before, only note why.',
+    'Take photos out of the album in Immich, or out of those that are to be in it, and note why. They stay in the library. With photos taken out before, only note why.',
   ),
 );

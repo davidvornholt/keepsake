@@ -110,7 +110,7 @@ export const peopleAndSigns = Effect.fn('peopleAndSigns')(function* (
   files: EditFiles,
   /** What the picture shows of the photo. */
   crop: Box,
-  removed: ReadonlyArray<string>,
+  { removed, wish }: Pick<Prepared, 'removed'> & Pick<ToPrepare, 'wish'>,
 ) {
   const people = yield* remembered(
     Schema.Array(Person),
@@ -120,7 +120,7 @@ export const peopleAndSigns = Effect.fn('peopleAndSigns')(function* (
   const bystanders = yield* remembered(
     Schema.Array(Box),
     files.bystanders,
-    findBystanders(files.input, people, removed),
+    findBystanders(files.input, people, removed, wish),
   );
   const signs = yield* remembered(
     Schema.Array(Sign),
@@ -131,12 +131,12 @@ export const peopleAndSigns = Effect.fn('peopleAndSigns')(function* (
 });
 
 const originalsOf = Effect.fn('originalsOf')(function* (
-  files: EditFiles,
+  { files, wish }: ToPrepare,
   crop: Crop,
   removals: ReadonlyArray<Removal>,
 ) {
   const removed = removals.map(({ what }) => what);
-  const kept = yield* peopleAndSigns(files, crop.box, removed);
+  const kept = yield* peopleAndSigns(files, crop.box, { removed, wish });
   const textures = yield* remembered(
     Schema.Array(Outline),
     files.textures,
@@ -170,7 +170,7 @@ export const prepared = Effect.fn('prepared')(function* (job: ToPrepare) {
         crop.box,
         removed,
       );
-      const originals = yield* originalsOf(files, crop, removals);
+      const originals = yield* originalsOf(job, crop, removals);
       return {
         crop,
         size,

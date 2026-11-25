@@ -18,6 +18,7 @@ import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 import { frameBox, isMostlyPhoto } from './beyond.ts';
 import { closestAspect, fitAspect, within } from './geometry.ts';
+import { withOwnRoomFirst } from './own-room.ts';
 import { sides, withRoomAhead } from './room-ahead.ts';
 
 const pictureSide = 1024;
@@ -39,7 +40,7 @@ const role = `You frame the photos of a private trip for an album. Look for an i
 
 Take away only what adds nothing: plain sky or water without a purpose, dark edges, clutter, strangers at the edge, or a feeder or a fence around an animal. Go close only where the surroundings add nothing, or where a face, a gesture or a detail is what counts. Keep what shows where the photo was taken, what makes it funny or tells its story, all of a group, a row or a pattern, and whatever else would be missed by someone who was there, even out of focus. Never cut off a part of the subject that is in the frame, such as feet, a tail, wing tips, a reflection, the top of a building, or a person's hands, unless you go clearly and deliberately close, as in a portrait of a head.
 
-The image model that edits the photo afterwards can also continue the scene beyond the edges of the photo and complete what they cut off, such as the tip of a wing or the top of a tower, as long as anyone could guess what is there. So a frame may reach beyond the photo, by up to a quarter of its width or height on each side: its box then has numbers below 0 or above 1. Do this only where it makes the photo clearly stronger, because a subject is cut off or has no room, and never where it would have to make up a person or a text.`;
+The image model that edits the photo afterwards can also continue the scene beyond the edges of the photo and complete what they cut off, such as the tip of a wing or the top of a tower, as long as anyone could guess what is there. So a frame may reach beyond the photo, by up to a quarter of its width or height on each side: its box then has numbers below 0 or above 1. Do this only where it makes the photo clearly stronger, because the photo cuts off the subject or has too little room beside it. Use the room that the photo has first, and never do it where it would have to make up a person or a text.`;
 
 const Proposals = Schema.Struct({
   subject: Box,
@@ -113,6 +114,7 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
       proposalQuestion,
     ],
   });
+  const { facing } = proposals;
   const subject = tidyBox(proposals.subject);
   const belongings = proposals.belongings.map(({ box }) => tidyBox(box));
   const held = belongings.map((belonging) => widened(belonging, air));
@@ -122,8 +124,12 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
       ({ box, aspect, reason }): Candidate => ({
         // However tight the proposal is, what belongs to the photo stays.
         box: withRoomAhead(
-          fitAspect(around([frameBox(box), ...held]), size, aspect),
-          { subject, facing: proposals.facing, held },
+          fitAspect(
+            around([frameBox(withOwnRoomFirst(box, subject, facing)), ...held]),
+            size,
+            aspect,
+          ),
+          { subject, facing, held },
         ),
         aspect,
         reason,

@@ -1,9 +1,14 @@
 import { useEffect, useEffectEvent, useState } from 'react';
 import type { ShootList } from '../../contract.ts';
 import { readShoots } from '../data/api.ts';
+import { isBusy } from './words.ts';
 
-// The shoots there are, asked for again whenever the owner comes back to the
-// page, since agents work on them in the meantime.
+// The albums there are, asked for again whenever the owner comes back to the
+// page, since agents work on them in the meantime, and every little while
+// as long as something goes on at one of them.
+
+/** How often the shelf asks while something goes on, in milliseconds. */
+const askEvery = 2000;
 
 export type ShootSummary = ShootList['shoots'][number];
 
@@ -46,6 +51,19 @@ export const useShoots = () => {
     document.addEventListener('visibilitychange', again);
     return () => document.removeEventListener('visibilitychange', again);
   }, []);
+
+  const isLive = state.shoots.some(isBusy);
+  useEffect(() => {
+    if (!isLive) {
+      return;
+    }
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        load().catch(() => undefined);
+      }
+    }, askEvery);
+    return () => clearInterval(timer);
+  }, [isLive]);
 
   return {
     ...state,

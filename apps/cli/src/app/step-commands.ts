@@ -8,16 +8,17 @@ import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
-import { InvalidInput } from '../shared/errors/errors.ts';
+import { InvalidInput, ModelFailed } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
-import { ReviewVision } from '../shared/review-vision.ts';
+import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
 import { openShoot } from '../shared/store.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
 import {
   bounded,
+  fail,
   flag,
   optionalInt,
   optionalNumber,
@@ -95,6 +96,10 @@ const editFlags = {
   ),
 };
 
+/** The model that looks after the edits and explains the choice. */
+const reviewLayer = (asked: Option.Option<string>) =>
+  ReviewVision.layer(Option.getOrElse(asked, () => defaultReviewModel));
+
 const editInput = (flags: {
   readonly budget: Option.Option<number>;
   readonly versions: Option.Option<number>;
@@ -158,9 +163,7 @@ const editLayer = (flags: {
     ImageModel.layer(
       Option.getOrElse(flags.imageModel, () => defaultImageModel),
     ),
-    ReviewVision.layer(
-      Option.getOrElse(flags.reviewModel, () => defaultReviewModel),
-    ),
+    reviewLayer(flags.reviewModel),
   );
 
 /** Runs steps with the vision model asked for, or the shoot's own. */
@@ -268,18 +271,44 @@ export const publish = Command.make(
 
 export const explain = Command.make(
   'explain',
-  { shoot: shootArgument, model: visionModel, again },
-  ({ shoot, model, again: startOver }) =>
-    workOn(shoot, (open) => explainShoot(open, startOver)).pipe(
+  {
+    shoot: shootArgument,
+    reviewModel: optionalString(
+      'review-model',
+      `The vision model that explains, with its provider (default ${defaultReviewModel})`,
+    ),
+    again,
+  },
+  ({ shoot, reviewModel, again: startOver }) =>
+    workOn(shoot, (open) => askReviewer(explainShoot(open, startOver))).pipe(
       Effect.flatMap(emitWithCost),
-      withVision(shoot, model),
+      Effect.provide(reviewLayer(reviewModel)),
       Effect.provide(Spending.layer),
     ),
 ).pipe(
   Command.withDescription(
-    'Let the vision model say of every photo that scored high enough and isn’t in the album why that is, next to what the album has. Photos it has explained before are kept unless the album has changed.',
+    'Let a vision model say of every photo that isn’t in the album why that is: what speaks against it, or what the photo that shows the same does better. Photos it has explained before are kept unless the album has changed.',
   ),
 );
+
+/** How many of the moments may be missing before the choice means nothing. */
+const mostMissing = 0.05;
+
+/** Stops when a model couldn't judge many moments, such as at its limit. */
+const checkCulled = ({
+  moments,
+  failed,
+}: {
+  readonly moments: number;
+  readonly failed: ReadonlyArray<{ readonly reason: string }>;
+}) =>
+  failed.length > moments * mostMissing
+    ? Effect.fail(
+        new ModelFailed({
+          message: `${failed.length} of ${moments} moments couldn’t be judged. The first problem: ${failed[0]?.reason}`,
+        }),
+      )
+    : Effect.void;
 
 export const run = Command.make(
   'run',
@@ -288,6 +317,10 @@ export const run = Command.make(
     ...scanFlags,
     model: visionModel,
     ...pickFlags,
+    unedited: flag(
+      'unedited',
+      'Stop before the edits, which cost money, for the owner to look over the choice first',
+    ),
     ...editFlags,
     publish: flag('publish', 'Also upload the finished photos to Immich'),
     album: albumFlag,
@@ -296,26 +329,32 @@ export const run = Command.make(
     Effect.gen(function* () {
       const picking = yield* pickInput(flags);
       const editing = yield* editInput(flags);
+      if (flags.unedited && flags.publish) {
+        return yield* fail('Give either --unedited or --publish.');
+      }
       const scanned = yield* scan(flags);
       const { shoot } = scanned;
       yield* Effect.gen(function* () {
         const culled = yield* workOn(shoot, (open) => cullShoot(open, false));
+        yield* checkCulled(culled);
         const picked = yield* workOn(shoot, (open) =>
           pickShoot(open, { ...picking, again: false }),
         );
-        const edited = yield* workOn(shoot, (open) =>
-          editShoot(open, [], {
-            ...editing,
-            again: false,
-            wish: null,
-            areas: [],
-          }),
-        );
+        const edited = flags.unedited
+          ? null
+          : yield* workOn(shoot, (open) =>
+              editShoot(open, [], {
+                ...editing,
+                again: false,
+                wish: null,
+                areas: [],
+              }),
+            );
         const published = flags.publish
           ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
           : null;
         const explained = yield* workOn(shoot, (open) =>
-          explainShoot(open, false),
+          askReviewer(explainShoot(open, false)),
         );
         yield* emitWithCost({
           scanned,
@@ -329,6 +368,6 @@ export const run = Command.make(
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(
-    'Do everything with a folder of photos: scan, cull, pick and edit, publish if asked, and explain why the other good photos were left out. Running it again goes on where it stopped.',
+    'Do everything with a folder of photos: scan, cull, pick and edit, publish if asked, and explain why the other photos were left out. Running it again goes on where it stopped.',
   ),
 );

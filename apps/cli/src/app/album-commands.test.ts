@@ -4,6 +4,7 @@ import {
   failureOf,
   pickLisbon,
   runOk,
+  scanLisbon,
   setUp,
   shootFile,
   shootJson,
@@ -139,10 +140,35 @@ describe('keepsake take-out', () => {
     expect(await inAlbum()).toEqual(['A1', 'B', 'C']);
   });
 
-  it('needs an album', async () => {
+  it('takes out a photo that is to be in the album, for good', async () => {
     await pickLisbon();
     const because = ['--because', 'It is blurred.'];
+    const result = await runOk('take-out', 'lisbon', 'B', ...because);
+    expect(result).toMatchObject({
+      album: null,
+      takenOut: [{ photo: 'B', asset: null }],
+      inAlbum: 0,
+    });
+    const { standing } = await runOk('show', 'lisbon', 'B');
+    expect(standing.kind).toBe('taken-out');
+    expect(await editLisbon()).toMatchObject({ edited: 2 });
+    await runOk('publish', 'lisbon');
+    expect(await inAlbum()).toEqual(['A1', 'C']);
+  });
+
+  it('puts it back in when it is named', async () => {
+    await pickLisbon();
+    await runOk('take-out', 'lisbon', 'B', '--because', 'It is blurred.');
+    await editLisbon('B');
+    await runOk('publish', 'lisbon', 'B');
+    expect(await inAlbum()).toEqual(['B']);
+    expect(await shootJson('removed.json')).toEqual([]);
+  });
+
+  it('is about photos of the album or those to be in it', async () => {
+    await scanLisbon();
+    const because = ['--because', 'It is blurred.'];
     const failure = await failureOf('take-out', 'lisbon', 'B', ...because);
-    expect(failure.message).toContain('keepsake publish lisbon');
+    expect(failure.message).toContain('B isn’t in the album');
   });
 });

@@ -16,7 +16,7 @@ import { type MadeUp, moments } from './moments.ts';
 import { drawn } from './pictures.ts';
 
 /** How far the shoot is: each step has what those before it have. */
-const steps = ['scanned', 'culled', 'edited', 'published'] as const;
+const steps = ['scanned', 'culled', 'chosen', 'edited', 'published'] as const;
 
 export type Wanted = {
   readonly name: string;
@@ -24,6 +24,10 @@ export type Wanted = {
   readonly step: (typeof steps)[number];
   /** Whether the owner was asked to rate some of its moments. */
   readonly toRate?: boolean;
+  /** Why getting it ready stopped, when the page was doing that. */
+  readonly stopped?: string;
+  /** Whether the owner ordered the album of what was chosen. */
+  readonly isOrdered?: boolean;
   /** The year and month it was taken in. */
   readonly month: string;
   /** Makes its pictures different from those of other shoots. */
@@ -231,10 +235,23 @@ const writeCulled = (root: string) =>
     ),
   ]);
 
-const writeEdited = (root: string, wanted: Wanted) =>
+const perEdit = 0.75;
+
+const writeChosen = (root: string, wanted: Wanted) =>
   Promise.all([
     write(root, 'picks.json', picksOf()),
     write(root, 'reasons.json', reasons),
+    ...(wanted.isOrdered === true
+      ? [
+          write(root, 'hand-overs.json', [
+            { at: readAt, dollars: edited.length * perEdit, album: true },
+          ]),
+        ]
+      : []),
+  ]);
+
+const writeEdited = (root: string, wanted: Wanted) =>
+  Promise.all([
     write(root, 'spending.json', {
       'azure/gpt-image-2.5-sunburst': {
         calls: 24,
@@ -314,8 +331,19 @@ export const writeShoot = async (shoots: string, wanted: Wanted) => {
       ),
     ),
     ...(progress >= 1 ? [writeCulled(root)] : []),
-    ...(progress >= 2 ? [writeEdited(root, wanted)] : []),
-    ...(progress >= 3 ? [writePublished(root, wanted)] : []),
+    ...(progress >= 2 ? [writeChosen(root, wanted)] : []),
+    ...(progress >= 3 ? [writeEdited(root, wanted)] : []),
+    ...(progress >= 4 ? [writePublished(root, wanted)] : []),
+    ...(wanted.stopped === undefined
+      ? []
+      : [
+          write(root, 'preparation.json', {
+            process: 0,
+            since: readAt,
+            maximum: null,
+            stopped: wanted.stopped,
+          }),
+        ]),
     ...(wanted.toRate === true
       ? [
           write(root, 'to-rate.json', ['D10', 'D60', 'D120']),

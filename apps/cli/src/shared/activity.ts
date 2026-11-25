@@ -58,7 +58,7 @@ export const during =
 
 /** Notes what the work tells in the shoot's folder until it is over. */
 export const noted =
-  ({ files }: OpenShoot) =>
+  ({ files }: Pick<OpenShoot, 'files'>) =>
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

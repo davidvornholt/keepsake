@@ -16,17 +16,26 @@ const Changed = Schema.Struct({
   changed: Schema.Array(
     Schema.Int.annotate({ description: 'The number of a sign' }),
   ),
+  gone: Schema.Array(
+    Schema.Int.annotate({
+      description:
+        'The number of a sign of which the edit doesn’t even show what it is on, such as the board, the banner or the vehicle',
+    }),
+  ),
 });
 
 const question =
-  'Which of these signs did the edit get wrong? A sign is wrong when the edit shows other, garbled, missing or additional letters or digits, or another logo, where the original can be read or recognised. It isn’t wrong when only its light, colours, sharpness or place are different, nor when the original is just as hard to read.';
+  'Which of these signs did the edit get wrong? A sign is wrong when the edit shows other, garbled, missing or additional letters or digits, or another logo, where the original can be read or recognised. It isn’t wrong when only its light, colours, sharpness or place are different, nor when the original is just as hard to read. And which of them are gone together with what they are on?';
 
 const grouped = <A>(all: ReadonlyArray<A>): ReadonlyArray<ReadonlyArray<A>> =>
   Array.from({ length: Math.ceil(all.length / most) }, (_, group) =>
     all.slice(group * most, (group + 1) * most),
   );
 
-/** Finds the signs that an edit of a photo got wrong. */
+/**
+ * Finds the signs that an edit of a photo got wrong and that can be put right:
+ * the words of a banner that isn't there any more would hang in the air.
+ */
 export const changedSigns = Effect.fn('changedSigns')(function* (
   files: { readonly original: string; readonly version: string },
   signs: ReadonlyArray<Sign>,
@@ -48,13 +57,15 @@ export const changedSigns = Effect.fn('changedSigns')(function* (
           ] satisfies Array<Piece>;
         }),
       );
-      const { changed } = yield* vision.ask({
+      const { changed, gone } = yield* vision.ask({
         role,
         name: 'changed-signs',
         schema: Changed,
         pieces: [...pieces.flat(), question],
       });
-      return group.filter((_, index) => changed.includes(index + 1));
+      return group.filter(
+        (_, index) => changed.includes(index + 1) && !gone.includes(index + 1),
+      );
     }),
   );
   return found.flat();

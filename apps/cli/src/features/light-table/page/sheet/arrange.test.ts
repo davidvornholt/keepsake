@@ -1,40 +1,21 @@
 import { describe, expect, it } from 'bun:test';
-import { samplePicture } from '../data/sample.ts';
+import { advance, arrange, reveal, settleAll } from './arrange.ts';
 import {
-  advance,
-  arrange,
-  reveal,
-  settleAll,
-  zoomNow,
-  zoomTo,
-} from './arrange.ts';
-import {
-  anchorAt,
   type Content,
-  type Frame,
   fitOf,
   frameLimits,
+  type Held,
+  heldAt,
   inSight,
   makeTable,
   onScreen,
   restingOnScreen,
   scrollLimits,
+  stopsFor,
   type Table,
 } from './table.ts';
-
-const frameOf = (id: string): Frame => ({
-  id,
-  picture: samplePicture(id),
-  isLit: true,
-  isMomentStart: true,
-  number: 1,
-  time: '10:00',
-  score: null,
-  crop: null,
-  isFavorite: false,
-  marks: [],
-  isWorkedOn: false,
-});
+import { sampleFrame } from './table-sample.ts';
+import { zoomToStop } from './zooming.ts';
 
 const many = 120;
 const sheets = 3;
@@ -45,7 +26,7 @@ const contentOf = (shown: ReadonlyArray<string>): Content =>
     key: `day-${sheet}`,
     frames: shown
       .filter((id) => ids.indexOf(id) % sheets === sheet)
-      .map(frameOf),
+      .map((id) => sampleFrame(id)),
   })).filter(({ frames }) => frames.length > 0);
 
 const size = { width: 1200, height: 800, top: 90, pinned: 90, foot: 0 };
@@ -64,6 +45,15 @@ const tableWith = (shown: ReadonlyArray<string> = ids): Table => {
   arrange(table);
   settleAll(table);
   return table;
+};
+
+/** The point of a frame that is held when no pointer holds one. */
+const middleOf = (table: Table): Held => {
+  const held = heldAt(table, size.width / 2, size.height / 2);
+  if (held === null) {
+    throw new Error('Nothing lies there.');
+  }
+  return held;
 };
 
 /** Lets the table move until it lies still, and says how many frames it took. */
@@ -125,9 +115,10 @@ describe('for those who asked for less motion', () => {
     );
     expect(onScreen(table, 'photo-9')).not.toEqual(before);
     expect(table.placed.get('photo-0')?.alpha.value).toBeGreaterThan(0);
-    zoomTo(table, 1, null);
+    zoomToStop(table, middleOf(table), 0, true);
     advance(table, oneFrame, true);
     expect(table.frame.value).toBe(fitOf(table));
+    expect(table.zooming).toBeNull();
     reveal(table, 'photo-9');
     advance(table, oneFrame, true);
     expect(table.scroller.target).toBeNull();
@@ -135,38 +126,18 @@ describe('for those who asked for less motion', () => {
 });
 
 describe('zooming', () => {
-  it('keeps the frame under the pointer where it is', () => {
-    const table = tableWith();
-    // Far enough down that the top of the table doesn't hold it back.
-    table.scroller.value = size.height;
-    const anchor = anchorAt(table, size.width / 2, size.height / 2);
-    expect(anchor).not.toBeNull();
-    if (anchor === null) {
-      return;
-    }
-    const pointAt = () => {
-      const rect = onScreen(table, anchor.id);
-      return rect === null ? null : rect.y + rect.h * anchor.within;
-    };
-    const smaller = 0.8;
-    zoomNow(table, smaller, anchor);
-    expect(table.frame.value).toBeCloseTo(large * smaller);
-    rest(table);
-    expect(pointAt()).toBeCloseTo(anchor.screenY, 0);
-  });
-
   it('stops where everything fits, and calls that the fit', () => {
     const table = tableWith();
     const { least, most } = frameLimits(table);
     expect(least).toBe(fitOf(table));
-    zoomTo(table, 1, null);
-    expect(table.zoom).toBe('fit');
+    expect(stopsFor(table)[0]).toBe(least);
+    expect(stopsFor(table).at(-1)).toBe(most);
+    zoomToStop(table, middleOf(table), 0, true);
     rest(table);
+    expect(table.zoom).toBe('fit');
     expect(table.frame.value).toBeCloseTo(least);
     expect(scrollLimits(table).most).toBe(0);
     expect(inSight(table)).toHaveLength(many);
-    zoomTo(table, most * 2, null);
-    expect(table.frame.target).toBe(most);
   });
 });
 
@@ -177,11 +148,12 @@ describe('reveal', () => {
     reveal(table, 'photo-0');
     expect(table.scroller.target).toBeNull();
     reveal(table, last, true);
+    advance(table, oneFrame);
     const rect = onScreen(table, last);
     expect(rect).not.toBeNull();
     expect((rect?.y ?? 0) + (rect?.h ?? 0)).toBeLessThanOrEqual(size.height);
     expect(rect?.y).toBeGreaterThanOrEqual(size.top);
-    expect(inSight(table).some((placed) => placed.frame.id === last)).toBe(
+    expect(inSight(table).some(({ placed }) => placed.frame.id === last)).toBe(
       true,
     );
   });

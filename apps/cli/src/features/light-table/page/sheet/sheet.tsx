@@ -9,11 +9,21 @@ import {
 import type { Filters } from '../app/route.ts';
 import type { Index } from '../data/derive.ts';
 import { contentOf, type Heading, headingsOf } from './content.ts';
+import { Cursor } from './cursor.tsx';
 import { type Engine, makeEngine } from './engine.ts';
 import { listenToTable } from './input.ts';
+import type { Hold } from './layout.ts';
 import { keptZoom, openingZoom } from './sizes.ts';
 import { stayingAnchor } from './steer.ts';
-import { frameLimits, type Table, topOf } from './table.ts';
+import {
+  type Anchor,
+  type Content,
+  frameLimits,
+  onScreen,
+  type Table,
+  throughView,
+  topOf,
+} from './table.ts';
 
 // The table itself: two canvases for the frames and what is drawn on them,
 // and the headings of the sheets, which follow the paper.
@@ -22,6 +32,10 @@ type Props = {
   readonly index: Index;
   readonly filters: Filters;
   readonly workedOn: ReadonlySet<string>;
+  /** The photo in front of the pile that lies open, if one does. */
+  readonly opened: string | null;
+  /** Lays the pile of a photo out or puts it together; says whether it has one. */
+  readonly onPile: (front: string) => boolean;
   /** The room the bars of the page take at the top, and what they keep of it. */
   readonly top: number;
   readonly pinned: number;
@@ -40,29 +54,78 @@ type Props = {
   readonly onCursor: () => void;
 };
 
-/** Moves each heading to its sheet of paper; it stays in sight while its sheet is. */
+/**
+ * Moves each heading to its sheet of paper; it stays in sight while its
+ * sheet is. While one layout comes in over another, the headings come in
+ * with it.
+ */
 const placeHeadings = (
   table: Table,
   headings: ReadonlyMap<string, HTMLElement>,
 ) => {
   const { head } = table.layout.measure;
-  const scroll = table.scroller.value;
   const ceiling = topOf(table);
+  const shown = table.lights.value * (table.ghost === null ? 1 : table.fade);
   for (const [key, element] of headings) {
     const paper = table.papers.get(key);
     if (paper === undefined) {
       element.style.visibility = 'hidden';
     } else {
-      const top = paper.y.value - scroll;
-      const lowest = top + paper.h.value - head;
-      const y = Math.min(Math.max(top, ceiling), lowest);
+      const sheet = throughView(table.view, {
+        x: paper.x.value,
+        y: paper.y.value,
+        w: paper.w.value,
+        h: paper.h.value,
+      });
+      const lowest = sheet.y + sheet.h - head;
+      const y = Math.min(Math.max(sheet.y, ceiling), lowest);
       element.style.visibility = 'visible';
-      element.style.width = `${paper.w.value}px`;
-      element.style.transform = `translate3d(${paper.x.value}px, ${y}px, 0)`;
-      element.style.opacity = String(paper.alpha.value * table.lights.value);
-      element.dataset.stuck = String(top < ceiling);
+      element.style.width = `${sheet.w}px`;
+      element.style.transform = `translate3d(${sheet.x}px, ${y}px, 0)`;
+      element.style.opacity = String(paper.alpha.value * shown);
+      element.dataset.stuck = String(sheet.y < ceiling);
     }
   }
+};
+
+/**
+ * What stays where it is when other frames are laid on the table. A pile
+ * that opens or closes keeps its front photo in place, across the table
+ * too; other views keep the frame in the middle at its height.
+ */
+const keepingOf = (
+  engine: Engine,
+  content: Content,
+  {
+    before,
+    filters,
+    opened,
+  }: {
+    readonly before: { filters: Filters; opened: string | null } | null;
+    readonly filters: Filters;
+    readonly opened: string | null;
+  },
+): { readonly anchor: Anchor | null; readonly hold: Hold | null } => {
+  const front = opened ?? before?.opened ?? null;
+  const rect = front === null ? null : onScreen(engine.table, front);
+  if (before?.opened !== opened && front !== null && rect !== null) {
+    return {
+      anchor: { id: front, within: 0, screenY: rect.y },
+      // A pile that closes lies as it did before it was opened.
+      hold: opened === null ? null : { id: front, share: 0, x: rect.x },
+    };
+  }
+  if (rect !== null && front !== null && opened !== null) {
+    // Whatever arrives while a pile lies open leaves it where it is.
+    return {
+      anchor: { id: front, within: 0, screenY: rect.y },
+      hold: { id: front, share: 0, x: rect.x },
+    };
+  }
+  return {
+    anchor: before?.filters === filters ? null : stayingAnchor(engine, content),
+    hold: null,
+  };
 };
 
 const useEngine = (
@@ -74,6 +137,7 @@ const useEngine = (
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [isUnsupported, setIsUnsupported] = useState(false);
   const onOpen = useEffectEvent(props.onOpen);
+  const onPile = useEffectEvent(props.onPile);
   const onZoom = useEffectEvent(props.onZoom);
   const onFrame = useEffectEvent((table: Table) => {
     placeHeadings(table, headingsRef.current);
@@ -99,7 +163,7 @@ const useEngine = (
       return;
     }
     sharedRef.current = engine;
-    const stop = listenToTable(element, engine, { onOpen, onZoom });
+    const stop = listenToTable(element, engine, { onOpen, onPile, onZoom });
     const measure = () =>
       engine.setSize({
         width: element.clientWidth,
@@ -179,7 +243,10 @@ export const Sheet = (props: Props) => {
     headingsRef,
   );
   const headings = useMemo(() => headingsOf(index, filters), [index, filters]);
-  const shownRef = useRef<Filters | null>(null);
+  const shownRef = useRef<{ filters: Filters; opened: string | null } | null>(
+    null,
+  );
+  const { opened } = props;
 
   useEffect(() => {
     const engine = props.engineRef.current;
@@ -187,18 +254,18 @@ export const Sheet = (props: Props) => {
       return;
     }
     const before = shownRef.current;
-    const content = contentOf(index, filters, workedOn);
+    const content = contentOf(index, filters, workedOn, opened);
     const { show } = filters;
-    shownRef.current = filters;
+    shownRef.current = { filters, opened };
     engine.setContent(
       content,
-      before === filters ? null : stayingAnchor(engine, content),
-      before?.show === show
+      keepingOf(engine, content, { before, filters, opened }),
+      before?.filters.show === show
         ? null
         : (table) =>
             openingZoom(show, keptZoom(show), table.size, frameLimits(table)),
     );
-  }, [index, filters, workedOn, props.engineRef]);
+  }, [index, filters, workedOn, opened, props.engineRef]);
 
   useEffect(() => {
     const engine = props.engineRef.current;
@@ -231,32 +298,14 @@ export const Sheet = (props: Props) => {
         <canvas className="absolute inset-0 size-full" ref={canvasRef} />
         <canvas className="absolute inset-0 size-full" ref={overlayRef} />
       </span>
-      <button
-        aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Enter"
-        className="sr-only"
-        onBlur={() => {
-          const engine = props.engineRef.current;
-          if (engine !== null) {
-            engine.state.isCursorShown = false;
-            engine.request();
-          }
-        }}
-        onClick={() => {
-          const id = props.engineRef.current?.state.cursor ?? null;
-          if (id !== null) {
-            props.onOpen(id);
-          }
-        }}
-        onFocus={(event) => {
-          if (event.target.matches(':focus-visible')) {
-            props.onCursor();
-          }
-        }}
-        ref={props.cursorRef}
-        type="button"
-      >
-        {props.cursorLabel}
-      </button>
+      <Cursor
+        cursorRef={props.cursorRef}
+        engineRef={props.engineRef}
+        label={props.cursorLabel}
+        onCursor={props.onCursor}
+        onOpen={props.onOpen}
+        onPile={props.onPile}
+      />
       {isUnsupported ? (
         <p className="absolute inset-0 grid place-items-center text-quiet">
           This browser can't draw the table. It needs WebGL 2.

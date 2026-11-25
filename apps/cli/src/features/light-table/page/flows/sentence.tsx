@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { WaxMark } from '../marks/wax-mark.tsx';
 import { sideButton } from '../ui/classes.ts';
 
-// What the owner says to an agent when none is waiting for the marks.
+// What the owner says to an agent when the page couldn't start one itself.
 
 const sentence = 'Go through my Keepsake marks';
 /** How long the page says that the sentence was copied, in milliseconds. */
@@ -19,7 +19,7 @@ const copy = async (field: HTMLInputElement): Promise<boolean> => {
   }
 };
 
-export const Sentence = () => {
+export const Sentence = ({ lead }: { readonly lead: string }) => {
   const labelId = useId();
   const fieldRef = useRef<HTMLInputElement>(null);
   const [copiedAt, setCopiedAt] = useState<number | null>(null);
@@ -42,7 +42,7 @@ export const Sentence = () => {
   return (
     <div>
       <p className="text-print" id={labelId}>
-        No agent is waiting for them. Say this to one:
+        {lead}
       </p>
       <div className="mt-2.5 flex flex-wrap items-center justify-end gap-x-2 rounded-[3px] border border-rule py-1.5 pr-1.5 pl-4 focus-within:border-quiet">
         <input

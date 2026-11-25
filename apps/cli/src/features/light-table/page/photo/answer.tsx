@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Mark } from '../../contract.ts';
 import { localClock } from '../data/format.ts';
 import { lookOf, seedTextOf } from '../marks/kinds.ts';
@@ -15,6 +16,30 @@ const asked = (mark: Mark): string => {
   return mark.note === '' ? said : `${said}: ${mark.note}`;
 };
 
+/** What an agent says, with its dot in front and a label above, if there is one. */
+const Saying = ({
+  label,
+  dot,
+  children,
+}: {
+  readonly label: string | null;
+  readonly dot: string;
+  readonly children: ReactNode;
+}) => (
+  <div className="grid min-w-0 grow basis-full grid-cols-[auto_1fr] items-baseline gap-x-3 sm:basis-0">
+    {label === null ? null : (
+      <p className="type-edge col-start-2 mb-0.5 text-quiet">{label}</p>
+    )}
+    <span
+      aria-hidden="true"
+      className={`col-start-1 size-2 rounded-full ${dot}`}
+    />
+    <p className="text-pretty text-[0.9375rem] text-pencil-blue leading-snug">
+      {children}
+    </p>
+  </div>
+);
+
 const Answered = ({
   mark,
   hasBefore,
@@ -30,31 +55,30 @@ const Answered = ({
   const note = mark.answer?.note ?? '';
   return (
     <>
-      <div className="min-w-0 flex-1">
-        <p className="type-edge truncate text-quiet">{asked(mark)}</p>
-        <p className="mt-0.5 line-clamp-2 text-[0.9375rem] text-pencil-blue leading-snug">
-          <strong className="type-label">{isDone ? 'Done' : 'Not done'}</strong>
-          {note === '' ? '' : `. ${note}`}
-        </p>
-      </div>
-      {hasBefore ? (
+      <Saying dot="bg-pencil-blue" label={asked(mark)}>
+        <strong className="type-label">{isDone ? 'Done' : 'Not done'}</strong>
+        {note === '' ? '' : `. ${note}`}
+      </Saying>
+      <div className="flex gap-3 max-sm:w-full max-sm:*:flex-1 max-sm:*:justify-center">
+        {hasBefore ? (
+          <button
+            aria-keyshortcuts="V"
+            className={sideButton}
+            onClick={onBefore}
+            type="button"
+          >
+            Before <Key>V</Key>
+          </button>
+        ) : null}
         <button
-          aria-keyshortcuts="V"
-          className={`${sideButton} shrink-0`}
-          onClick={onBefore}
+          aria-keyshortcuts="Enter"
+          className={agentButton}
+          onClick={onSeen}
           type="button"
         >
-          Before <Key>V</Key>
+          Seen <Key>Enter</Key>
         </button>
-      ) : null}
-      <button
-        aria-keyshortcuts="Enter"
-        className={`${agentButton} shrink-0`}
-        onClick={onSeen}
-        type="button"
-      >
-        Seen <Key>Enter</Key>
-      </button>
+      </div>
     </>
   );
 };
@@ -77,17 +101,17 @@ const Mine = ({
   const words = (
     <>
       <WaxMark
-        className="size-5 shrink-0"
+        className="mt-2 size-5 shrink-0 self-start"
         color={look.wax}
         seed={seedTextOf(mark.photo, mark.kind)}
         shape={look.shape}
       />
       <span className="min-w-0 flex-1">
-        <span className="type-edge block truncate text-quiet">
+        <span className="type-edge block text-quiet">
           {look.said}, not handed over yet
         </span>
         <span
-          className={`mt-0.5 line-clamp-2 text-[0.9375rem] leading-snug ${inkOf[look.wax]}`}
+          className={`mt-0.5 block text-[0.9375rem] leading-snug ${inkOf[look.wax]}`}
         >
           {mark.note}
         </span>
@@ -118,49 +142,35 @@ type Props = {
   readonly onEdit: () => void;
 };
 
-const FromAgent = ({
-  word,
-  hasBefore,
-  onBefore,
-  onSeen,
-}: Omit<Props, 'word' | 'onEdit'> & {
-  readonly word: Exclude<Word, { readonly kind: 'mine' }>;
-}) => (
-  <>
-    <span
-      aria-hidden="true"
-      className={`size-2.5 shrink-0 rounded-full ${
-        word.kind === 'answer'
-          ? 'bg-pencil-blue'
-          : 'border-2 border-pencil-blue'
-      } ${word.kind === 'working' ? 'agent-pulse' : ''}`}
-    />
-    {word.kind === 'answer' ? (
-      <Answered
-        hasBefore={hasBefore}
-        mark={word.mark}
-        onBefore={onBefore}
-        onSeen={onSeen}
-      />
-    ) : (
-      <p className="min-w-0 flex-1 truncate text-pencil-blue">
-        {word.kind === 'working'
-          ? 'An agent is working on this photo.'
-          : `Handed over at ${localClock(word.mark.handedOverAt ?? word.mark.madeAt)}. ${asked(word.mark)}`}
-      </p>
-    )}
-  </>
-);
+const Said = ({ word, onEdit, ...answered }: Props) => {
+  if (word.kind === 'working') {
+    return (
+      <Saying dot="agent-pulse border-2 border-pencil-blue" label={null}>
+        An agent is working on this photo.
+      </Saying>
+    );
+  }
+  if (word.kind === 'waiting') {
+    const { handedOverAt, madeAt } = word.mark;
+    return (
+      <Saying
+        dot="border-2 border-pencil-blue"
+        label={`Handed over at ${localClock(handedOverAt ?? madeAt)}`}
+      >
+        {asked(word.mark)}
+      </Saying>
+    );
+  }
+  return word.kind === 'mine' ? (
+    <Mine mark={word.mark} onEdit={onEdit} />
+  ) : (
+    <Answered mark={word.mark} {...answered} />
+  );
+};
 
-export const Words = ({ word, onEdit, ...agent }: Props) => (
-  <div
-    aria-live="polite"
-    className="mx-auto flex h-16 w-full max-w-[44rem] items-center gap-3 px-3"
-  >
-    {word.kind === 'mine' ? (
-      <Mine mark={word.mark} onEdit={onEdit} />
-    ) : (
-      <FromAgent word={word} {...agent} />
-    )}
+/** All of it is there to be read, however long it is: the photo makes room. */
+export const Words = (props: Props) => (
+  <div className="mx-auto flex min-h-16 w-full max-w-[46rem] flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-1.5 sm:flex-nowrap">
+    <Said {...props} />
   </div>
 );

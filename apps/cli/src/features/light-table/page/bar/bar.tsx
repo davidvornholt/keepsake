@@ -4,14 +4,14 @@ import { go } from '../app/router.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { AlbumLink, Attention } from './attention.tsx';
 import { Days } from './days.tsx';
-import { FilterChoices } from './filters.tsx';
+import { LabelChoice } from './filters.tsx';
 import { Title } from './title.tsx';
 import { Views } from './views.tsx';
 import { Zoom } from './zoom.tsx';
 
 // The bar above the table. Its upper part says what the shoot is and makes
-// way once the table is scrolled; what chooses the photos on the table and
-// what wants attention stays.
+// way once the table is scrolled; what chooses the photos on the table, how
+// large they are and what wants attention stays.
 
 export const Bar = ({
   sheet,
@@ -20,6 +20,7 @@ export const Bar = ({
   rangeRef,
   hasAttention,
   onZoom,
+  onLetGo,
   onStep,
 }: {
   readonly sheet: Place;
@@ -30,6 +31,7 @@ export const Bar = ({
   /** Whether there is room in the bar for what wants attention. */
   readonly hasAttention: boolean;
   readonly onZoom: (share: number) => void;
+  readonly onLetGo: () => void;
   readonly onStep: (direction: -1 | 1) => void;
 }) => {
   const { index, filters } = useShootContext();
@@ -46,22 +48,25 @@ export const Bar = ({
           onDay={(day) => change({ day })}
           only={filters.day}
         />
-        <Zoom onStep={onStep} onZoom={onZoom} rangeRef={rangeRef} />
         <AlbumLink />
       </div>
       <div
         className="flex flex-wrap items-center gap-x-4 px-2 pb-1 sm:px-3.5"
         ref={pinnedRef}
       >
-        <Views
-          filters={filters}
-          index={index}
-          onShow={(show) => change({ show, why: null })}
-        />
-        <FilterChoices filters={filters} index={index} onFilters={change} />
-        {hasAttention ? (
-          <Attention className="ml-auto justify-end" sheet={sheet} />
-        ) : null}
+        <Views filters={filters} index={index} onFilters={change} />
+        <LabelChoice filters={filters} index={index} onFilters={change} />
+        <div className="ml-auto flex items-center gap-x-3">
+          {hasAttention ? (
+            <Attention className="justify-end" sheet={sheet} />
+          ) : null}
+          <Zoom
+            onLetGo={onLetGo}
+            onStep={onStep}
+            onZoom={onZoom}
+            rangeRef={rangeRef}
+          />
+        </div>
       </div>
     </header>
   );

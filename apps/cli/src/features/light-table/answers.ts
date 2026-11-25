@@ -1,13 +1,20 @@
-import { Effect, Schema } from 'effect';
+import { Effect, Schema, type Semaphore } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
-import { openShoot } from '../../shared/store.ts';
+import { openShoot, type ShootFiles } from '../../shared/store.ts';
+import { startAgent } from './agent.ts';
 import { pictureWidths } from './contract.ts';
+import { setFavorite } from './favorites.ts';
+import { type Folders, lookAtFolder } from './folders.ts';
+import { handOver } from './hand-over.ts';
 import { saveLabels } from './labels.ts';
-import { handOver, makeMark, seeMark, takeBack } from './marks.ts';
+import { makeMark, seeMark, takeBack } from './marks.ts';
+import { forgetShoot, makeShoot } from './new-shoot.ts';
 import { fullSize, smaller } from './pictures.ts';
-import { NewLabels, NewMark } from './schemas.ts';
+import type { Preparations } from './preparation.ts';
+import { Favorite, HandOver, NewLabels, NewMark, NewShoot } from './schemas.ts';
 import type { Shoots } from './shoots.ts';
+import { agentWaitsSince } from './waiting.ts';
 
 const noContent = 204;
 const notFound = 404;
@@ -80,12 +87,102 @@ const pictureAnswer = Effect.fn('pictureAnswer')(function* (
       });
 });
 
+/** What the answers need. */
+export type Has = {
+  readonly shoots: Shoots;
+  readonly folders: Folders;
+  readonly preparations: Preparations;
+  readonly workers: Semaphore.Semaphore;
+  /** The program that starts an agent, if there is one. */
+  readonly agent: string | undefined;
+};
+
+/** Starts an agent when none waits for what is handed over. */
+const callAgent = Effect.fn('callAgent')(function* (
+  files: ShootFiles,
+  name: string,
+  program: string,
+) {
+  if ((yield* agentWaitsSince(files)) === null) {
+    yield* startAgent(files, name, program);
+  }
+});
+
+/** Hands everything over, and has an agent act on it. */
+const handOverAnswer = Effect.fn('handOverAnswer')(function* (
+  { agent }: Has,
+  name: string,
+  request: Request,
+) {
+  const { files } = yield* openShoot(name);
+  const handed = yield* handOver(files, yield* sent(HandOver, request));
+  if (agent !== undefined) {
+    yield* callAgent(files, name, agent);
+  }
+  return Response.json(handed);
+});
+
+/** Has an agent act on what was handed over before. */
+const agentAnswer = Effect.fn('agentAnswer')(function* (
+  { agent }: Has,
+  name: string,
+) {
+  const { files } = yield* openShoot(name);
+  if (agent === undefined) {
+    return yield* new InvalidInput({
+      message: 'No agent can be started from here.',
+    });
+  }
+  yield* callAgent(files, name, agent);
+  return nothing();
+});
+
+/** Starts getting an album ready from a folder. */
+const newShootAnswer = Effect.fn('newShootAnswer')(function* (
+  { folders, preparations }: Has,
+  request: Request,
+) {
+  const wanted = yield* sent(NewShoot, request);
+  yield* folders.at(wanted.folder);
+  const name = yield* makeShoot(wanted);
+  yield* preparations.start(name);
+  return Response.json({ name });
+});
+
+const lookAnswer = Effect.fn('lookAnswer')(function* (
+  { folders, workers }: Has,
+  request: Request,
+) {
+  const path = new URL(request.url).searchParams.get('path') ?? '';
+  const look = yield* lookAtFolder(yield* folders.at(path), workers);
+  return Response.json(look, { headers: { 'cache-control': 'no-store' } });
+});
+
 /** What the server answers to the page. */
-export const makeAnswers = (shoots: Shoots) => ({
-  list: Effect.map(shoots.list, (list) => Response.json(list)),
-  shoot: (name: string, request: Request) => shootAnswer(shoots, name, request),
+export const makeAnswers = (has: Has) => ({
+  list: Effect.map(has.shoots.list, (list) => Response.json(list)),
+  folders: Effect.gen(function* () {
+    const shoots = yield* has.shoots.all;
+    return Response.json(yield* has.folders.list(shoots));
+  }),
+  look: (request: Request) => lookAnswer(has, request),
+  newShoot: (request: Request) => newShootAnswer(has, request),
+  prepare: (name: string) =>
+    Effect.gen(function* () {
+      yield* has.preparations.start(name);
+      return nothing();
+    }),
+  forget: (name: string) =>
+    Effect.gen(function* () {
+      yield* has.preparations.stop(name);
+      yield* forgetShoot(name);
+      yield* has.shoots.forget(name);
+      return nothing();
+    }),
+  shoot: (name: string, request: Request) =>
+    shootAnswer(has.shoots, name, request),
   picture: (named: Named, request: Request) =>
-    pictureAnswer(shoots, named, request),
+    pictureAnswer(has.shoots, named, request),
   mark: (name: string, request: Request) =>
     Effect.gen(function* () {
       const wanted = yield* sent(NewMark, request);
@@ -101,9 +198,14 @@ export const makeAnswers = (shoots: Shoots) => ({
       yield* seeMark((yield* openShoot(name)).files, mark);
       return nothing();
     }),
-  handOver: (name: string) =>
+  handOver: (name: string, request: Request) =>
+    handOverAnswer(has, name, request),
+  agent: (name: string) => agentAnswer(has, name),
+  favorite: (name: string, request: Request) =>
     Effect.gen(function* () {
-      return Response.json(yield* handOver((yield* openShoot(name)).files));
+      const wanted = yield* sent(Favorite, request);
+      yield* setFavorite(yield* openShoot(name), wanted);
+      return nothing();
     }),
   labels: (name: string, request: Request) =>
     Effect.gen(function* () {

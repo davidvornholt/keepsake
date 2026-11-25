@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Box, MarkKind, PhotoView } from '../../contract.ts';
-import { type Index, isFavorite, markedIn } from '../data/derive.ts';
+import { type Index, markedIn } from '../data/derive.ts';
 import { seedOf } from '../marks/glyphs.ts';
 import { lookOf, seedTextOf } from '../marks/kinds.ts';
 import type { Draft } from './composer.tsx';
@@ -21,32 +21,20 @@ type Wanted = {
 
 type Seen = { readonly since: Map<string, number>; isFirst: boolean };
 
-const stampOf = (
-  photo: string,
-  kind: MarkKind,
-  since: number,
-  corner: Stamp['corner'],
-): Stamp => {
+const stampOf = (photo: string, kind: MarkKind, since: number): Stamp => {
   const look = lookOf[kind];
   return {
     shape: look.shape,
     seed: seedOf(seedTextOf(photo, kind)),
     wax: look.wax,
     since,
-    corner,
   };
 };
 
 /** The mark a photo shows large: the one that can be taken back, or the one an agent has. */
 const markOf = (index: Index, photo: string) => {
   const { open, waiting } = markedIn(index, photo);
-  return (
-    open ??
-    waiting.findLast(
-      ({ kind }) => kind !== 'favorite' && kind !== 'not-favorite',
-    ) ??
-    null
-  );
+  return open ?? waiting.at(-1) ?? null;
 };
 
 export const useInk = ({
@@ -59,8 +47,6 @@ export const useInk = ({
   // by hand, and what was there is simply there.
   const [seen] = useState<Seen>(() => ({ since: new Map(), isFirst: true }));
   const mark = markOf(index, photo.id);
-  const isStarred = isFavorite(index, photo);
-  const { favorite } = markedIn(index, photo.id);
 
   return useMemo(() => {
     const sinceOf = (key: string): number => {
@@ -74,16 +60,7 @@ export const useInk = ({
     };
     const stamps: Array<Stamp> = [];
     if (mark !== null && draft === null) {
-      stamps.push(
-        stampOf(photo.id, mark.kind, sinceOf(`mark:${mark.kind}`), 'mark'),
-      );
-    }
-    if (favorite?.kind === 'not-favorite') {
-      stamps.push(
-        stampOf(photo.id, 'not-favorite', sinceOf('not-favorite'), 'star'),
-      );
-    } else if (isStarred) {
-      stamps.push(stampOf(photo.id, 'favorite', sinceOf('favorite'), 'star'));
+      stamps.push(stampOf(photo.id, mark.kind, sinceOf(`mark:${mark.kind}`)));
     }
     const saved = (mark?.kind === 'change' ? mark.boxes : []).map((box) => ({
       box,
@@ -97,5 +74,5 @@ export const useInk = ({
     });
     seen.isFirst = false;
     return { stamps, boxes, nextBox: boxSeed(boxes.length), printed };
-  }, [seen, mark, favorite, isStarred, draft, printed, photo.id]);
+  }, [seen, mark, draft, printed, photo.id]);
 };

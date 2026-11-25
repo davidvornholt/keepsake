@@ -9,7 +9,7 @@ const group = (key: string, count: number, aspect = landscape): Group => ({
   items: Array.from({ length: count }, (_, index) => ({
     id: `${key}${index}`,
     aspect,
-    isMomentStart: index % 3 === 0,
+    isApart: index % 3 === 0,
   })),
 });
 
@@ -56,14 +56,14 @@ describe('layOut', () => {
     }
   });
 
-  it('leaves more room between two moments than within one', () => {
+  it('leaves more room before a frame that lies apart', () => {
     const layout = layOut([group('a', 5)], 2000, 100);
     const rect = (id: string) => layout.rects.get(id) ?? { x: 0, w: 0 };
     const within = rect('a1').x - rect('a0').x - rect('a0').w;
     const between = rect('a3').x - rect('a2').x - rect('a2').w;
     expect(between).toBeGreaterThan(within);
     expect(layout.measure.hasEdgePrint).toBe(true);
-    expect(measureOf(20).momentGap).toBe(measureOf(20).gap);
+    expect(measureOf(20).apartGap).toBe(measureOf(20).gap);
   });
 
   it('gives every long group its own sheet below the one before', () => {

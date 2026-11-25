@@ -60,7 +60,6 @@ const useKeptInk = (photo: PhotoView | undefined, isKept: boolean) => {
                 seed: seedOf(`${photo.id}:keep-too`),
                 wax: 'wax-white',
                 since: since ?? longAgo,
-                corner: 'mark',
               },
             ]
           : [],
@@ -100,7 +99,7 @@ const useCompareAgain = (
       if (stage === null) {
         arrived();
       } else {
-        stage.leave({ rect: to, shows: 'camera' }, arrived);
+        stage.leave(() => ({ rect: to, shows: 'camera' }), arrived);
       }
     },
   };

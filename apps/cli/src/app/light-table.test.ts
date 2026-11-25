@@ -49,6 +49,10 @@ describe('the light table', () => {
         about: 'Lisbon, May 2026',
         photos: 4,
         inAlbum: 3,
+        picked: 0,
+        preparation: null,
+        activity: null,
+        isOrdered: false,
         openMarks: 0,
         newAnswers: 0,
       },
@@ -66,7 +70,9 @@ describe('the light table', () => {
       album: { url: 'https://photos.example.com/albums/album-1' },
       picked: { minimumScore: 7, maximum: null },
       activity: null,
-      agentWaitsSince: null,
+      preparation: null,
+      agent: { waitsSince: null, canStart: false, started: null },
+      ordered: null,
       rating: null,
       photos: [
         {
@@ -78,9 +84,19 @@ describe('the light table', () => {
           verdict: { score: 8, reason: 'It looks at the camera.' },
           edit: { isAi: true, earlier: [], wish: null },
         },
-        { id: 'A2', standing: { kind: 'other-frame', of: 'A1' }, edit: null },
-        { id: 'B', standing: { kind: 'picked' } },
+        {
+          id: 'A2',
+          stack: 'A1',
+          standing: { kind: 'similar', to: 'A1', because: null },
+          edit: null,
+        },
+        { id: 'B', stack: 'B', standing: { kind: 'picked' } },
         { id: 'C', standing: { kind: 'picked' } },
+      ],
+      stacks: [
+        { front: 'A1', photos: ['A1', 'A2'] },
+        { front: 'B', photos: ['B'] },
+        { front: 'C', photos: ['C'] },
       ],
     });
   });
@@ -189,7 +205,7 @@ describe('who the light table answers', () => {
   const visit = (headers: Record<string, string>, at = elsewhere) =>
     whileServing(
       (address) => statusOf(fetch(`${address}/api/shoots`, { headers })),
-      at,
+      { address: at },
     );
 
   it('answers under its own address and the one it is passed on from', async () => {
@@ -225,6 +241,9 @@ describe('who the light table answers', () => {
         serveLightTable({
           port: Number(new URL(address).port),
           address: undefined,
+          photos: [],
+          agent: undefined,
+          keepsake: [],
         }).pipe(
           Effect.scoped,
           Effect.provide(fakeToolsLayer),

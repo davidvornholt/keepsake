@@ -1,22 +1,30 @@
 import { follow, hold, speedOf, type Trail } from '../motion/scroller.ts';
-import { clamp, quick, rubberBand } from '../motion/spring.ts';
-import { zoomNow } from './arrange.ts';
+import { clamp, rubberBand } from '../motion/spring.ts';
 import type { Engine } from './engine.ts';
-import { frameAt } from './find.ts';
-import { type Anchor, anchorAt, frameLimits, scrollLimits } from './table.ts';
+import { pileUnder } from './pile.ts';
+import {
+  frameLimits,
+  frameUnder,
+  type Held,
+  heldAt,
+  scrollLimits,
+  type Table,
+} from './table.ts';
+import { letGo, stopAhead, zoomByHand, zoomToStop } from './zooming.ts';
 
 // What the wheel, the trackpad and fingers do to the table: scroll it, and
 // change the size of the frames about the point between the fingers.
 
 type Doing = {
   readonly onOpen: (id: string) => void;
+  /** Called with the photo in front of a pile whose corner was pressed. */
+  readonly onPile: (front: string) => void;
   /** Called when the owner changed the size of the frames. */
   readonly onZoom: () => void;
 };
 
 /** How much a pixel of a pinch on a trackpad changes the size. */
 const zoomPerPixel = 0.011;
-const zoomPerNotchPixel = 0.0028;
 const lineHeight = 18;
 /** A wheel that turns in notches sends at least this much at once. */
 const notch = 60;
@@ -28,7 +36,7 @@ const openBy = 1.18;
 type Finger = { x: number; y: number };
 
 type Pinch = {
-  anchor: Anchor;
+  held: Held;
   distance: number;
   /** How much further the fingers spread than the frames could grow. */
   beyond: number;
@@ -48,16 +56,20 @@ const between = (fingers: ReadonlyArray<Finger>) => {
   };
 };
 
-/** A wheel turns in notches, which are far more than a pinch sends. */
+/** By how much a pinch on a trackpad changes the size of the frames. */
 const zoomOf = (event: WheelEvent): number =>
-  Math.exp(
-    -event.deltaY *
-      (Math.abs(event.deltaY) >= notch ? zoomPerNotchPixel : zoomPerPixel),
-  );
+  Math.exp(-event.deltaY * zoomPerPixel);
+
+/** After this long without a turn of the wheel, in milliseconds, the hand has let go. */
+const wheelRest = 70;
 
 const scrollBy = ({ table }: Engine, delta: number) => {
   const { least, most } = scrollLimits(table);
   const { scroller } = table;
+  if (table.zooming !== null) {
+    // The frames arrive first; a table that changes size isn't scrolled.
+    return;
+  }
   if (Math.abs(delta) >= notch) {
     // A notch of a wheel is a jump; the table glides there.
     const from = scroller.target ?? scroller.value;
@@ -68,16 +80,35 @@ const scrollBy = ({ table }: Engine, delta: number) => {
   }
 };
 
+/** The stop a notch of the wheel leads to from where the frames are heading. */
+const stopBeside = (table: Table, isLarger: boolean): number =>
+  (table.zooming === null ? table.stop : stopAhead(table)) +
+  (isLarger ? 1 : -1);
+
 const wheeling = (element: HTMLElement, engine: Engine, doing: Doing) => {
   const { table } = engine;
+  let resting: ReturnType<typeof setTimeout> | undefined;
+  const rest = () => {
+    letGo(table);
+    doing.onZoom();
+    engine.request();
+  };
   return (event: WheelEvent) => {
     event.preventDefault();
     const { x, y } = pointOf(element, event);
     if (event.ctrlKey || event.metaKey) {
-      const anchor = anchorAt(table, x, y);
-      if (anchor !== null) {
-        zoomNow(table, zoomOf(event), anchor);
+      const held = heldAt(table, x, y);
+      if (held === null) {
+        return;
+      }
+      if (Math.abs(event.deltaY) >= notch) {
+        // A wheel that turns in notches goes from stop to stop.
+        zoomToStop(table, held, stopBeside(table, event.deltaY < 0));
         doing.onZoom();
+      } else {
+        zoomByHand(table, held, table.frame.value * zoomOf(event));
+        clearTimeout(resting);
+        resting = setTimeout(rest, wheelRest);
       }
     } else {
       scrollBy(engine, event.deltaY * (event.deltaMode === 1 ? lineHeight : 1));
@@ -86,12 +117,34 @@ const wheeling = (element: HTMLElement, engine: Engine, doing: Doing) => {
   };
 };
 
+/** What pressing the corner of a pile does, said for the pointer that rests on it. */
+const pileTitle = (table: Table, front: string): string => {
+  const frame = table.placed.get(front)?.frame;
+  const count = frame?.opened?.count ?? frame?.pile ?? 0;
+  return frame?.opened === null || frame === undefined
+    ? `${count} photos that show the same. Lay them out (Space)`
+    : 'Put the stack together again (Space)';
+};
+
+/** Opens the photo at a point, or its pile when the corner of one is there. */
+const press = (table: Table, doing: Doing, x: number, y: number) => {
+  const pile = pileUnder(table, x, y);
+  const id = frameUnder(table, x, y);
+  if (pile !== null) {
+    doing.onPile(pile);
+  } else if (id !== null) {
+    doing.onOpen(id);
+  }
+};
+
 const hovering = (element: HTMLElement, engine: Engine) => {
   const { table, state } = engine;
-  const set = (id: string | null) => {
-    if (state.hover !== id) {
+  const set = (id: string | null, pile: string | null) => {
+    if (state.hover !== id || state.hoverPile !== pile) {
       state.hover = id;
+      state.hoverPile = pile;
       element.style.cursor = id === null ? '' : 'pointer';
+      element.title = pile === null ? '' : pileTitle(table, pile);
       engine.request();
     }
   };
@@ -100,10 +153,10 @@ const hovering = (element: HTMLElement, engine: Engine) => {
       if (event.pointerType === 'mouse') {
         const { x, y } = pointOf(element, event);
         state.isCursorShown = false;
-        set(frameAt(table.layout, x, y + table.scroller.value));
+        set(frameUnder(table, x, y), pileUnder(table, x, y));
       }
     },
-    out: () => set(null),
+    out: () => set(null, null),
   };
 };
 
@@ -117,30 +170,38 @@ const touching = (element: HTMLElement, engine: Engine, doing: Doing) => {
 
   const startPinch = () => {
     const middle = between([...fingers.values()]);
-    const anchor = anchorAt(table, middle.x, middle.y);
+    const held = heldAt(table, middle.x, middle.y);
     pinch =
-      anchor === null ? null : { anchor, distance: middle.distance, beyond: 1 };
+      held === null ? null : { held, distance: middle.distance, beyond: 1 };
     isDragging = true;
   };
 
-  const movePinch = (held: Pinch) => {
+  const movePinch = (pinched: Pinch) => {
     const middle = between([...fingers.values()]);
-    const ratio = middle.distance / Math.max(1, held.distance);
-    const anchor = { ...held.anchor, screenY: middle.y };
+    const ratio = middle.distance / Math.max(1, pinched.distance);
     const isLargest = table.frame.value >= frameLimits(table).most;
-    held.beyond = isLargest && ratio > 1 ? held.beyond * ratio : 1;
-    held.distance = middle.distance;
-    held.anchor = anchor;
-    zoomNow(table, ratio, anchor);
-    doing.onZoom();
-    if (held.beyond > openBy) {
+    pinched.beyond = isLargest && ratio > 1 ? pinched.beyond * ratio : 1;
+    pinched.distance = middle.distance;
+    zoomByHand(table, pinched.held, table.frame.value * ratio);
+    // The table goes where the fingers go.
+    const { held } = table.zooming?.memory ?? pinched;
+    held.x = middle.x;
+    held.y = middle.y;
+    if (pinched.beyond > openBy) {
+      const { id } = pinched.held;
       pinch = null;
       fingers.clear();
-      doing.onOpen(anchor.id);
+      letGo(table);
+      doing.onOpen(id);
     }
   };
 
   const drag = (finger: Finger, at: number) => {
+    if (table.zooming !== null) {
+      // Once the frames have arrived the finger scrolls from where it is.
+      from = { y: finger.y, scroll: table.scroller.value };
+      return;
+    }
     const { least, most } = scrollLimits(table);
     const wanted = from.scroll - (finger.y - from.y);
     const beyond = wanted - clamp(wanted, least, most);
@@ -158,7 +219,6 @@ const touching = (element: HTMLElement, engine: Engine, doing: Doing) => {
       const finger = pointOf(element, event);
       fingers.set(event.pointerId, finger);
       hold(table.scroller);
-      table.stiffness = quick;
       if (fingers.size === 2) {
         startPinch();
       } else {
@@ -192,20 +252,15 @@ const touching = (element: HTMLElement, engine: Engine, doing: Doing) => {
       if (pinch !== null) {
         // The finger that stays goes on scrolling from where it is.
         pinch = null;
+        letGo(table);
+        doing.onZoom();
         const [left] = fingers.values();
         from = { y: left?.y ?? 0, scroll: table.scroller.value };
         trail.length = 0;
       } else if (isDragging && fingers.size === 0) {
         table.scroller.velocity = -speedOf(trail, event.timeStamp);
       } else if (fingers.size === 0 && event.type === 'pointerup') {
-        const id = frameAt(
-          table.layout,
-          finger.x,
-          finger.y + table.scroller.value,
-        );
-        if (id !== null) {
-          doing.onOpen(id);
-        }
+        press(table, doing, finger.x, finger.y);
       }
       engine.request();
     },
@@ -236,16 +291,11 @@ export const listenToTable = (
     'click',
     (event) => {
       const { x, y } = pointOf(element, event);
-      const id = frameAt(
-        engine.table.layout,
-        x,
-        y + engine.table.scroller.value,
-      );
       // A tap was answered when the finger was lifted.
       const isMouse =
         !(event instanceof PointerEvent) || event.pointerType === 'mouse';
-      if (id !== null && isMouse) {
-        doing.onOpen(id);
+      if (isMouse) {
+        press(engine.table, doing, x, y);
       }
     },
     options,

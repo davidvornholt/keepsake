@@ -7,7 +7,7 @@ const group = (key: string, count: number): Group => ({
   items: Array.from({ length: count }, (_, index) => ({
     id: `${key}${index}`,
     aspect: 1.5,
-    isMomentStart: index % 3 === 0,
+    isApart: index % 3 === 0,
   })),
 });
 

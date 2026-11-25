@@ -13,7 +13,8 @@ export type Stiffness = {
   readonly friction: number;
 };
 
-const critical = (tension: number): Stiffness => ({
+/** A spring that comes to rest as fast as it can without swinging past. */
+export const critical = (tension: number): Stiffness => ({
   tension,
   friction: 2 * Math.sqrt(tension),
 });
@@ -94,3 +95,11 @@ export const clamp = (value: number, least: number, most: number): number =>
 
 export const mix = (from: number, to: number, share: number): number =>
   from + (to - from) * share;
+
+/** The cubic that leaves 0 and comes to 1 without speed: 3s² − 2s³. */
+const squares = 3;
+const cubes = 2;
+
+/** Eases in and out between 0 and 1. */
+export const easeInOut = (share: number): number =>
+  share * share * (squares - cubes * share);

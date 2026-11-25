@@ -13,21 +13,32 @@ export type Frame = Size & { readonly left: number; readonly top: number };
 
 const sizePattern = /^(?<width>\d+) (?<height>\d+)$/u;
 
-/** How large a picture is, in pixels. */
-export const sizeOf = Effect.fn('sizeOf')(function* (file: string) {
-  const text = yield* toolText('magick', [
-    'identify',
-    '-format',
-    '%w %h',
-    file,
-  ]);
-  const size = sizePattern.exec(text.trim())?.groups;
+const sizeIn = Effect.fn('sizeIn')(function* (printed: string, what: string) {
+  const size = sizePattern.exec(printed.trim())?.groups;
   if (size === undefined) {
     return yield* new ToolFailed({
-      message: `ImageMagick could not tell how large ${file} is.`,
+      message: `ImageMagick could not tell how large ${what} is.`,
     });
   }
   return { width: Number(size.width), height: Number(size.height) };
+});
+
+const askSize = ['identify', '-format', '%w %h'];
+
+/** How large a picture is, in pixels. */
+export const sizeOf = Effect.fn('sizeOf')(function* (file: string) {
+  const printed = yield* toolText('magick', [...askSize, file]);
+  return yield* sizeIn(printed, file);
+});
+
+/** How large a picture that isn't a file is, in pixels. */
+export const sizeOfBytes = Effect.fn('sizeOfBytes')(function* (
+  bytes: Uint8Array,
+) {
+  const printed = yield* toolBytes('magick', [...askSize, '-'], {
+    input: bytes,
+  });
+  return yield* sizeIn(new TextDecoder().decode(printed), 'a picture');
 });
 
 /** A box in fractions as whole pixels of a picture of the given size. */

@@ -92,11 +92,14 @@ const Photos = ({ flow, view }: Parts) => {
           key={`one:${shown.id}`}
           look="edit"
           onClose={nothing}
+          onOffset={nothing}
           onSeen={null}
           photo={shown}
           room={view.room}
           wide={view.room}
-          side={flow.side}
+          entry={
+            flow.side === 0 ? null : { x: flow.side * view.room.w, speed: 0 }
+          }
           wanted={{
             onSwipe: flow.turn,
             onDismiss: view.compareAgain,

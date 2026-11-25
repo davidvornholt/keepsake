@@ -8,6 +8,12 @@ export const stripHeight = 52;
 export const barHeight = 76;
 /** The pencils make room for the words of a change. */
 export const composerHeight = 116;
+/** The line that says where a photo stands, and why. */
+export const standingHeight = 48;
+/** The strip of the photos that show the same. */
+export const stackHeight = 74;
+/** What an agent answered, or what the owner said, above the pencils. */
+export const wordHeight = 64;
 export const infoWidth = 352;
 /** From this width on the notes stand beside the photo instead of over it. */
 export const wideFrom = 980;
@@ -20,7 +26,7 @@ const besideGap = 14;
 export type Chrome = {
   readonly isInfoShown: boolean;
   readonly isComposing: boolean;
-  /** Room for an answer of an agent above the pencils. */
+  /** Room for what stands above the pencils: words, the pile, where it stands. */
   readonly extra: number;
   /** How high what lies below the photo really is, once that is known. */
   readonly measured: number;
@@ -120,6 +126,8 @@ export type Seen = {
   /** Where the part looked at is on the screen, and where it rests. */
   readonly now: Rect;
   readonly rest: Rect;
+  /** Where the finished photo is, which the boxes of a change are drawn on. */
+  readonly edit: Rect;
   /** How large it is: at 1 a pixel of the picture is one of the screen. */
   readonly share: number;
 };

@@ -1,22 +1,14 @@
-import { useRef, useState } from 'react';
+import { type RefObject, useRef, useState } from 'react';
 import type { MarkKind } from '../../contract.ts';
-import type { Index } from '../data/derive.ts';
+import { type Index, isFavorite, pileAround } from '../data/derive.ts';
 import type { ShootStore } from '../data/store.ts';
 import { actionFor, kindOfKey, offeredFor } from '../marks/act.ts';
 import type { Engine } from '../sheet/engine.ts';
 import type { Direction } from '../sheet/find.ts';
-import { keepZoom } from '../sheet/sizes.ts';
-import {
-  moveCursor,
-  pointedAt,
-  zoomBy,
-  zoomShare,
-  zoomToShare,
-} from '../sheet/steer.ts';
-import { topOf } from '../sheet/table.ts';
-import { zoomSteps } from '../sheet/zoom.ts';
+import { moveCursor, pointedAt } from '../sheet/steer.ts';
 import type { Keys } from '../ui/keys.ts';
 import type { Show } from './route.ts';
+import { useSizing } from './use-sizing.ts';
 
 // The table as the owner steers it with the keyboard and the bar: where the
 // cursor is, how large the frames are, and the marks made right on a frame.
@@ -29,7 +21,11 @@ type Wanted = {
   readonly onOpen: (photo: string, isComposing?: boolean) => void;
 };
 
-const markKeys = 'kcxfpsl';
+const markKeys = 'cxps';
+
+/** Said when the heart is asked for where it can't be set. */
+export const favoriteHint =
+  'The heart marks a favorite in Immich, so it is for photos in the album.';
 
 const arrows: ReadonlyArray<readonly [string, Direction]> = [
   ['ArrowLeft', 'left'],
@@ -40,10 +36,73 @@ const arrows: ReadonlyArray<readonly [string, Direction]> = [
   ['End', 'last'],
 ];
 
+/** The pile that lies open on the table, by the photo in front of it. */
+const usePiles = (
+  index: Index,
+  engineRef: RefObject<Engine | null>,
+  onCursor: (id: string) => void,
+) => {
+  const [opened, setOpened] = useState<string | null>(null);
+  const isOpenStill =
+    opened !== null && (index.pileOf.get(opened)?.front.id ?? null) === opened;
+  /** Puts the open pile together. The keyboard stays on what is left of it. */
+  const close = () => {
+    const engine = engineRef.current;
+    const at = engine?.state.cursor ?? null;
+    const isInIt =
+      at !== null &&
+      opened !== null &&
+      index.pileOf.get(at)?.front.id === opened;
+    if (engine !== null && isInIt) {
+      engine.state.cursor = opened;
+      onCursor(opened);
+    }
+    setOpened(null);
+  };
+  return {
+    opened: isOpenStill ? opened : null,
+    close,
+    /** Lays the pile of a photo out on the table, or puts it together again. */
+    toggle: (id: string): boolean => {
+      const photo = index.byId.get(id);
+      const pile = photo === undefined ? null : pileAround(index, photo);
+      if (pile === null || pile.photos.length < 2) {
+        return false;
+      }
+      if (opened === pile.front.id) {
+        close();
+      } else {
+        setOpened(pile.front.id);
+      }
+      return true;
+    },
+  };
+};
+
 export const useTable = ({ index, store, show, onOpen }: Wanted) => {
   const engineRef = useRef<Engine | null>(null);
-  const rangeRef = useRef<HTMLInputElement | null>(null);
+  const sizing = useSizing(engineRef, show);
   const [cursor, setCursor] = useState<string | null>(null);
+  const piles = usePiles(index, engineRef, setCursor);
+
+  const pointed = () => {
+    const engine = engineRef.current;
+    const id = engine === null ? null : pointedAt(engine);
+    return id === null ? undefined : index.byId.get(id);
+  };
+
+  /** Sets or takes away the favorite heart of the photo the pointer is on. */
+  const favorite = () => {
+    const photo = pointed();
+    if (photo === undefined) {
+      return;
+    }
+    if (photo.standing.kind === 'album') {
+      store.favorite(photo.id, !isFavorite(photo)).catch(() => undefined);
+    } else {
+      store.hint(favoriteHint);
+    }
+  };
 
   const move = (direction: Direction) => {
     const engine = engineRef.current;
@@ -53,9 +112,7 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
   };
 
   const mark = (kind: MarkKind) => {
-    const engine = engineRef.current;
-    const id = engine === null ? null : pointedAt(engine);
-    const photo = id === null ? undefined : index.byId.get(id);
+    const photo = pointed();
     const action = photo === undefined ? null : actionFor(index, photo, kind);
     if (photo === undefined) {
       return;
@@ -71,22 +128,6 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
       store.takeBack(action.mark).catch(() => undefined);
     } else {
       store.make(action.wanted);
-    }
-  };
-
-  /** The view opens at the size the owner gave it, the next time too. */
-  const remember = () => {
-    const engine = engineRef.current;
-    if (engine !== null) {
-      keepZoom(show, engine.table.zoom);
-    }
-  };
-
-  const zoom = (direction: -1 | 0 | 1) => {
-    const engine = engineRef.current;
-    if (engine !== null) {
-      zoomBy(engine, direction);
-      remember();
     }
   };
 
@@ -109,20 +150,33 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
       return [key, kind === null ? undefined : () => mark(kind)] as const;
     }),
     ['Enter', open],
-    ['Space', open],
-    ['+', () => zoom(1)],
-    ['=', () => zoom(1)],
-    ['-', () => zoom(-1)],
-    ['0', () => zoom(0)],
+    [
+      'Space',
+      () => {
+        const photo = pointed();
+        if (photo === undefined || !piles.toggle(photo.id)) {
+          open();
+        }
+      },
+    ],
+    ['Escape', piles.opened === null ? undefined : piles.close],
+    ['f', favorite],
+    ['+', () => sizing.zoom(1)],
+    ['=', () => sizing.zoom(1)],
+    ['-', () => sizing.zoom(-1)],
+    ['0', () => sizing.zoom(0)],
     ['u', undo],
     ['ctrl+z', undo],
   ];
 
   return {
     engineRef,
-    rangeRef,
+    rangeRef: sizing.rangeRef,
     cursor,
     keys,
+    opened: piles.opened,
+    togglePile: piles.toggle,
+    closePile: piles.close,
     /** Shows where the keyboard is when the table gets the focus. */
     showCursor: () => {
       const engine = engineRef.current;
@@ -130,30 +184,10 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
         setCursor(moveCursor(engine, 'right'));
       }
     },
-    zoomTo: (share: number) => {
-      const engine = engineRef.current;
-      if (engine !== null) {
-        zoomToShare(engine, share);
-        remember();
-      }
-    },
-    remember,
-    zoomBy: zoom,
-    /** Moves the slider to the size the frames have, and the bar out of the way. */
-    follow: (bar: HTMLElement | null) => {
-      const engine = engineRef.current;
-      const range = rangeRef.current;
-      if (engine !== null && bar !== null) {
-        const { table } = engine;
-        const away = topOf(table) - table.size.top;
-        bar.style.transform = `translate3d(0, ${away}px, 0)`;
-      }
-      if (engine !== null && range !== null) {
-        const value = String(Math.round(zoomShare(engine) * zoomSteps));
-        if (range.value !== value && document.activeElement !== range) {
-          range.value = value;
-        }
-      }
-    },
+    zoomTo: sizing.zoomTo,
+    zoomLetGo: sizing.zoomLetGo,
+    remember: sizing.remember,
+    zoomBy: sizing.zoom,
+    follow: sizing.follow,
   };
 };

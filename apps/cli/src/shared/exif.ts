@@ -1,8 +1,8 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
 import { Effect, Path, Schema } from 'effect';
-import type { Photo } from '../../shared/domain.ts';
-import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
-import { runTool } from '../../shared/tools.ts';
+import type { Photo } from './domain.ts';
+import { InvalidInput, ToolFailed } from './errors/errors.ts';
+import { runTool } from './tools.ts';
 
 const rawExtensions = [
   'arw',
@@ -148,17 +148,16 @@ export const foundPhotos = (
   );
 };
 
-/** Every photo in a folder and the folders below it. */
-export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
+export const photoExtensions = [...rawExtensions, ...pictureExtensions];
+
+const readExif = Effect.fn('readExif')(function* (
+  source: string,
+  args: ReadonlyArray<string>,
+) {
   const path = yield* Path.Path;
   const { stdout, stderr } = yield* runTool('exiftool', [
     '-json',
     '-n',
-    '-r',
-    ...[...rawExtensions, ...pictureExtensions].flatMap((extension) => [
-      '-ext',
-      extension,
-    ]),
     '-SubSecDateTimeOriginal',
     '-DateTimeOriginal',
     '-FileModifyDate',
@@ -173,7 +172,7 @@ export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
     '-ImageSize',
     '-FullImageSize',
     '-JpgFromRawLength',
-    source,
+    ...args,
   ]);
   if (stdout.length === 0) {
     return yield* new InvalidInput({
@@ -195,5 +194,25 @@ export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
       file: path.relative(source, exif.SourceFile),
       exif,
     })),
+  );
+});
+
+/** Every photo in a folder and the folders below it. */
+export const findPhotos = (source: string) =>
+  readExif(source, [
+    '-r',
+    ...photoExtensions.flatMap((extension) => ['-ext', extension]),
+    source,
+  ]);
+
+/** Some photos of a folder, by their paths below it. */
+export const readPhotos = Effect.fn('readPhotos')(function* (
+  source: string,
+  files: ReadonlyArray<string>,
+) {
+  const path = yield* Path.Path;
+  return yield* readExif(
+    source,
+    files.map((file) => path.join(source, file)),
   );
 });

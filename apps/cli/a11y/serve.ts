@@ -3,11 +3,13 @@ import { chmod, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
+import { writeFolders } from './made-up/folders.ts';
 import { type Wanted, writeShoot } from './made-up/shoot.ts';
 
 const [, , port = ''] = process.argv;
 const home = await mkdtemp(join(tmpdir(), 'keepsake-a11y-'));
 const tools = join(home, 'tools');
+const photos = join(home, 'photos');
 
 const wanted: ReadonlyArray<Wanted> = [
   {
@@ -47,18 +49,51 @@ const wanted: ReadonlyArray<Wanted> = [
     step: 'scanned',
     seed: 11,
   },
+  {
+    name: 'sagres',
+    about: 'Sagres, September 2026',
+    month: '2026-09',
+    step: 'chosen',
+    seed: 13,
+  },
+  {
+    name: 'aveiro',
+    about: 'Aveiro, September 2026',
+    month: '2026-09',
+    step: 'scanned',
+    stopped: 'The model’s limit is reached. It is free again at 14:00.',
+    seed: 17,
+  },
+  {
+    name: 'obidos',
+    about: 'Óbidos, October 2026',
+    month: '2026-10',
+    step: 'chosen',
+    isOrdered: true,
+    seed: 19,
+  },
 ];
 for (const shoot of wanted) {
   await writeShoot(join(home, 'keepsake', 'shoots'), shoot);
 }
 
-const magick = join(tools, 'magick');
+/** Puts a program where the server finds it: one of the stand-ins here. */
+const standIn = async (name: string, script: string) => {
+  const program = join(tools, name);
+  await Bun.write(
+    program,
+    `#!/bin/sh\nexec '${process.execPath}' '${join(import.meta.dir, 'made-up', script)}' "$@"\n`,
+  );
+  await chmod(program, 0o755);
+  return program;
+};
+
 await mkdir(tools);
-await Bun.write(
-  magick,
-  `#!/bin/sh\nexec '${process.execPath}' '${join(import.meta.dir, 'made-up', 'magick.ts')}' "$@"\n`,
-);
-await chmod(magick, 0o755);
+await standIn('magick', 'magick.ts');
+await standIn('exiftool', 'exiftool.ts');
+await standIn('photos', 'photos.ts');
+const agent = await standIn('agent', 'agent.ts');
+await writeFolders(photos);
 
 const server = Bun.spawn(
   [
@@ -67,6 +102,10 @@ const server = Bun.spawn(
     'serve',
     '--port',
     port,
+    '--photos',
+    photos,
+    '--agent',
+    agent,
   ],
   {
     // Built from entries because environment variable names are not camelCase.

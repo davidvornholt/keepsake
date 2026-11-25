@@ -1,27 +1,14 @@
 import type { Mark, MarkKind, NewMark, PhotoView } from '../../contract.ts';
-import {
-  counterpartOf,
-  type Index,
-  isFavorite,
-  markedIn,
-} from '../data/derive.ts';
-
+import { frontOf, type Index, isChosen, markedIn } from '../data/derive.ts';
 import { lookOf } from './kinds.ts';
 
 // What the owner can say about a photo, and what a press of a key or a
 // button does about it. Saying the same thing twice takes it back.
 
-/** The marks for a photo that is or will be in the album, and for one that isn't. */
-const forChosen = ['keep', 'change', 'take-out', 'favorite'] as const;
-const forLeftOut = ['put-in', 'swap', 'leave-out'] as const;
-
-export const isChosen = ({ standing }: PhotoView): boolean =>
-  standing.kind === 'album' || standing.kind === 'picked';
-
-/** The photo of the album a swap would take out, if there is one. */
+/** The photo of the album that this one would take the place of, if there is one. */
 export const swapFor = (index: Index, photo: PhotoView): PhotoView | null => {
-  const other = counterpartOf(index, photo);
-  return other !== null && other.standing.kind === 'album' ? other : null;
+  const front = frontOf(index, photo);
+  return front !== null && isChosen(front) ? front : null;
 };
 
 /** The marks that make sense for a photo, in the order they are offered. */
@@ -30,28 +17,66 @@ export const kindsFor = (
   photo: PhotoView,
 ): ReadonlyArray<MarkKind> => {
   if (isChosen(photo)) {
-    return forChosen;
+    return ['change', 'take-out'];
   }
-  return swapFor(index, photo) === null
-    ? forLeftOut.filter((kind) => kind !== 'swap')
-    : forLeftOut;
+  if (photo.standing.kind === 'open') {
+    // Nothing is chosen yet, so there is nothing to say against the choice.
+    return [];
+  }
+  return swapFor(index, photo) === null ? ['put-in'] : ['swap', 'put-in'];
+};
+
+/** What a mark is called on the button for this photo. */
+export const nameFor = (
+  index: Index,
+  photo: PhotoView,
+  kind: MarkKind,
+): string => {
+  if (kind === 'put-in' && swapFor(index, photo) !== null) {
+    return 'Put in as well';
+  }
+  if (kind === 'change' && photo.standing.kind === 'picked') {
+    return 'Wish for the edit';
+  }
+  return lookOf[kind].says;
+};
+
+/** What it leads to, in a sentence. */
+export const effectFor = (
+  index: Index,
+  photo: PhotoView,
+  kind: MarkKind,
+): string => {
+  if (kind === 'put-in' && swapFor(index, photo) !== null) {
+    return 'Puts this photo in the album too. The one in front of it stays.';
+  }
+  if (kind === 'change' && photo.standing.kind === 'picked') {
+    return 'Say what you want of the edit. It is done with the album.';
+  }
+  if (kind === 'take-out' && photo.standing.kind === 'picked') {
+    return 'Takes the photo out of the choice, so it isn’t edited.';
+  }
+  return lookOf[kind].does;
 };
 
 /** What can be said about a photo, as a sentence for when something else was tried. */
 export const offeredFor = (index: Index, photo: PhotoView): string => {
-  const offered = kindsFor(index, photo)
-    .map((kind) => `${lookOf[kind].says} (${lookOf[kind].key})`)
+  const kinds = kindsFor(index, photo);
+  const offered = kinds
+    .map((kind) => `${nameFor(index, photo, kind)} (${lookOf[kind].key})`)
     .join(', ');
   const stands = {
     album: 'is in the album',
     picked: 'is chosen for the album',
-  };
-  const { standing } = photo;
-  const where =
-    standing.kind === 'album' || standing.kind === 'picked'
-      ? stands[standing.kind]
-      : "isn't in the album";
-  return `This photo ${where}: ${offered}.`;
+    open: 'isn’t decided yet',
+    'taken-out': 'isn’t in the album',
+    similar: 'isn’t in the album',
+    'left-out': 'isn’t in the album',
+  } as const;
+  const where = stands[photo.standing.kind];
+  return kinds.length === 0
+    ? `This photo ${where}. Marks come once the best are chosen.`
+    : `This photo ${where}: ${offered}.`;
 };
 
 export type Action =
@@ -59,23 +84,6 @@ export type Action =
   | { readonly does: 'take-back'; readonly mark: Mark }
   /** A change needs words first. */
   | { readonly does: 'compose'; readonly mark: Mark | null };
-
-const plain = (photo: string, kind: MarkKind): NewMark => ({
-  photo,
-  kind,
-  note: '',
-  boxes: [],
-  other: null,
-});
-
-const aboutFavorite = (index: Index, photo: PhotoView): Action => {
-  const { favorite } = markedIn(index, photo.id);
-  if (favorite !== null) {
-    return { does: 'take-back', mark: favorite };
-  }
-  const kind = isFavorite(index, photo) ? 'not-favorite' : 'favorite';
-  return { does: 'make', wanted: plain(photo.id, kind) };
-};
 
 /** What choosing a mark for a photo does, or null when it makes no sense. */
 export const actionFor = (
@@ -86,9 +94,6 @@ export const actionFor = (
   if (!kindsFor(index, photo).includes(kind)) {
     return null;
   }
-  if (kind === 'favorite') {
-    return aboutFavorite(index, photo);
-  }
   const { open } = markedIn(index, photo.id);
   if (kind === 'change') {
     return { does: 'compose', mark: open?.kind === 'change' ? open : null };
@@ -97,23 +102,19 @@ export const actionFor = (
     return { does: 'take-back', mark: open };
   }
   const other = kind === 'swap' ? (swapFor(index, photo)?.id ?? null) : null;
-  return { does: 'make', wanted: { ...plain(photo.id, kind), other } };
+  return {
+    does: 'make',
+    wanted: { photo: photo.id, kind, note: '', boxes: [], other },
+  };
 };
 
 const keys: Readonly<Record<string, MarkKind>> = {
-  k: 'keep',
   c: 'change',
   x: 'take-out',
-  f: 'favorite',
   p: 'put-in',
   s: 'swap',
-  l: 'leave-out',
 };
 
 /** The mark a key stands for. */
 export const kindOfKey = (key: string): MarkKind | null =>
   keys[key.toLowerCase()] ?? null;
-
-/** Whether the page turns to the next photo after a mark of this kind. */
-export const turnsPage = (kind: MarkKind): boolean =>
-  kind === 'keep' || kind === 'leave-out';

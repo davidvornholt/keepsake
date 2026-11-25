@@ -1,8 +1,9 @@
 import type { Day, Index } from '../data/derive.ts';
 import { dayAndMonth, dayAndShortMonth, weekdayOf } from '../data/format.ts';
 import { chosenWords } from '../data/words.ts';
+import { pilesWords } from '../sheet/content.ts';
 
-// The days of the shoot as one line: each as wide as the photos taken on it,
+// The days of the shoot as one line: each as wide as what was taken on it,
 // lit as far as they went into the album. A day that is pressed is the only
 // one on the table.
 
@@ -12,9 +13,8 @@ const least = '2.75rem';
 const titleOf = (index: Index, day: Day): string =>
   [
     `${weekdayOf(day.date)}, ${dayAndMonth(day.date)}`,
-    `${day.taken} taken`,
+    ...pilesWords(day.piles, day.taken),
     ...chosenWords(index, day),
-    `${day.moments} moments`,
     ...(day.edited > 0 ? [`${day.edited} edited`] : []),
   ].join(' · ');
 
@@ -58,7 +58,7 @@ const DayButton = ({
       <rect
         className="fill-lamp"
         height="1"
-        width={(whole * (day.inAlbum + day.picked)) / Math.max(1, day.taken)}
+        width={(whole * (day.inAlbum + day.picked)) / Math.max(1, day.piles)}
       />
     </svg>
   </button>
@@ -81,7 +81,7 @@ export const Days = ({
       // Each day is as wide as the photos taken on it, which no class knows.
       list?.style.setProperty(
         'grid-template-columns',
-        index.days.map(({ taken }) => `minmax(${least}, ${taken}fr)`).join(' '),
+        index.days.map(({ piles }) => `minmax(${least}, ${piles}fr)`).join(' '),
       );
     }}
   >

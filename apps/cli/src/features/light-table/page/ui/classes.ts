@@ -31,3 +31,7 @@ export const chrome =
 /** One of a few choices in a row. The chosen one is lit, with a line under it. */
 export const tab =
   'type-label relative h-10 whitespace-nowrap px-2.5 text-quiet text-sm transition-colors duration-150 after:absolute after:inset-x-2.5 after:bottom-1.5 after:h-0.5 after:origin-left after:scale-x-0 after:bg-lamp after:transition-transform after:duration-200 hover:text-lamp aria-pressed:text-lamp aria-pressed:after:scale-x-100';
+
+/** A line to type in. */
+export const field =
+  'h-11 w-full min-w-0 rounded-[3px] border border-rule bg-transparent px-3.5 text-[1.0625rem] text-lamp transition-colors duration-150 placeholder:text-quiet hover:border-quiet focus-visible:border-lamp';

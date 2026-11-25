@@ -1,22 +1,25 @@
-import { reveal, zoomTo } from './arrange.ts';
+import { reveal } from './arrange.ts';
 import type { Engine } from './engine.ts';
 import { type Direction, nearestStaying, neighbour } from './find.ts';
 import {
   type Anchor,
-  anchorAt,
   type Content,
   frameLimits,
+  type Held,
+  heldAt,
   inSight,
+  stopsFor,
   topOf,
 } from './table.ts';
-import { frameOfShare, shareOfFrame, zoomStep } from './zoom.ts';
+import { frameOfShare, shareOfFrame, stopsPerPress } from './zoom.ts';
+import { letGo, stopAhead, zoomByHand, zoomToStop } from './zooming.ts';
 
 // What the keyboard and the controls of the bar do to the table: move the
 // cursor from frame to frame, and change the size of the frames.
 
 /** The frame in the middle of what is seen, which stays there while the frames change size. */
-const middleOf = ({ table }: Engine) =>
-  anchorAt(table, table.size.width / 2, (topOf(table) + table.size.height) / 2);
+const middleOf = ({ table }: Engine): Held | null =>
+  heldAt(table, table.size.width / 2, (topOf(table) + table.size.height) / 2);
 
 /**
  * What keeps its place when other frames are laid on the table: the frame
@@ -36,20 +39,23 @@ export const stayingAnchor = (
     content.flatMap(({ frames }) => frames.map((frame) => frame.id)),
   );
   const id = nearestStaying(table.layout.order, middle.id, staying);
-  if (id === null || id === middle.id) {
-    return id === null ? null : middle;
+  if (id === null) {
+    return null;
   }
   const half = 0.5;
-  return { id, within: half, screenY: middle.screenY };
+  return id === middle.id
+    ? { id, within: middle.within, screenY: middle.y }
+    : { id, within: half, screenY: middle.y };
 };
 
 /** The frame the keyboard starts from: the first one that is fully in sight. */
 const firstInSight = ({ table }: Engine): string | null => {
-  const top = table.scroller.value + topOf(table);
-  const seen = inSight(table)
-    .filter((placed) => placed.y.value >= top)
-    .map((placed) => placed.frame.id);
-  const known = new Set(seen);
+  const top = topOf(table);
+  const known = new Set(
+    inSight(table)
+      .filter(({ y }) => y >= top)
+      .map(({ placed }) => placed.frame.id),
+  );
   return table.layout.order.find((id) => known.has(id)) ?? null;
 };
 
@@ -83,19 +89,40 @@ export const pointedAt = ({ table, state }: Engine): string | null => {
 /** Makes the frames larger or smaller by a step, or as small as they get. */
 export const zoomBy = (engine: Engine, direction: -1 | 0 | 1): void => {
   const { table } = engine;
-  const from = table.frame.target;
-  const next = direction === 0 ? 'fit' : from * zoomStep ** direction;
-  zoomTo(table, next, middleOf(engine));
-  engine.request();
+  const middle = middleOf(engine);
+  if (middle !== null) {
+    const from = table.zooming === null ? table.stop : stopAhead(table);
+    const next = direction === 0 ? 0 : from + direction * stopsPerPress;
+    zoomToStop(table, middle, next, true);
+    engine.request();
+  }
 };
 
-/** Sets the size of the frames from a place on the slider. */
+/** Sets the size of the frames from a place on the slider, while it is held. */
 export const zoomToShare = (engine: Engine, share: number): void => {
   const { table } = engine;
-  zoomTo(table, frameOfShare(share, frameLimits(table)), middleOf(engine));
+  const middle = middleOf(engine);
+  if (middle !== null) {
+    zoomByHand(table, middle, frameOfShare(share, frameLimits(table)), true);
+    engine.request();
+  }
+};
+
+/** The slider was let go. */
+export const zoomLetGo = (engine: Engine): void => {
+  letGo(engine.table);
   engine.request();
 };
 
 /** Where the slider stands for the size the frames have now. */
 export const zoomShare = ({ table }: Engine): number =>
-  shareOfFrame(table.frame.target, frameLimits(table));
+  shareOfFrame(table.frame.value, frameLimits(table));
+
+/** The height of frame the table rests at or is on its way to, for keeping. */
+export const zoomKept = ({ table }: Engine): number | 'fit' => {
+  if (table.zooming === null) {
+    return table.zoom;
+  }
+  const stop = stopAhead(table);
+  return stop === 0 ? 'fit' : (stopsFor(table)[stop] ?? 'fit');
+};

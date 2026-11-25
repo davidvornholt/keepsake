@@ -1,16 +1,23 @@
-import type { Box } from '../../contract.ts';
-import { isAboutFavorites } from '../data/derive.ts';
-import { glyphOf, seedOf } from '../marks/glyphs.ts';
-import { lookOf, seedTextOf } from '../marks/kinds.ts';
-import { printCorners } from '../marks/print.ts';
-import { sketchWax, stampWax } from '../marks/wax.ts';
-import { clamp, mix } from '../motion/spring.ts';
+import { seedTextOf } from '../marks/kinds.ts';
+import { mix } from '../motion/spring.ts';
 import { colorOf } from '../ui/theme.ts';
 import type { Rect } from './layout.ts';
+import { type Drawn, drawMarks } from './overlay-marks.ts';
+import {
+  countFrom,
+  cropFrom,
+  drawCount,
+  drawCrop,
+  drawPrint,
+  printFont,
+} from './overlay-print.ts';
+import { pileIn } from './pile.ts';
 import {
   type Content,
   type Frame,
+  ghostInSight,
   inSight,
+  type Seen,
   type Table,
   topOf,
 } from './table.ts';
@@ -23,6 +30,8 @@ export type OverlayState = {
   hidden: string | null;
   cursor: string | null;
   hover: string | null;
+  /** The pile whose corner the pointer is on. */
+  hoverPile: string | null;
   /** Whether the keyboard is in use, so the cursor is shown. */
   isCursorShown: boolean;
   /** When each mark was made, so that new ones are drawn by hand. */
@@ -34,6 +43,7 @@ export const makeOverlayState = (): OverlayState => ({
   hidden: null,
   cursor: null,
   hover: null,
+  hoverPile: null,
   isCursorShown: false,
   madeAt: new Map(),
   hasContent: false,
@@ -46,10 +56,10 @@ const openMarks = (content: Content): ReadonlySet<string> =>
   new Set(
     content
       .flatMap(({ frames }) => frames)
-      .flatMap(({ id, marks }) =>
+      .flatMap(({ marks }) =>
         marks
           .filter(({ state }) => state === 'open')
-          .map(({ mark }) => seedTextOf(id, mark.kind)),
+          .map(({ mark }) => seedTextOf(mark.photo, mark.kind)),
       ),
   );
 
@@ -72,207 +82,7 @@ export const noteMarks = (
   }
   state.hasContent = state.hasContent || content.length > 0;
 };
-
-/** How long the hand takes to draw a mark, in milliseconds. */
-export const drawingTime = 340;
-
-const markShare = 0.74;
-/** From this size on a mark grows more slowly than its frame. */
-const markSteady = 64;
-const markGrowth = 0.22;
-const leastMark = 9;
-/** Over this many pixels a mark moves from the middle to a corner. */
-const cornerRange = 140;
-const cornerInset = 0.06;
-
-type Square = { readonly x: number; readonly y: number; readonly size: number };
-
-/** Where a mark goes: all over a small frame, in the corner of a large one. */
-const markPlace = ({ x, y, w, h }: Rect): Square => {
-  const side = Math.min(w, h);
-  const size = Math.max(
-    leastMark,
-    side < markSteady
-      ? side * markShare
-      : markSteady * markShare + (side - markSteady) * markGrowth,
-  );
-  const toCorner = clamp((side - markSteady) / cornerRange, 0, 1);
-  const inset = side * cornerInset;
-  return {
-    x: mix(x + (w - size) / 2, x + inset, toCorner),
-    y: mix(y + (h - size) / 2, y + h - size - inset, toCorner),
-    size,
-  };
-};
-
-const starShare = 0.24;
-const leastStar = 7;
-const mostStar = 26;
-const starInset = 0.25;
-
-/**
- * Where the star of a favourite goes: the upper right corner. While its frame
- * slides under the heading of its sheet the star stays below it, whole, for
- * as long as the frame has room for it.
- */
-const starPlace = (rect: Rect, ceiling: number): Square => {
-  const size = clamp(Math.min(rect.w, rect.h) * starShare, leastStar, mostStar);
-  const inset = size * starInset;
-  const lowest = rect.y + rect.h - size - inset;
-  return {
-    x: rect.x + rect.w - size - inset,
-    y: Math.min(Math.max(rect.y, ceiling) + inset, lowest),
-    size,
-  };
-};
-
-const dotShare = 0.15;
-const leastDot = 3;
-const mostDot = 7;
-const dotInset = 1.6;
-const dotEdge = 1.5;
-const ringWidth = 0.4;
-const leastRing = 1.25;
-const fullTurn = Math.PI * 2;
-
 type Pencil = CanvasRenderingContext2D;
-
-type Drawn = {
-  readonly pencil: Pencil;
-  readonly state: OverlayState;
-  readonly now: number;
-  readonly scale: number;
-  /** Where the heading of a sheet ends when it stays in sight. */
-  readonly ceiling: number;
-};
-
-/** The blue pencil: a dot for an answer to look at, a ring for a mark an agent has. */
-const drawBlue = (pencil: Pencil, rect: Rect, isAnswered: boolean) => {
-  const radius = clamp(Math.min(rect.w, rect.h) * dotShare, leastDot, mostDot);
-  const x = rect.x + rect.w - radius * dotInset;
-  const y = rect.y + rect.h - radius * dotInset;
-  pencil.beginPath();
-  pencil.arc(x, y, radius + dotEdge, 0, fullTurn);
-  pencil.fillStyle = colorOf('--color-shade');
-  pencil.fill();
-  pencil.beginPath();
-  pencil.arc(x, y, radius, 0, fullTurn);
-  if (isAnswered) {
-    pencil.fillStyle = colorOf('--color-pencil-blue');
-    pencil.fill();
-  } else {
-    pencil.lineWidth = Math.max(leastRing, radius * ringWidth);
-    pencil.strokeStyle = colorOf('--color-pencil-blue');
-    pencil.stroke();
-  }
-};
-
-/** Draws one mark of a frame. Says whether the hand is still drawing it. */
-const drawMark = (
-  { pencil, state, now, scale, ceiling }: Drawn,
-  rect: Rect,
-  shown: Frame['marks'][number] & { readonly photo: string },
-): boolean => {
-  const { kind } = shown.mark;
-  const look = lookOf[kind];
-  const key = seedTextOf(shown.photo, kind);
-  const stamp = { shape: look.shape, seed: seedOf(key), wax: look.wax };
-  const place = isAboutFavorites(kind)
-    ? starPlace(rect, ceiling)
-    : markPlace(rect);
-  if (shown.state === 'news') {
-    drawBlue(pencil, rect, true);
-    return false;
-  }
-  const progress = (now - (state.madeAt.get(key) ?? longAgo)) / drawingTime;
-  if (shown.state === 'open' && progress < 1) {
-    sketchWax(
-      pencil,
-      glyphOf(stamp.shape, stamp.seed),
-      { x: place.x, y: place.y, w: place.size, h: place.size },
-      { color: colorOf(`--color-${look.wax}`), progress, scale },
-    );
-    return true;
-  }
-  stampWax(pencil, stamp, place, scale);
-  if (shown.state === 'waiting') {
-    drawBlue(pencil, rect, false);
-  }
-  return false;
-};
-
-/** Draws the marks of one frame. Says whether one is still being drawn. */
-const drawMarks = (drawn: Drawn, frame: Frame, rect: Rect): boolean => {
-  let isDrawing = false;
-  for (const shown of frame.marks) {
-    isDrawing =
-      drawMark(drawn, rect, { ...shown, photo: frame.id }) || isDrawing;
-  }
-  const hasStar = frame.marks.some(({ mark }) => isAboutFavorites(mark.kind));
-  if (frame.isFavorite && !hasStar) {
-    const seed = seedOf(seedTextOf(frame.id, 'favorite'));
-    stampWax(
-      drawn.pencil,
-      { shape: 'star', seed, wax: 'wax-white' },
-      starPlace(rect, drawn.ceiling),
-      drawn.scale,
-    );
-  }
-  return isDrawing;
-};
-
-/** From this height on a frame shows what the finished photo keeps of it. */
-const cropFrom = 52;
-const cornerShare = 0.16;
-const leastCorner = 3;
-const mostCorner = 13;
-const cropLine = 1.25;
-const cropEdge = 3;
-
-/** Crop marks at the corners of what the finished photo shows. */
-const drawCrop = (pencil: Pencil, rect: Rect, crop: Box) => {
-  const left = rect.x + crop.left * rect.w;
-  const right = rect.x + crop.right * rect.w;
-  const top = rect.y + crop.top * rect.h;
-  const bottom = rect.y + crop.bottom * rect.h;
-  const arm = clamp(
-    Math.min(right - left, bottom - top) * cornerShare,
-    leastCorner,
-    mostCorner,
-  );
-  printCorners(
-    pencil,
-    { x: left, y: top, w: right - left, h: bottom - top },
-    { arm, line: cropLine, edge: cropEdge },
-  );
-};
-
-const printSize = 10;
-const printDrop = 8;
-const printSpace = 7;
-/** A frame narrower than this has room for its number only. */
-const timeFrom = 78;
-const scoreFrom = 120;
-const numberLength = 4;
-
-/** The number, time and score of a frame, printed below it. */
-const drawPrint = (pencil: Pencil, frame: Frame, rect: Rect, gap: number) => {
-  const y = rect.y + rect.h + gap + printDrop;
-  pencil.textBaseline = 'middle';
-  pencil.textAlign = 'left';
-  pencil.fillStyle = colorOf(frame.isLit ? '--color-print' : '--color-quiet');
-  const number = String(frame.number).padStart(numberLength, '0');
-  pencil.fillText(number, rect.x, y);
-  pencil.fillStyle = colorOf('--color-quiet');
-  if (rect.w >= timeFrom) {
-    const after = pencil.measureText(number).width + printSpace;
-    pencil.fillText(frame.time, rect.x + after, y);
-  }
-  if (frame.score !== null && rect.w >= scoreFrom) {
-    pencil.textAlign = 'right';
-    pencil.fillText(`${frame.score}/10`, rect.x + rect.w, y);
-  }
-};
 
 const outline = (pencil: Pencil, rect: Rect, grow: number) => {
   pencil.strokeRect(
@@ -290,7 +100,8 @@ const cursorEdge = 4;
 
 /** The frame under the pointer, the one the keys act on, and those an agent works on. */
 const drawOutlines = (
-  { pencil, state, now }: Drawn,
+  { pencil, now }: Drawn,
+  state: OverlayState,
   frame: Frame,
   rect: Rect,
 ): boolean => {
@@ -318,6 +129,75 @@ const drawOutlines = (
   return frame.isWorkedOn;
 };
 
+/** How the frames of one layout are drawn: how clearly, and with what below them. */
+type Look = {
+  readonly alpha: number;
+  readonly gap: number;
+  readonly hasEdgePrint: boolean;
+};
+
+/** How many lie in a pile, on the photo in front of it, where there is room to say so. */
+const drawPile = (
+  { pencil, scale }: Drawn,
+  state: OverlayState,
+  frame: Frame,
+  face: Rect,
+) => {
+  const isOpen = frame.opened?.isFront === true;
+  if ((frame.pile > 1 || isOpen) && face.h >= countFrom) {
+    drawCount(
+      pencil,
+      face,
+      {
+        count: frame.opened?.count ?? frame.pile,
+        isOpen,
+        isHot: state.hoverPile === frame.id,
+      },
+      scale,
+    );
+  }
+};
+
+/** Draws what lies on one frame. Says whether it still changes. */
+const drawFrame = (
+  drawn: Drawn,
+  state: OverlayState,
+  { placed, ...whole }: Seen,
+  look: Look,
+): boolean => {
+  const { pencil } = drawn;
+  const { frame } = placed;
+  const { face } = pileIn(whole, frame.pile);
+  if (frame.crop !== null && face.h >= cropFrom) {
+    drawCrop(pencil, face, frame.crop);
+  }
+  const isDrawing = drawMarks(drawn, frame, face);
+  drawPile(drawn, state, frame, face);
+  if (look.hasEdgePrint && !placed.isLeaving) {
+    drawPrint(pencil, frame, whole, look.gap);
+  }
+  const isPulsing = drawOutlines(drawn, state, frame, whole);
+  return isDrawing || isPulsing;
+};
+
+/** Draws what lies on the frames of one layout. Says whether it still changes. */
+const drawFrames = (
+  drawn: Drawn,
+  state: OverlayState,
+  seen: ReadonlyArray<Seen>,
+  look: Look,
+): boolean => {
+  let isChanging = false;
+  for (const one of seen) {
+    const alpha = one.placed.alpha.value * look.alpha;
+    if (one.placed.frame.id !== state.hidden && alpha > 0) {
+      drawn.pencil.globalAlpha = alpha;
+      isChanging = drawFrame(drawn, state, one, look) || isChanging;
+    }
+  }
+  return isChanging;
+};
+
 /** Draws everything that lies on the frames. Says whether it still changes. */
 export const drawOverlay = (
   pencil: Pencil,
@@ -327,38 +207,27 @@ export const drawOverlay = (
 ): boolean => {
   const { width, height } = table.size;
   const { measure } = table.layout;
-  const scroll = table.scroller.value;
   const lights = table.lights.value;
   pencil.setTransform(scale, 0, 0, scale, 0, 0);
   pencil.clearRect(0, 0, width, height);
-  pencil.font = `600 ${printSize}px "Archivo Variable", sans-serif`;
+  pencil.font = printFont;
   pencil.fontStretch = 'condensed';
   pencil.letterSpacing = '0.6px';
   const ceiling = topOf(table) + measure.head;
-  const drawn: Drawn = { pencil, state, now, scale, ceiling };
-  let isChanging = false;
-  for (const placed of inSight(table)) {
-    const { frame } = placed;
-    const alpha = placed.alpha.value * lights;
-    if (frame.id !== state.hidden && alpha > 0) {
-      const rect = {
-        x: placed.x.value,
-        y: placed.y.value - scroll,
-        w: placed.w.value,
-        h: placed.h.value,
-      };
-      pencil.globalAlpha = alpha;
-      if (frame.crop !== null && rect.h >= cropFrom) {
-        drawCrop(pencil, rect, frame.crop);
-      }
-      const isDrawing = drawMarks(drawn, frame, rect);
-      if (measure.hasEdgePrint && !placed.isLeaving) {
-        drawPrint(pencil, frame, rect, measure.gap);
-      }
-      const isPulsing = drawOutlines(drawn, frame, rect);
-      isChanging = isChanging || isDrawing || isPulsing;
-    }
+  const drawn: Drawn = { pencil, madeAt: state.madeAt, now, scale, ceiling };
+  const { ghost, view } = table;
+  if (ghost !== null) {
+    drawFrames(drawn, state, ghostInSight(table), {
+      alpha: lights * (1 - table.fade),
+      gap: ghost.layout.measure.gap * ghost.view.k,
+      hasEdgePrint: ghost.layout.measure.hasEdgePrint,
+    });
   }
+  const isChanging = drawFrames(drawn, state, inSight(table), {
+    alpha: lights * (ghost === null ? 1 : table.fade),
+    gap: measure.gap * view.k,
+    hasEdgePrint: measure.hasEdgePrint,
+  });
   pencil.globalAlpha = 1;
   return isChanging;
 };

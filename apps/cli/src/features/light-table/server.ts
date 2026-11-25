@@ -2,16 +2,21 @@ import process from 'node:process';
 import { Effect, type FileSystem, type Path, Semaphore } from 'effect';
 import type { ChildProcessSpawner } from 'effect/process';
 import { InvalidInput } from '../../shared/errors/errors.ts';
-import { makeAnswers } from './answers.ts';
+import { type Has, makeAnswers } from './answers.ts';
 import { eventsOf } from './events.ts';
+import { makeFolders } from './folders.ts';
 // biome-ignore lint/correctness/noUnresolvedImports: Bun turns an imported page into a bundle to serve
 import page from './page/index.html';
-import { makeShoots, type Shoots } from './shoots.ts';
+import { makePreparations } from './preparation.ts';
+import { makeShoots } from './shoots.ts';
 
 const badRequest = 400;
 const forbidden = 403;
 const notFound = 404;
 const failed = 500;
+
+/** How many pictures are made smaller at once. */
+const atOnce = 6;
 
 /** How long an answer may take, in seconds: the pictures are new at first. */
 const patience = 240;
@@ -20,6 +25,12 @@ type Serving = {
   readonly port: number;
   /** Where else the page is reached, when something passes it on from there. */
   readonly address: URL | undefined;
+  /** The folders that the owner's photos are in, to make albums of. */
+  readonly photos: ReadonlyArray<string>;
+  /** The program that starts an agent, if there is one. */
+  readonly agent: string | undefined;
+  /** How keepsake itself is started. */
+  readonly keepsake: ReadonlyArray<string>;
 };
 
 type Needed =
@@ -60,10 +71,11 @@ const failure = ({ _tag, message }: Failure) =>
   Response.json({ error: message }, { status: statuses.get(_tag) ?? failed });
 
 const routesOf = Effect.fn('routesOf')(function* (
-  shoots: Shoots,
+  has: Has,
   address: URL | undefined,
 ) {
-  const answers = makeAnswers(shoots);
+  const { shoots } = has;
+  const answers = makeAnswers(has);
   const run = Effect.runPromiseWith(yield* Effect.context<Needed>());
   // One change at a time, since some read a file and write it again.
   const writing = yield* Semaphore.make(1);
@@ -74,10 +86,25 @@ const routesOf = Effect.fn('routesOf')(function* (
   const ours = toThePage(address);
   // biome-ignore-start lint/style/useNamingConvention: Bun's names for the HTTP methods
   return {
-    '/api/shoots': { GET: ours(() => answer(answers.list)) },
+    '/api/folders': { GET: ours(() => answer(answers.folders)) },
+    '/api/folders/look': {
+      GET: ours((request) => answer(answers.look(request))),
+    },
+    '/api/shoots': {
+      GET: ours(() => answer(answers.list)),
+      POST: ours((request) => change(answers.newShoot(request))),
+    },
     '/api/shoots/:shoot': {
       GET: ours<'/api/shoots/:shoot'>((request) =>
         answer(answers.shoot(request.params.shoot, request)),
+      ),
+      DELETE: ours<'/api/shoots/:shoot'>(({ params }) =>
+        change(answers.forget(params.shoot)),
+      ),
+    },
+    '/api/shoots/:shoot/prepare': {
+      POST: ours<'/api/shoots/:shoot/prepare'>(({ params }) =>
+        change(answers.prepare(params.shoot)),
       ),
     },
     '/api/shoots/:shoot/events': {
@@ -103,8 +130,18 @@ const routesOf = Effect.fn('routesOf')(function* (
       ),
     },
     '/api/shoots/:shoot/hand-over': {
-      POST: ours<'/api/shoots/:shoot/hand-over'>(({ params }) =>
-        change(answers.handOver(params.shoot)),
+      POST: ours<'/api/shoots/:shoot/hand-over'>((request) =>
+        change(answers.handOver(request.params.shoot, request)),
+      ),
+    },
+    '/api/shoots/:shoot/agent': {
+      POST: ours<'/api/shoots/:shoot/agent'>(({ params }) =>
+        change(answers.agent(params.shoot)),
+      ),
+    },
+    '/api/shoots/:shoot/favorites': {
+      PUT: ours<'/api/shoots/:shoot/favorites'>((request) =>
+        change(answers.favorite(request.params.shoot, request)),
       ),
     },
     '/api/shoots/:shoot/labels': {
@@ -135,10 +172,20 @@ const routesOf = Effect.fn('routesOf')(function* (
 export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   port,
   address,
+  photos,
+  agent,
+  keepsake,
 }: Serving) {
-  const shoots = yield* makeShoots();
-  const routes = yield* routesOf(shoots, address);
+  const workers = yield* Semaphore.make(atOnce);
+  const shoots = yield* makeShoots(agent !== undefined, workers);
+  const preparations = yield* makePreparations(keepsake);
+  const folders = yield* makeFolders(photos);
+  const routes = yield* routesOf(
+    { shoots, folders, preparations, workers, agent },
+    address,
+  );
   yield* Effect.forkScoped(shoots.prepare);
+  yield* preparations.resume;
   return yield* Effect.acquireRelease(
     Effect.try({
       try: () =>

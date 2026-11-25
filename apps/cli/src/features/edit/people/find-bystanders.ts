@@ -3,7 +3,7 @@ import { coverage, tidyBox, wholePicture } from '../../../shared/boxes.ts';
 import { Box, type Person } from '../../../shared/domain.ts';
 import { Vision } from '../../../shared/vision.ts';
 import { inParts, inPhoto } from '../parts.ts';
-import { withoutRemoved } from '../removals.ts';
+import { withoutUnwanted } from '../removals.ts';
 import { shareOn } from './outline.ts';
 
 /** Nobody can tell whether somebody this small, in pixels, is drawn right. */
@@ -36,6 +36,7 @@ export const findBystanders = Effect.fn('findBystanders')(function* (
   file: string,
   kept: ReadonlyArray<Person>,
   removed: ReadonlyArray<string>,
+  wish: string | null,
 ) {
   const vision = yield* Vision;
   const { size, parts, pieces } = yield* inParts(file);
@@ -43,7 +44,7 @@ export const findBystanders = Effect.fn('findBystanders')(function* (
     role,
     name: 'everyone',
     schema: Everyone,
-    pieces: [...pieces, ...withoutRemoved(removed), question],
+    pieces: [...pieces, ...withoutUnwanted(removed, wish), question],
   });
   return everyone
     .flatMap(({ part, box }): Array<Box> => {

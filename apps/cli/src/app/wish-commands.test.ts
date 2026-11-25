@@ -53,7 +53,7 @@ describe('keepsake edit, with something to remove', () => {
     expect(fakeModels.edits[1]?.prompt).toContain(
       'this is what I want: Remove the chair.',
     );
-    for (const name of ['removals', 'assessment'] as const) {
+    for (const name of ['removals', 'everyone', 'assessment'] as const) {
       expect(asked(name)[0]?.texts.join(' ')).not.toContain('the chair”');
       expect(asked(name)[1]?.texts.join(' ')).toContain('“Remove the chair”');
     }

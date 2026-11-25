@@ -1,4 +1,10 @@
-import type { Activity, Mark, ShootView } from '../../contract.ts';
+import type {
+  Activity,
+  Agent,
+  Mark,
+  Preparation,
+  ShootView,
+} from '../../contract.ts';
 import { type Index, indexOf } from './derive.ts';
 
 // What the page knows of a shoot at this moment, and who is told when it
@@ -8,13 +14,14 @@ export type ShootState = {
   readonly status: 'loading' | 'ready' | 'missing' | 'failed';
   readonly index: Index | null;
   readonly activity: Activity | null;
-  readonly agentWaitsSince: string | null;
+  readonly preparation: Preparation | null;
+  readonly agent: Agent;
   readonly isConnected: boolean;
   /** What went wrong last, until it is dismissed. */
   readonly problem: string | null;
   /** Something worth knowing for a moment, such as why a key did nothing. */
   readonly hint: string | null;
-  /** The mark that Undo takes back or brings back, if any. */
+  /** What Undo takes back or brings back, if anything. */
   readonly undoable: Undo | null;
 };
 
@@ -24,13 +31,20 @@ export type Undo =
       readonly mark: Mark;
       readonly replaced: Mark | null;
     }
-  | { readonly did: 'took-back'; readonly mark: Mark };
+  | { readonly did: 'took-back'; readonly mark: Mark }
+  | {
+      readonly did: 'favorite';
+      readonly photo: string;
+      /** Whether it was a favorite before. */
+      readonly was: boolean;
+    };
 
 const initial: ShootState = {
   status: 'loading',
   index: null,
   activity: null,
-  agentWaitsSince: null,
+  preparation: null,
+  agent: { waitsSince: null, canStart: false, started: null },
   isConnected: true,
   problem: null,
   hint: null,
