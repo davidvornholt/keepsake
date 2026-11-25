@@ -103,6 +103,17 @@ export const localDay = (iso: string): string => {
     : `${at.getDate()} ${months[at.getMonth()] ?? ''}`;
 };
 
+/**
+ * A moment by the clock of this device, written as the camera writes its
+ * own: 2026-03-30T18:04. Empty when it isn't a moment.
+ */
+export const localStamp = (iso: string): string => {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime())
+    ? ''
+    : `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+};
+
 const tenth = 10;
 
 const rounded = (value: number): number => Math.round(value * tenth) / tenth;
@@ -133,3 +144,9 @@ export const count = (many: number, one: string, several = `${one}s`): string =>
 
 /** The name the camera gave the file, without the folders before it. */
 export const fileName = (id: string): string => id.split('/').at(-1) ?? id;
+
+const numberLength = 4;
+
+/** The number along the edge of the film: 0007. */
+export const frameNumber = (number: number): string =>
+  String(number).padStart(numberLength, '0');

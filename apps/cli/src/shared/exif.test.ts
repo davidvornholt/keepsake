@@ -1,7 +1,7 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
 import { describe, expect, it } from 'bun:test';
 import { cameraTime, foundPhotos } from './exif.ts';
-import { nameFor } from './scan.ts';
+import { nameFor } from './shoot-names.ts';
 
 describe('cameraTime', () => {
   it.each([

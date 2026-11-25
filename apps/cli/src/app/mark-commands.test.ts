@@ -107,6 +107,28 @@ describe('keepsake marks', () => {
     expect(existsSync(shootFile('waiting.json'))).toBe(false);
   });
 
+  it('says that the album is ordered, until it is made', async () => {
+    await pickLisbon();
+    await editLisbon('A1');
+    await Bun.write(
+      shootFile('hand-overs.json'),
+      JSON.stringify([
+        { at: '2026-04-01T11:00:00Z', dollars: 2.25, album: true },
+      ]),
+    );
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 2.25,
+      album: { at: '2026-04-01T11:00:00Z', photos: 3, edited: 1 },
+      marks: [],
+    });
+    await editLisbon();
+    await runOk('publish', 'lisbon');
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 0,
+      album: null,
+    });
+  });
+
   it('waits only for new ones', async () => {
     await pickLisbon();
     const failure = await failureOf('marks', 'lisbon', '--wait', '--all');

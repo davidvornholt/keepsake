@@ -1,19 +1,31 @@
-import { type RefObject, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  type RefObject,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import type { Box, PhotoView, Picture } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
-import { counterpartOf } from '../data/derive.ts';
-import { standingOf } from '../data/words.ts';
-import { isChosen } from '../marks/act.ts';
+import { clockOf, dayAndMonth, dayOf, frameNumber } from '../data/format.ts';
 import { chrome } from '../ui/classes.ts';
 import { type Keys, useKeys } from '../ui/keys.ts';
 import { useHeight } from '../ui/use-height.ts';
 import { Below, Whole } from './below.tsx';
 import { type BesideHandle, Pair } from './beside.tsx';
+import { Boxes } from './boxes.tsx';
 import { Compare, type Version } from './compare.tsx';
 import { Info } from './info.tsx';
-import { insetOf, isWide, type Rooms, roomsOf, type Seen } from './room.ts';
-import { Stage } from './stage.tsx';
+import { Neighbours } from './neighbours.tsx';
+import { insetOf, isWide, type Rooms } from './room.ts';
+import {
+  type FrameOnTable,
+  Stage,
+  type StageHandle,
+  type Still,
+} from './stage.tsx';
 import { Strip } from './strip.tsx';
+import { useFollowing } from './use-following.ts';
 import { useInk } from './use-ink.ts';
 import {
   type Around,
@@ -26,13 +38,18 @@ import {
   useNeighbours,
   useVersion,
 } from './use-photo.ts';
-import { wordOf } from './word.ts';
+import { useRooms } from './use-rooms.ts';
 
 // One photo, looked at: the picture itself, what is known about it beside
 // it, and the owner's pencils below.
 
-const wordHeight = 64;
-const percent = 100;
+export type BodyHandle = {
+  /** Lets the photo travel back to its frame of the table. Nothing stops it then. */
+  readonly leave: (to: () => FrameOnTable | null, then: () => void) => void;
+  /** The pictures as they are on the screen, for when another photo takes over. */
+  readonly stills: () => ReadonlyArray<Still>;
+};
+
 const noKeys: Keys = [];
 
 const lookOf = (version: Version, isWiping: boolean) => {
@@ -60,12 +77,16 @@ type Doing = {
   /** Whether the photo is looked at from close. */
   readonly isClose: boolean;
   readonly onLabel: () => void;
+  readonly onWhole: () => void;
 };
 
 /** What the keys do: nothing on the way back, less while writing, more from close. */
 const useBodyKeys = (around: Around, doing: Doing) => {
   const { photo, shown, composing, marking, hasAnswer, isClose } = doing;
   const isComposing = composing.draft !== null;
+  const chosen = composing.selected;
+  const removeChosen =
+    chosen === null ? undefined : () => composing.removeBox(chosen);
   const whileComposing: Keys = [
     [
       'Escape',
@@ -79,16 +100,23 @@ const useBodyKeys = (around: Around, doing: Doing) => {
     ],
   ];
   const looking = keysOf(around, {
+    photo,
     shown: photo.edit === null ? null : shown,
     marking,
     hasAnswer,
     onLabel: doing.onLabel,
+    onZoom: doing.onWhole,
   });
   // From close, Escape first leads back to the whole photo.
-  const whole: Keys = [['Escape', () => around.stageRef.current?.toggleZoom()]];
+  const whole: Keys = [['Escape', doing.onWhole]];
   // While a change is written no letter marks the photo, wherever the keyboard is.
+  const onBoxes: Keys = [
+    ['ctrl+z', composing.undoBox],
+    ['Delete', removeChosen],
+    ['Backspace', removeChosen],
+  ];
   const awake = isComposing
-    ? whileComposing
+    ? [...whileComposing, ...onBoxes]
     : [...(isClose ? whole : noKeys), ...looking];
   // On its way back to the table the photo leaves the keys to the table.
   useKeys(
@@ -126,8 +154,11 @@ const Above = ({
       place={at < 0 ? '' : around.place}
     >
       {photo.edit === null ? (
-        <p className="type-label truncate px-2 text-print">
-          {standingOf(index, photo).text}
+        <p className="type-edge tabular truncate px-2 text-quiet">
+          <span className="mr-2.5 text-print">
+            {frameNumber(index.numberOf.get(photo.id) ?? 0)}
+          </span>
+          {dayAndMonth(dayOf(photo.takenAt))}, {clockOf(photo.takenAt)}
         </p>
       ) : (
         <Compare
@@ -142,7 +173,7 @@ const Above = ({
   );
 };
 
-/** The photo of the album that this one is measured against, if it has one. */
+/** The photo in front of this one, which it is measured against, if there is one. */
 const Other = ({
   photo,
   other,
@@ -171,44 +202,103 @@ const Other = ({
   );
 };
 
+/** The boxes of the change that is being written, to be taken hold of. */
+const Drawn = ({
+  composing,
+  following,
+}: {
+  readonly composing: Composing;
+  readonly following: ReturnType<typeof useFollowing>;
+}) =>
+  composing.draft === null ? null : (
+    <Boxes
+      boxes={composing.draft.boxes}
+      handleRef={following.boxesRef}
+      initial={following.seenRef.current?.edit ?? null}
+      onBox={composing.setBox}
+      onRecord={composing.record}
+      onRemove={composing.removeBox}
+      onSelect={composing.select}
+      onUndo={composing.undoBox}
+      selected={composing.selected}
+    />
+  );
+
+/** What is known about the photo: beside it, or over it on a small screen. */
+const About = ({
+  isShown,
+  isWide: wide,
+  children,
+}: {
+  readonly isShown: boolean;
+  readonly isWide: boolean;
+  readonly children: ReactNode;
+}) => (
+  <aside
+    aria-label="About this photo"
+    className={`${chrome} absolute z-20 overflow-y-auto overscroll-contain bg-dark`}
+    data-about=""
+    data-shown={isShown}
+    data-wide={wide}
+    inert={!isShown}
+  >
+    {children}
+  </aside>
+);
+
+/** What the photo view asks of the photo it shows. */
+const useBodyHandle = (
+  handleRef: RefObject<BodyHandle | null>,
+  stageRef: RefObject<StageHandle | null>,
+  besideRef: RefObject<BesideHandle | null>,
+) =>
+  useImperativeHandle(handleRef, () => ({
+    leave: (to, then) => {
+      const stage = stageRef.current;
+      if (stage === null) {
+        then();
+      } else {
+        stage.leave(to, then);
+      }
+    },
+    stills: () =>
+      [stageRef.current?.still(), besideRef.current?.still()].filter(
+        (still) => still !== null && still !== undefined,
+      ),
+  }));
+
 export const Body = ({
   photo,
   around,
+  handleRef,
 }: {
   readonly photo: PhotoView;
   readonly around: Around;
+  readonly handleRef: RefObject<BodyHandle | null>;
 }) => {
-  const { index, state } = useShootContext();
-  const { size, isInfoShown, stageRef } = around;
+  const { index } = useShootContext();
+  const { size, isInfoShown, order, at } = around;
   const shown = useVersion(photo);
   const composing = useComposing(photo);
   const marking = useMarking(photo, around, { shown, composing });
   const [printed, setPrinted] = useState<Box | null>(null);
   const [isClose, setIsClose] = useState(false);
+  const stageRef = useRef<StageHandle | null>(null);
   const labelRef = useRef<HTMLInputElement>(null);
-  const besideRef = useRef<BesideHandle | null>(null);
-  const shareRef = useRef<HTMLSpanElement>(null);
+  const following = useFollowing(around);
   const foot = useHeight<HTMLElement>(0);
-  useNeighbours(around);
+  useNeighbours(around, photo.id);
 
-  const isWorkedOn = state.activity?.photos.includes(photo.id) ?? false;
   const isComposing = composing.draft !== null;
-  const word = wordOf(index, photo, { isWorkedOn, isComposing });
-  const other = isChosen(photo) ? null : counterpartOf(index, photo);
-  const rooms = roomsOf(
-    size,
-    {
-      isInfoShown,
-      isComposing,
-      extra: word === null ? 0 : wordHeight,
-      measured: foot.height,
-    },
-    other !== null,
-  );
+  const { word, other, rooms, roomBeside } = useRooms(photo, around, {
+    isComposing,
+    measured: foot.height,
+  });
   const ink = useInk({ index, photo, draft: composing.draft, printed });
   // The words of a change stay where they are written, on a ground.
   const isAside = isClose && !isComposing;
   const isOnPhoto = isClose && isComposing;
+  const toggleZoom = () => stageRef.current?.toggleZoom();
   useBodyKeys(around, {
     photo,
     shown,
@@ -220,18 +310,22 @@ export const Body = ({
       around.onInfo(true);
       requestAnimationFrame(() => labelRef.current?.focus());
     },
+    onWhole: toggleZoom,
   });
-  const onSeen = (seen: Seen) => {
-    besideRef.current?.follow(seen);
-    if (shareRef.current !== null) {
-      shareRef.current.textContent = `${Math.round(seen.share * percent)} %`;
-    }
-  };
+  useBodyHandle(handleRef, stageRef, following.besideRef);
 
   return (
     <>
+      <Neighbours
+        after={order[at + 1]}
+        before={order[at - 1]}
+        distance={size.width}
+        handleRef={following.neighboursRef}
+        roomOf={roomBeside}
+      />
       <Stage
         clip={isClose && other !== null ? insetOf(rooms.wide, size) : null}
+        entry={around.entry}
         finished={finishedOf(photo, shown.version)}
         from={around.from}
         handleRef={stageRef}
@@ -239,10 +333,10 @@ export const Body = ({
         isDrawing={isComposing}
         look={lookOf(shown.version, shown.isWiping)}
         onClose={setIsClose}
-        onSeen={onSeen}
+        onOffset={following.onOffset}
+        onSeen={following.onSeen}
         photo={photo}
         room={rooms.mine}
-        side={around.side}
         wanted={{
           onSwipe: around.onTurn,
           onDismiss: around.onClose,
@@ -251,9 +345,10 @@ export const Body = ({
         }}
         wide={rooms.wide}
       />
+      <Drawn composing={composing} following={following} />
       <Other
         around={around}
-        handleRef={besideRef}
+        handleRef={following.besideRef}
         isClose={isClose}
         other={other}
         photo={photo}
@@ -268,25 +363,25 @@ export const Body = ({
       />
       <Whole
         isShown={isAside}
-        onWhole={() => stageRef.current?.toggleZoom()}
-        shareRef={shareRef}
+        onWhole={toggleZoom}
+        shareRef={following.shareRef}
       />
-      <aside
-        aria-label="About this photo"
-        className={`${chrome} absolute z-20 overflow-y-auto overscroll-contain bg-dark`}
-        data-about=""
-        data-shown={isInfoShown}
-        data-wide={isWide(size)}
-        inert={!isInfoShown}
-      >
-        <Info labelRef={labelRef} onPrinted={setPrinted} photo={photo} />
-      </aside>
+      <About isShown={isInfoShown} isWide={isWide(size)}>
+        <Info
+          isOver={!isWide(size)}
+          labelRef={labelRef}
+          onPrinted={setPrinted}
+          photo={photo}
+        />
+      </About>
       <Below
         doing={{ shown, composing, marking }}
         footRef={foot.ref}
         isAside={isAside}
         isOnPhoto={isOnPhoto}
+        onShow={around.onShow}
         photo={photo}
+        pile={around.pile}
         word={word}
       />
     </>

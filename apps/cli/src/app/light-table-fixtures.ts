@@ -4,14 +4,23 @@ import { serveLightTable } from '../features/light-table/server.ts';
 import { fake } from './command-fixtures.ts';
 import { fakeToolsLayer } from './fake-tools.ts';
 
+type Options = Partial<Omit<Parameters<typeof serveLightTable>[0], 'port'>>;
+
 /** Serves the page while `visit` runs. */
 export const whileServing = <A>(
   visit: (address: string) => Promise<A>,
-  address?: URL,
+  options: Options = {},
 ): Promise<A> =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const server = yield* serveLightTable({ port: 0, address });
+      const server = yield* serveLightTable({
+        address: undefined,
+        photos: [],
+        agent: undefined,
+        keepsake: ['keepsake'],
+        ...options,
+        port: 0,
+      });
       return yield* Effect.promise(() =>
         visit(`http://127.0.0.1:${server.port}`),
       );
@@ -61,3 +70,27 @@ export const marksOf = async (address: string) =>
 
 export const statusOf = (response: Promise<Response>) =>
   response.then(({ status }) => status);
+
+export const handOver = (address: string, body: object = {}) =>
+  send('POST', `${address}/api/shoots/lisbon/hand-over`, {
+    dollars: 0,
+    album: false,
+    ...body,
+  });
+
+const patience = 200;
+const pause = 10;
+
+/** What `look` finds once that is `wanted`, since some of it takes a moment. */
+export const eventually = async <A>(
+  look: () => Promise<A>,
+  isWanted: (found: A) => boolean,
+  tries = patience,
+): Promise<A> => {
+  const found = await look();
+  if (isWanted(found) || tries === 0) {
+    return found;
+  }
+  await Bun.sleep(pause);
+  return eventually(look, isWanted, tries - 1);
+};

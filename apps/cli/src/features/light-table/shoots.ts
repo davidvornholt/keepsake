@@ -1,4 +1,4 @@
-import { Clock, Effect, Schedule, Semaphore } from 'effect';
+import { Clock, Effect, Option, Schedule, type Semaphore } from 'effect';
 import { readAlbum } from '../../shared/album.ts';
 import { isBusy } from '../../shared/lock.ts';
 import { type OpenShoot, openShoot, shootNames } from '../../shared/store.ts';
@@ -12,8 +12,6 @@ import {
 } from './pictures.ts';
 import { changedSince, shootInShort, shootView } from './view.ts';
 
-/** How many pictures are made smaller at once. */
-const atOnce = 6;
 /** How long an answer about what changed is taken as current. */
 const currentFor = 900;
 /** How long what Immich said about the album is taken as current. */
@@ -22,20 +20,48 @@ const albumCurrentFor = 300_000;
 /** How often the server looks for new shoots. */
 const prepareEvery = '30 seconds';
 
+/** Sorts behind every date. */
+const newest = '9';
+
 /** A shoot's view as compressed JSON. */
 type View = {
   readonly revision: string;
   readonly json: Uint8Array<ArrayBuffer>;
 };
 
+/**
+ * Makes the copies the page shows first, once for every photo, without anyone
+ * waiting.
+ */
+const makeWarming = () => {
+  const warm = new Set<string>();
+  return Effect.fn('warmOnce')(function* (gallery: Gallery) {
+    const { name } = gallery.open.shoot;
+    const fresh = [...gallery.open.photos.keys()].filter(
+      (photo) => !warm.has(`${name}/${photo}`),
+    );
+    if (fresh.length > 0) {
+      for (const photo of fresh) {
+        warm.add(`${name}/${photo}`);
+      }
+      yield* warmUp(gallery, [
+        ...fresh.map((photo) => [photo, 'final'] as readonly [string, Kind]),
+        ...fresh.map((photo) => [photo, 'preview'] as readonly [string, Kind]),
+      ]).pipe(Effect.forkDetach);
+    }
+  });
+};
+
 /** The shoots as the server has them, so it needn't read them every time. */
-export const makeShoots = Effect.fn('makeShoots')(function* () {
-  const workers = yield* Semaphore.make(atOnce);
+export const makeShoots = Effect.fn('makeShoots')(function* (
+  canStartAgent: boolean,
+  workers: Semaphore.Semaphore,
+) {
   const galleries = new Map<string, Gallery>();
   const views = new Map<string, View>();
   const changes = new Map<string, { readonly at: number; changed: Changed }>();
   const albums = new Map<string, number>();
-  const warm = new Set<string>();
+  const warmOnce = makeWarming();
 
   const galleryOf = Effect.fn('galleryOf')(function* (name: string) {
     const open = yield* openShoot(name);
@@ -70,22 +96,9 @@ export const makeShoots = Effect.fn('makeShoots')(function* () {
     }
     const open = yield* openShoot(name);
     yield* refreshAlbum(open);
-    const current = yield* changedSince(open);
+    const current = yield* changedSince(open, canStartAgent);
     changes.set(name, { at: now, changed: current });
     return current;
-  });
-
-  /** Makes the copies the page shows first, once, without anyone waiting. */
-  const warmOnce = Effect.fn('warmOnce')(function* (gallery: Gallery) {
-    const { name } = gallery.open.shoot;
-    if (!warm.has(name)) {
-      warm.add(name);
-      const all = [...gallery.open.photos.keys()];
-      yield* warmUp(gallery, [
-        ...all.map((photo) => [photo, 'final'] as readonly [string, Kind]),
-        ...all.map((photo) => [photo, 'preview'] as readonly [string, Kind]),
-      ]).pipe(Effect.forkDetach);
-    }
   });
 
   const list = Effect.gen(function* () {
@@ -107,18 +120,21 @@ export const makeShoots = Effect.fn('makeShoots')(function* () {
     return {
       shoots: found
         .flat()
-        .toSorted((left, right) => right.from.localeCompare(left.from)),
+        // Those without photos are the newest.
+        .toSorted((left, right) =>
+          (right.from ?? newest).localeCompare(left.from ?? newest),
+        ),
     };
   });
 
   const view = Effect.fn('view')(function* (name: string) {
     const gallery = yield* galleryOf(name);
-    const { revision } = yield* changedSince(gallery.open);
+    const { revision } = yield* changedSince(gallery.open, canStartAgent);
     const known = views.get(name);
     if (known?.revision === revision) {
       return known;
     }
-    const made = yield* shootView(gallery);
+    const made = yield* shootView(gallery, canStartAgent);
     yield* saveLooks(gallery);
     yield* warmOnce(gallery);
     const packed: View = {
@@ -134,6 +150,20 @@ export const makeShoots = Effect.fn('makeShoots')(function* () {
     changed,
     list,
     view,
+    /** Every shoot that can be read. */
+    all: Effect.gen(function* () {
+      const found = yield* Effect.forEach(yield* shootNames, (name) =>
+        Effect.option(openShoot(name)),
+      );
+      return found.flatMap(Option.toArray).map(({ shoot }) => shoot);
+    }),
+    /** Forgets what the server knows of a shoot that isn't there any more. */
+    forget: (name: string) =>
+      Effect.sync(() => {
+        galleries.delete(name);
+        views.delete(name);
+        changes.delete(name);
+      }),
     /** Gets every shoot ready, also new ones, so nobody waits for it later. */
     prepare: Effect.gen(function* () {
       const names = yield* shootNames;

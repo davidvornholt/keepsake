@@ -52,22 +52,15 @@ describe('withMark', () => {
     expect(withMark([keep, other], takeOut)).toEqual([other, takeOut]);
   });
 
-  it('leaves a favorite beside a mark, and a mark that was handed over', () => {
-    const favorite = sampleMark('one', { photo: 'a', kind: 'favorite' });
+  it('leaves a mark that was handed over', () => {
     const handed = sampleMark('two', {
       photo: 'a',
       kind: 'change',
       handedOverAt: now,
     });
-    const keep = sampleMark('three', { photo: 'a' });
-    expect(replacedBy([favorite, handed], keep)).toBeNull();
-    expect(withMark([favorite, handed], keep)).toEqual([
-      favorite,
-      handed,
-      keep,
-    ]);
-    const not = sampleMark('four', { photo: 'a', kind: 'not-favorite' });
-    expect(withMark([favorite, keep], not)).toEqual([keep, not]);
+    const takeOut = sampleMark('three', { photo: 'a' });
+    expect(replacedBy([handed], takeOut)).toBeNull();
+    expect(withMark([handed], takeOut)).toEqual([handed, takeOut]);
   });
 
   it('counts an answer on the photo as seen', () => {

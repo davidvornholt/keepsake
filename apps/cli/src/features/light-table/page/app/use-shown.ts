@@ -1,27 +1,38 @@
 import { useMemo, useState } from 'react';
-import type { Index } from '../data/derive.ts';
+import { type Index, pileAround } from '../data/derive.ts';
 import { orderOf } from '../sheet/content.ts';
-import { everything, type Route } from './route.ts';
+import { everything, type Within } from './route.ts';
 import { useAnswers } from './use-answers.ts';
 
 // Which photo is shown large, if any, and the photos gone through from it.
 
-type Placed = Exclude<Route, { readonly screen: 'shoots' }>;
-
 /** The photo that is shown large, and for a moment after the owner left it. */
 const useHeld = (open: string | null) => {
   const [held, setHeld] = useState(open);
+  const [isOpen, setIsOpen] = useState(open !== null);
+  const [visit, setVisit] = useState(0);
   if (open !== null && held !== open) {
     setHeld(open);
   }
+  if (isOpen !== (open !== null)) {
+    setIsOpen(open !== null);
+    if (open !== null) {
+      setVisit(visit + 1);
+    }
+  }
   return {
     photo: open ?? held,
+    /**
+     * Counts the times a photo was opened. One that is opened again while it
+     * still travels back to the table is another visit, and starts afresh.
+     */
+    visit,
     isLeaving: open === null && held !== null,
     letGo: () => setHeld(null),
   };
 };
 
-export const useShown = (route: Placed, index: Index) => {
+export const useShown = (route: Within, index: Index) => {
   const { filters } = route;
   const answers = useAnswers(index, route.screen === 'answers');
   const held = useHeld(
@@ -34,7 +45,10 @@ export const useShown = (route: Placed, index: Index) => {
       return pile.flatMap((id) => index.byId.get(id) ?? []);
     }
     const shown = orderOf(index, filters);
-    return large === undefined || shown.some(({ id }) => id === large.id)
+    // A photo from behind another one stands where the one in front does.
+    const front =
+      large === undefined ? null : pileAround(index, large).front.id;
+    return front === null || shown.some(({ id }) => id === front)
       ? shown
       : orderOf(index, everything);
   }, [index, filters, large, pile]);

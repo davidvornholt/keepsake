@@ -8,7 +8,14 @@ import type { Mark } from './schemas.ts';
 export type { Box } from '../../shared/domain.ts';
 export type { Standing } from '../../shared/standing.ts';
 export type { MarkKind } from './kinds.ts';
-export type { Mark, NewLabels, NewMark } from './schemas.ts';
+export type {
+  Favorite,
+  HandOver,
+  Mark,
+  NewLabels,
+  NewMark,
+  NewShoot,
+} from './schemas.ts';
 
 /**
  * A picture to show. `?width=` with one of `pictureWidths` gives a WebP of
@@ -59,7 +66,8 @@ export type PhotoView = {
   readonly id: string;
   /** When it was taken by the clocks there: 2026-03-30T18:04:05+08:00. */
   readonly takenAt: string;
-  readonly moment: string;
+  /** The photo in front of its stack, which can be this one. */
+  readonly stack: string;
   readonly camera: string | null;
   readonly lens: string | null;
   readonly focalLength: number | null;
@@ -82,12 +90,47 @@ export type PhotoView = {
   readonly labels: ReadonlyArray<string>;
 };
 
-/** What a keepsake command is doing with the shoot right now. */
+/**
+ * What a keepsake command is doing with the shoot right now. Getting a new
+ * shoot ready takes `scan`, `cull`, `pick` and `explain`, one after the other;
+ * `edit` and `publish` come after the hand-over.
+ */
 export type Activity = {
   readonly step: string;
   readonly done: number;
   readonly total: number;
   /** The photos being worked on. */
+  readonly photos: ReadonlyArray<string>;
+};
+
+/** The program that gets a new shoot ready, until it is through. */
+export type Preparation = {
+  readonly since: string;
+  /** Why it stopped before it was through. It goes on when the owner says so. */
+  readonly stopped: string | null;
+};
+
+/** The agent that acts on what the owner hands over. */
+export type Agent = {
+  /** Since when one waits for marks. */
+  readonly waitsSince: string | null;
+  /** Whether the page starts one when none waits. */
+  readonly canStart: boolean;
+  /** The one it started last. */
+  readonly started: {
+    readonly at: string;
+    /** Where the owner can read along, if it said so. */
+    readonly link: string | null;
+    /** Why it couldn't be started. */
+    readonly failed: string | null;
+  } | null;
+};
+
+/** Photos that show the same. */
+export type Stack = {
+  /** The photo in front, which stands for the others. */
+  readonly front: string;
+  /** All of them, also the one in front, in the order they were taken. */
   readonly photos: ReadonlyArray<string>;
 };
 
@@ -121,14 +164,17 @@ export type ShootView = {
   };
   /** In the order they were taken. */
   readonly photos: ReadonlyArray<PhotoView>;
-  readonly moments: ReadonlyArray<{
-    readonly id: string;
-    readonly photos: ReadonlyArray<string>;
-  }>;
+  /** Every photo is in one of them, if only by itself. In the order of their fronts. */
+  readonly stacks: ReadonlyArray<Stack>;
   readonly marks: ReadonlyArray<Mark>;
   readonly activity: Activity | null;
-  /** Since when an agent waits for marks. */
-  readonly agentWaitsSince: string | null;
+  readonly preparation: Preparation | null;
+  readonly agent: Agent;
+  /**
+   * That the owner wants the chosen photos edited and put into an album, for at
+   * most so many dollars, until that is done.
+   */
+  readonly ordered: { readonly at: string; readonly dollars: number } | null;
   /** What the owner was asked to rate, with what was rated already. */
   readonly rating: {
     readonly questions: ReadonlyArray<Question>;
@@ -146,10 +192,16 @@ export type ShootList = {
   readonly shoots: ReadonlyArray<{
     readonly name: string;
     readonly about: string | null;
-    readonly from: string;
-    readonly to: string;
+    /** When the first and the last photo were taken; null until there are any. */
+    readonly from: string | null;
+    readonly to: string | null;
     readonly photos: number;
     readonly inAlbum: number;
+    /** Photos chosen for the album that aren't in it yet. */
+    readonly picked: number;
+    readonly preparation: Preparation | null;
+    readonly activity: Activity | null;
+    readonly isOrdered: boolean;
     /** Marks that aren't handed over, and those answered but not looked at. */
     readonly openMarks: number;
     readonly newAnswers: number;
@@ -165,5 +217,41 @@ export type ShootList = {
 export type Changed = {
   readonly revision: string;
   readonly activity: Activity | null;
-  readonly agentWaitsSince: string | null;
+  readonly preparation: Preparation | null;
+  readonly agent: Agent;
+};
+
+/** GET /api/folders */
+export type FolderList = {
+  /** False when keepsake wasn't told where the owner's photos are. */
+  readonly canAdd: boolean;
+  /** Folders with photos right in them or in folders below, newest first. */
+  readonly folders: ReadonlyArray<{
+    readonly path: string;
+    /** The folder's own name, and those it is in, outermost first. */
+    readonly name: string;
+    readonly within: ReadonlyArray<string>;
+    readonly photos: number;
+    /** When its files were last changed, which is about when they were taken. */
+    readonly from: string;
+    readonly to: string;
+    /** The shoot that is made from it already. */
+    readonly shoot: string | null;
+  }>;
+};
+
+/** GET /api/folders/look?path=<path> */
+export type FolderLook = {
+  readonly path: string;
+  readonly photos: number;
+  /** The camera's clock at the first and the last photo, without a time zone. */
+  readonly from: string;
+  readonly to: string;
+  /** A few of its photos as data URLs, with the camera's clock. */
+  readonly samples: ReadonlyArray<{
+    readonly src: string;
+    readonly takenAt: string;
+    readonly width: number;
+    readonly height: number;
+  }>;
 };

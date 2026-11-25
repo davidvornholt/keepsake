@@ -3,16 +3,12 @@ import { writeFile } from 'node:fs/promises';
 import {
   editLisbon,
   failureOf,
-  judge,
   pickLisbon,
   runOk,
-  scanLisbon,
   setUp,
   shootFile,
-  shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
 beforeEach(() => setUp(spyOn));
@@ -62,51 +58,5 @@ describe('keepsake publish', () => {
     expect(failure.message).toContain('keepsake edit lisbon');
     const named = await failureOf('publish', 'lisbon', 'B');
     expect(named.message).toContain('keepsake edit lisbon B');
-  });
-});
-
-describe('keepsake run', () => {
-  it('does everything and goes on where it stopped', async () => {
-    await scanLisbon();
-    const folder = (await shootJson('shoot.json')).source;
-    const result = await runOk(
-      'run',
-      folder,
-      '--name',
-      'lisbon',
-      '--review-model',
-      judge,
-      '--publish',
-    );
-    expect(result.culled.moments).toBe(3);
-    expect(result.picked.picked).toBe(3);
-    expect(result.edited.edited).toBe(3);
-    expect(result.published.published).toBe(3);
-    const questions = fakeModels.asked.length;
-    await runOk(
-      'run',
-      folder,
-      '--name',
-      'lisbon',
-      '--review-model',
-      judge,
-      '--publish',
-    );
-    expect(fakeModels.asked).toHaveLength(questions);
-  });
-
-  it('uploads nothing unless asked to', async () => {
-    await scanLisbon();
-    const folder = (await shootJson('shoot.json')).source;
-    const result = await runOk(
-      'run',
-      folder,
-      '--name',
-      'lisbon',
-      '--review-model',
-      judge,
-    );
-    expect(result.published).toBeNull();
-    expect(fakeTools.uploads).toEqual([]);
   });
 });

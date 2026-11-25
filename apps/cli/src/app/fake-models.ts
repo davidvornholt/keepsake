@@ -59,7 +59,7 @@ const usualAnswers = {
   everyone: { everyone: [] },
   signs: { signs: [] },
   textures: { outlines: [] },
-  'changed-signs': { changed: [] },
+  'changed-signs': { changed: [], gone: [] },
   faults: { faults: [] },
   assessment: { assessments: [assessment(1), assessment(2)] },
 };

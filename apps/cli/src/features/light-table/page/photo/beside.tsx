@@ -2,6 +2,7 @@ import { type RefObject, useImperativeHandle, useRef } from 'react';
 import type { PhotoView } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { blurOf } from '../data/pictures.ts';
+import { standingName } from '../data/words.ts';
 import type { Rect } from '../sheet/layout.ts';
 import { chrome } from '../ui/classes.ts';
 import { Img, Placed } from '../ui/placed.tsx';
@@ -12,11 +13,12 @@ import {
   type Rooms,
   type Seen,
 } from './room.ts';
+import type { Still } from './stage.tsx';
 import { useClip } from './use-clip.ts';
 import { usePicture } from './use-picture.ts';
 
-// The photo of the album that stands for one that was left out, beside it,
-// so the two can be compared at a glance, and spot by spot from close.
+// The photo that stands in front of the one looked at, beside it, so the two
+// can be compared at a glance, and spot by spot from close.
 
 const isPlain = (event: {
   readonly metaKey: boolean;
@@ -77,6 +79,10 @@ const Caption = ({
 export type BesideHandle = {
   /** Shows the same spot as the photo it stands beside, as large. */
   readonly follow: (seen: Seen) => void;
+  /** Goes along when that photo is pulled to the side. */
+  readonly shift: (offset: number) => void;
+  /** The picture as it is on the screen, for when another photo takes over. */
+  readonly still: () => Still | null;
 };
 
 type Props = {
@@ -90,7 +96,7 @@ type Props = {
   readonly handleRef: RefObject<BesideHandle | null>;
 };
 
-/** A photo that was left out and the one of the album it is measured against. */
+/** A photo from behind another, and the one in front that it is measured against. */
 export const Pair = ({
   photo,
   other,
@@ -100,6 +106,7 @@ export const Pair = ({
   handleRef,
 }: Props) => {
   const { hrefOfPhoto, openPhoto, index } = useShootContext();
+  const allRef = useRef<HTMLDivElement>(null);
   const windowRef = useRef<HTMLDivElement>(null);
   const placedRef = useRef<HTMLDivElement>(null);
   const mine = photo.edit?.picture ?? photo.picture;
@@ -109,7 +116,7 @@ export const Pair = ({
     picture,
     isClose ? picture.width : place.w * globalThis.devicePixelRatio,
   );
-  const says = other.standing.kind === 'album' ? 'In the album' : 'Chosen';
+  const says = standingName(other);
   const number = index.numberOf.get(other.id) ?? 0;
   useClip(windowRef, isClose ? clip : null);
 
@@ -121,16 +128,23 @@ export const Pair = ({
         placed.style.transform = `translate3d(${to.x - place.x}px, ${to.y - place.y}px, 0) scale(${to.w / place.w})`;
       }
     },
+    shift: (offset) => {
+      if (allRef.current !== null) {
+        allRef.current.style.transform =
+          offset === 0 ? '' : `translate3d(${offset}px, 0, 0)`;
+      }
+    },
+    still: () => (src === null ? null : { src, rect: place }),
   }));
 
   return (
-    <>
+    <div className="pointer-events-none absolute inset-0" ref={allRef}>
       <Caption
         isOver={isClose}
         over={rooms.wide}
         under={fitIn(rooms.mine, mine.width / mine.height)}
       >
-        Left out
+        This one
       </Caption>
       <div
         className={`${chrome} pointer-events-none absolute inset-0 z-[1]`}
@@ -160,6 +174,6 @@ export const Pair = ({
       <Caption isOver={isClose} over={rooms.wideTheirs} under={place}>
         {says}
       </Caption>
-    </>
+    </div>
   );
 };

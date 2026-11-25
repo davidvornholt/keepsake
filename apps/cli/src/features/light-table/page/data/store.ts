@@ -1,9 +1,13 @@
-import type { Changed, Mark, NewMark } from '../../contract.ts';
+import type { Changed, HandOver, Mark, NewMark } from '../../contract.ts';
 import {
+  askForAgent,
+  forgetShoot,
+  goOnPreparing,
   handOverMarks,
   listenTo,
   makeMark,
   type Rating,
+  saveFavorite,
   saveLabels,
   saveRating,
   seeMark,
@@ -15,6 +19,7 @@ import {
   replacedBy,
   tidyLabels,
   wantedOf,
+  withFavorite,
   withLabels,
   withMark,
   withoutMark,
@@ -63,7 +68,24 @@ const marking = (core: Core) => {
     });
   };
 
+  /** Sets the heart without remembering it for Undo. */
+  const heart = async (photo: string, favorite: boolean) => {
+    const shoot = core.get().index?.shoot;
+    if (shoot !== undefined) {
+      core.setShoot(withFavorite(shoot, photo, favorite));
+    }
+    await core.send(() => saveFavorite(core.name, { photo, favorite }));
+  };
+
   return {
+    /** Sets or takes away the favorite heart of a photo in Immich, at once. */
+    favorite: async (photo: string, favorite: boolean) => {
+      core.setUndos([
+        ...core.undos(),
+        { did: 'favorite', photo, was: !favorite },
+      ]);
+      await heart(photo, favorite);
+    },
     make: (wanted: NewMark): Mark | null => {
       const marks = core.get().index?.shoot.marks ?? [];
       const mark = put(wanted);
@@ -83,6 +105,10 @@ const marking = (core: Core) => {
         return;
       }
       core.setUndos(core.undos().slice(0, -1));
+      if (last.did === 'favorite') {
+        await heart(last.photo, last.was);
+        return;
+      }
       if (last.did === 'made') {
         await remove(last.mark.id);
       }
@@ -99,11 +125,36 @@ const answering = (core: Core) => ({
     core.setMarks((marks) => withSeen(marks, id, new Date().toISOString()));
     await core.send(() => seeMark(core.name, id));
   },
-  /** Says how many marks went to an agent, or null when it failed. */
-  handOver: async (): Promise<number | null> => {
+  /**
+   * Hands the marks over, and agrees to what acting on them costs at most.
+   * Says how many marks went to an agent, or null when it failed.
+   */
+  handOver: async (agreed: HandOver): Promise<number | null> => {
     core.setUndos([]);
-    const handed = await core.send(() => handOverMarks(core.name));
+    const handed = await core.send(() => handOverMarks(core.name, agreed));
     return handed?.length ?? null;
+  },
+  /** Has an agent act on what was handed over before. */
+  startAgent: async (): Promise<void> => {
+    await core.send(() => askForAgent(core.name));
+  },
+  /** Goes on with getting the album ready, after it stopped. */
+  goOn: async (): Promise<void> => {
+    await core.send(() => goOnPreparing(core.name));
+  },
+  /** Throws the album away. Says whether it is gone. */
+  forget: async (): Promise<boolean> => {
+    core.rest(true);
+    try {
+      await forgetShoot(core.name);
+      return true;
+    } catch (error) {
+      core.rest(false);
+      core.set({
+        problem: error instanceof Error ? error.message : 'It is still there.',
+      });
+      return false;
+    }
   },
   label: async (photo: string, labels: ReadonlyArray<string>) => {
     const tidy = tidyLabels(labels);
@@ -128,8 +179,8 @@ const answering = (core: Core) => ({
 
 const listening = (core: Core) => {
   let stop: (() => void) | null = null;
-  const onChanged = ({ revision, activity, agentWaitsSince }: Changed) => {
-    core.set({ activity, agentWaitsSince });
+  const onChanged = ({ revision, activity, preparation, agent }: Changed) => {
+    core.set({ activity, preparation, agent });
     if (!core.isBusy() && revision !== core.get().index?.shoot.revision) {
       core.load();
     }

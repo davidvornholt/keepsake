@@ -8,6 +8,7 @@ import {
   Spending,
   totalDollars,
 } from '../../shared/spending.ts';
+import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
@@ -23,8 +24,8 @@ import {
 const concurrency = 5;
 
 /**
- * The photos to edit: the picked ones, or those named, which needn't be
- * picked as long as they were judged.
+ * The photos to edit: those that were picked and not taken out since, or those
+ * named, which needn't be picked as long as they were judged.
  */
 const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
@@ -32,9 +33,13 @@ const jobs = Effect.fn('jobs')(function* (
 ) {
   if (names.length === 0) {
     const list = yield* readPicks(open.files, open.shoot.name);
+    const removed = yield* readRemoved(open);
+    const isOut = new Set(removed.map(({ photo }) => photo));
     return list.picks.flatMap((pick): ReadonlyArray<ToEdit> => {
       const photo = open.photos.get(pick.photo);
-      return photo === undefined ? [] : [{ pick, photo }];
+      return photo === undefined || isOut.has(photo.id)
+        ? []
+        : [{ pick, photo }];
     });
   }
   const { model } = yield* Vision;

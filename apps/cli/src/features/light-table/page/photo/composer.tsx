@@ -19,6 +19,9 @@ type Props = {
   readonly draft: Draft;
   /** Whether a change was written down before, which can be taken back. */
   readonly isSaved: boolean;
+  /** Whether something was done to the boxes that can be undone. */
+  readonly canUndo: boolean;
+  readonly onUndo: () => void;
   readonly onDraft: (draft: Draft) => void;
   readonly onSave: () => void;
   readonly onCancel: () => void;
@@ -28,6 +31,8 @@ type Props = {
 export const Composer = ({
   draft,
   isSaved,
+  canUndo,
+  onUndo,
   onDraft,
   onSave,
   onCancel,
@@ -55,7 +60,9 @@ export const Composer = ({
         activeElement === null ||
         activeElement === document.body ||
         activeElement.closest('button, a[href], input, textarea') === null;
-      if (isLetter && isElsewhere) {
+      // On a box, too, the next letter belongs to the words.
+      const isOnBox = activeElement?.closest('[data-boxes]') !== null;
+      if (isLetter && (isElsewhere || isOnBox)) {
         noteRef.current?.focus({ preventScroll: true });
       }
       if (event.key === 'Enter' && isElsewhere) {
@@ -115,19 +122,19 @@ export const Composer = ({
         <p className="mr-auto flex min-h-9 flex-wrap items-center gap-x-3 text-quiet text-sm">
           {draft.boxes.length === 0
             ? 'Drag on the photo to show where.'
-            : `${count(draft.boxes.length, 'box', 'boxes')} on the photo.`}
-          {draft.boxes.length === 0 ? null : (
-            <button
-              className={`${quietButton} min-h-9 text-sm`}
-              onClick={() =>
-                onDraft({ ...draft, boxes: draft.boxes.slice(0, -1) })
-              }
-              type="button"
-            >
-              Remove the last
-            </button>
-          )}
+            : `${count(draft.boxes.length, 'box', 'boxes')}. Drag one to move it, its corners to change its size.`}
         </p>
+        {canUndo ? (
+          <button
+            aria-keyshortcuts="Control+Z"
+            className={`${quietButton} min-h-9 text-sm`}
+            onClick={onUndo}
+            title="Undo what was last done to the boxes (Ctrl Z)"
+            type="button"
+          >
+            Undo
+          </button>
+        ) : null}
         {isSaved ? (
           <button
             className={`${quietButton} min-h-9 text-sm`}

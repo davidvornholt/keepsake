@@ -1,5 +1,4 @@
 import type { Mark, NewMark, ShootView } from '../../contract.ts';
-import { isAboutFavorites } from './derive.ts';
 
 // What a change does to a shoot, worked out here so that the page shows it
 // before keepsake has answered. Keepsake's answer replaces it afterwards.
@@ -38,12 +37,8 @@ export const replacedBy = (
   marks: ReadonlyArray<Mark>,
   mark: Mark,
 ): Mark | null =>
-  marks.find(
-    (one) =>
-      one.photo === mark.photo &&
-      one.handedOverAt === null &&
-      isAboutFavorites(one.kind) === isAboutFavorites(mark.kind),
-  ) ?? null;
+  marks.find((one) => one.photo === mark.photo && one.handedOverAt === null) ??
+  null;
 
 /** A new mark takes the place of the open one, and answers count as seen. */
 export const withMark = (
@@ -91,6 +86,20 @@ export const withLabels = (
   ...shoot,
   photos: shoot.photos.map((one) =>
     one.id === photo ? { ...one, labels } : one,
+  ),
+});
+
+/** The favorite heart of a photo of the album, as Immich will have it. */
+export const withFavorite = (
+  shoot: ShootView,
+  photo: string,
+  favorite: boolean,
+): ShootView => ({
+  ...shoot,
+  photos: shoot.photos.map((one) =>
+    one.id === photo && one.standing.kind === 'album'
+      ? { ...one, standing: { ...one.standing, favorite } }
+      : one,
   ),
 });
 

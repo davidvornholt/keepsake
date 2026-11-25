@@ -1,74 +1,120 @@
 import { describe, expect, it } from 'bun:test';
 import { indexOf } from './derive.ts';
-import { sampleMark, samplePhoto, sampleShoot } from './sample.ts';
-import { exposureLine, standingOf, stateOf } from './words.ts';
+import {
+  sampleBehind,
+  sampleMark,
+  samplePhoto,
+  sampleShoot,
+} from './sample.ts';
+import {
+  chosenName,
+  chosenWords,
+  exposureLine,
+  standingName,
+  standingOf,
+  stateOf,
+} from './words.ts';
 
-const verdict = { score: 6, subject: '', description: '', reason: null };
-
-const said = (change: Parameters<typeof samplePhoto>[1]) => {
-  const photo = samplePhoto('a', change);
-  return standingOf(indexOf(sampleShoot([photo])), photo);
-};
-
-describe('standingOf', () => {
-  it('says where a chosen photo stands', () => {
-    expect(said({}).text).toBe('In the album');
-    expect(said({ standing: { kind: 'picked' } }).text).toBe(
-      'Chosen, not in the album yet',
-    );
-  });
-
-  it('says why a photo was left out, and next to which', () => {
-    expect(
-      said({
-        standing: {
-          kind: 'left-out',
-          rule: 'repeat',
-          repeats: 'b',
-          because: 'Same tram.',
-        },
-      }),
-    ).toEqual({
-      text: 'Left out: the album shows the same already',
-      other: 'b',
-      because: 'Same tram.',
-    });
-    expect(
-      said({
-        verdict,
-        standing: {
-          kind: 'left-out',
-          rule: 'score',
-          repeats: null,
-          because: null,
-        },
-      }).text,
-    ).toBe('Left out: scored 6, below 7');
-    expect(
-      said({
-        standing: {
-          kind: 'left-out',
-          rule: 'no-room',
-          repeats: null,
-          because: null,
-        },
-      }).text,
-    ).toBe('Left out: the album is full at 170');
-    expect(said({ standing: { kind: 'other-frame', of: 'b' } }).other).toBe(
-      'b',
-    );
-  });
-
-  it('says when a photo was taken out, and in whose words why', () => {
-    const out = said({
+const index = indexOf(
+  sampleShoot([
+    samplePhoto('a'),
+    sampleBehind('b', 'a', {
+      standing: { kind: 'similar', to: 'a', because: 'The bird looks away.' },
+    }),
+    samplePhoto('c', { standing: { kind: 'picked' } }),
+    sampleBehind('d', 'c'),
+    samplePhoto('e', { standing: { kind: 'left-out', because: 'Blurred.' } }),
+    sampleBehind('f', 'e'),
+    samplePhoto('g', {
       standing: {
         kind: 'taken-out',
         at: '2026-05-21T12:00:00',
         because: 'Too dark.',
       },
+    }),
+    samplePhoto('h', { standing: { kind: 'open' } }),
+  ]),
+);
+
+const said = (id: string) =>
+  standingOf(index, index.byId.get(id) ?? samplePhoto(id));
+
+describe('standingOf', () => {
+  it('says where a chosen photo stands', () => {
+    expect(said('a')).toEqual({
+      text: 'In the album',
+      other: null,
+      because: null,
+      tone: 'in',
     });
-    expect(out.text).toBe('Taken out 21 May');
-    expect(out.because).toBe('Too dark.');
+    expect(said('c').text).toBe('Chosen for the album');
+    expect(said('h')).toMatchObject({ text: 'Not decided yet', tone: 'open' });
+  });
+
+  it('says why a photo was left out, in the words written down', () => {
+    expect(said('e')).toEqual({
+      text: 'Left out: not strong enough',
+      other: null,
+      because: 'Blurred.',
+      tone: 'out',
+    });
+  });
+
+  it('says which photo one lies behind, and where that one stands', () => {
+    expect(said('b')).toEqual({
+      text: 'Behind the photo in the album',
+      other: 'a',
+      because: 'The bird looks away.',
+      tone: 'out',
+    });
+    expect(said('d').text).toBe('Behind the photo chosen for the album');
+    expect(said('f').text).toBe('Behind a photo that was left out too');
+    expect(said('f').because).toBeNull();
+  });
+
+  it('says when a photo was taken out, and in whose words why', () => {
+    expect(said('g').text).toBe('Taken out by you 21 May');
+    expect(said('g').because).toBe('Too dark.');
+  });
+
+  it('has a word or two for where room is short', () => {
+    expect(
+      ['a', 'b', 'c', 'e', 'g', 'h'].map((id) =>
+        standingName(index.byId.get(id) ?? samplePhoto(id)),
+      ),
+    ).toEqual([
+      'In the album',
+      'Behind',
+      'Chosen',
+      'Left out',
+      'Taken out',
+      'Not decided',
+    ]);
+  });
+});
+
+describe('chosenWords', () => {
+  it('counts the album and what is chosen for it', () => {
+    expect(chosenWords(index, { inAlbum: 1, picked: 1 })).toEqual([
+      '1 in the album',
+      '1 chosen',
+    ]);
+    expect(chosenWords(index, { inAlbum: 1, picked: 0 })).toEqual([
+      '1 in the album',
+    ]);
+    expect(chosenName(index)).toBe('Album');
+  });
+
+  it('speaks of a choice only, while there is no album', () => {
+    const fresh = indexOf(
+      sampleShoot([samplePhoto('a', { standing: { kind: 'picked' } })]),
+    );
+    expect(chosenWords(fresh, { inAlbum: 0, picked: 0 })).toEqual(['0 chosen']);
+    expect(chosenName(fresh)).toBe('Chosen');
+    const open = indexOf(
+      sampleShoot([samplePhoto('a', { standing: { kind: 'open' } })]),
+    );
+    expect(chosenWords(open, { inAlbum: 0, picked: 0 })).toEqual([]);
   });
 });
 

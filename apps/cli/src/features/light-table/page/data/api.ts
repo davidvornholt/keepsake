@@ -1,8 +1,13 @@
 import type {
   Changed,
+  Favorite,
+  FolderList,
+  FolderLook,
+  HandOver,
   Mark,
   NewLabels,
   NewMark,
+  NewShoot,
   ShootList,
   ShootView,
 } from '../../contract.ts';
@@ -77,8 +82,46 @@ export const seeMark = async (shoot: string, id: string): Promise<void> => {
 
 export const handOverMarks = async (
   shoot: string,
+  agreed: HandOver,
 ): Promise<ReadonlyArray<Mark>> =>
-  (await send('POST', pathOf(shoot, '/hand-over'))).json();
+  (await send('POST', pathOf(shoot, '/hand-over'), agreed)).json();
+
+/** Has an agent act on what was handed over before. */
+export const askForAgent = async (shoot: string): Promise<void> => {
+  await send('POST', pathOf(shoot, '/agent'));
+};
+
+/** Sets or takes away the favorite heart of a photo in Immich. */
+export const saveFavorite = async (
+  shoot: string,
+  favorite: Favorite,
+): Promise<void> => {
+  await send('PUT', pathOf(shoot, '/favorites'), favorite);
+};
+
+export const readFolders = async (): Promise<FolderList> =>
+  (await ask('/api/folders')).json();
+
+export const lookIntoFolder = async (path: string): Promise<FolderLook> =>
+  (await ask(`/api/folders/look?path=${encodeURIComponent(path)}`)).json();
+
+/** Makes a shoot of a folder, and says what it is called. */
+export const makeShoot = async (wanted: NewShoot): Promise<string> => {
+  const made: { readonly name: string } = await (
+    await send('POST', '/api/shoots', wanted)
+  ).json();
+  return made.name;
+};
+
+/** Goes on with getting a shoot ready, after it stopped. */
+export const goOnPreparing = async (shoot: string): Promise<void> => {
+  await send('POST', pathOf(shoot, '/prepare'));
+};
+
+/** Throws a shoot away. The folder with its photos stays. */
+export const forgetShoot = async (shoot: string): Promise<void> => {
+  await send('DELETE', pathOf(shoot));
+};
 
 export const saveLabels = async (
   shoot: string,

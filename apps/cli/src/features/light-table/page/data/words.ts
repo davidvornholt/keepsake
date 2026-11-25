@@ -1,5 +1,5 @@
 import type { Mark, PhotoView } from '../../contract.ts';
-import type { Index } from './derive.ts';
+import { frontOf, type Index } from './derive.ts';
 import {
   apertureOf,
   exposureOf,
@@ -11,36 +11,14 @@ import {
 // What the page says about a photo, in the owner's words.
 
 export type Said = {
-  /** "Left out: the album shows the same already" */
+  /** Where the photo stands: "In the album", "Behind a photo that shows the same". */
   readonly text: string;
-  /** The photo the sentence is about, shown as a picture. */
+  /** The photo in front of it, shown as a picture. */
   readonly other: string | null;
-  /** What was written down about it, if anything. */
+  /** Why, as it was written down. Null while nobody has. */
   readonly because: string | null;
-};
-
-const leftOut = (index: Index, photo: PhotoView): string => {
-  const { standing, verdict } = photo;
-  const rule = standing.kind === 'left-out' ? standing.rule : 'unknown';
-  const { picked } = index.shoot;
-  if (rule === 'repeat') {
-    return 'Left out: the album shows the same already';
-  }
-  if (rule === 'weaker') {
-    return 'Left out: not as strong as the rest of the album';
-  }
-  if (rule === 'score') {
-    return verdict === null || picked === null
-      ? 'Left out: scored too low'
-      : `Left out: scored ${verdict.score}, below ${picked.minimumScore}`;
-  }
-  if (rule === 'no-room') {
-    return picked?.maximum === null || picked === null
-      ? 'Left out: the album was full'
-      : `Left out: the album is full at ${picked.maximum}`;
-  }
-  // Nothing has been chosen yet, so nothing was left out either.
-  return index.chosen === 0 ? 'Not chosen yet' : 'Left out';
+  /** What kind of sentence it is, for how it is shown. */
+  readonly tone: 'in' | 'out' | 'open';
 };
 
 /**
@@ -61,37 +39,106 @@ export const chosenWords = (
 export const chosenName = (index: Index): string =>
   index.hasAlbum ? 'Album' : 'Chosen';
 
+/** Where the photo in front stands, as part of a sentence about one behind it. */
+const frontWords = (front: PhotoView | null): string => {
+  if (front === null) {
+    return 'another photo that shows the same';
+  }
+  const stands = {
+    album: 'the photo in the album',
+    picked: 'the photo chosen for the album',
+    open: 'a photo that shows the same',
+    'taken-out': 'a photo you took out',
+    similar: 'a photo that shows the same',
+    'left-out': 'a photo that was left out too',
+  } as const;
+  return stands[front.standing.kind];
+};
+
 /** Where a photo stands, said in a sentence. */
 export const standingOf = (index: Index, photo: PhotoView): Said => {
   const { standing } = photo;
   if (standing.kind === 'album') {
-    return { text: 'In the album', other: null, because: null };
+    return { text: 'In the album', other: null, because: null, tone: 'in' };
   }
   if (standing.kind === 'picked') {
-    return { text: 'Chosen, not in the album yet', other: null, because: null };
+    return {
+      text: 'Chosen for the album',
+      other: null,
+      because: null,
+      tone: 'in',
+    };
+  }
+  if (standing.kind === 'open') {
+    return {
+      text: 'Not decided yet',
+      other: null,
+      because: null,
+      tone: 'open',
+    };
   }
   if (standing.kind === 'taken-out') {
     return {
-      text: `Taken out ${localDay(standing.at)}`.trim(),
+      text: `Taken out by you ${localDay(standing.at)}`.trim(),
       other: null,
       because: standing.because,
+      tone: 'out',
     };
   }
-  if (standing.kind === 'other-frame') {
+  if (standing.kind === 'similar') {
     return {
-      text:
-        index.chosen === 0
-          ? 'Another frame of the moment is better'
-          : 'Left out: another frame of the moment is better',
-      other: standing.of,
-      because: null,
+      text: `Behind ${frontWords(frontOf(index, photo))}`,
+      other: standing.to,
+      because: standing.because,
+      tone: 'out',
     };
   }
   return {
-    text: leftOut(index, photo),
-    other: standing.repeats,
+    text: 'Left out: not strong enough',
+    other: null,
     because: standing.because,
+    tone: 'out',
   };
+};
+
+/** What is said when nobody wrote down why. */
+const unsaid = (photo: PhotoView, isPreparing: boolean): string | null => {
+  const { kind } = photo.standing;
+  if (kind === 'album' || kind === 'picked') {
+    return photo.verdict?.reason ?? photo.verdict?.description ?? null;
+  }
+  if (kind === 'open') {
+    return isPreparing
+      ? 'Keepsake is still going through the photos.'
+      : 'The best photos haven’t been chosen yet.';
+  }
+  if (kind === 'taken-out') {
+    return 'No reason was given.';
+  }
+  return isPreparing
+    ? 'The reason is being written down.'
+    : 'No reason was written down.';
+};
+
+/** Why a photo stands where it does, or that nobody has said. */
+export const whyOf = (
+  index: Index,
+  photo: PhotoView,
+  isPreparing: boolean,
+): string | null =>
+  standingOf(index, photo).because ?? unsaid(photo, isPreparing);
+
+/** The same in a word or two, for where room is short. */
+export const standingName = ({ standing }: PhotoView): string => {
+  const names = {
+    album: 'In the album',
+    picked: 'Chosen',
+    open: 'Not decided',
+    'taken-out': 'Taken out',
+    similar: 'Behind',
+    'left-out': 'Left out',
+  } as const;
+  return names[standing.kind];
 };
 
 /** The lens and how the photo was exposed: 600 mm · f/6.3 · 1/1000 s · ISO 800. */

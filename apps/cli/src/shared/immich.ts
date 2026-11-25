@@ -128,6 +128,14 @@ export const albumAssets = Effect.fn('albumAssets')(function* (id: string) {
 export const removeFromAlbum = (album: string, assets: ReadonlyArray<string>) =>
   photos(Schema.Unknown, ['albums', 'remove', album, ...assets]);
 
+/** Gives a photo the favorite mark, or takes it away. */
+export const markFavorite = (asset: string, isFavorite: boolean) =>
+  photos(Schema.Unknown, [
+    'update',
+    asset,
+    isFavorite ? '--favorite' : '--no-favorite',
+  ]);
+
 const Status = Schema.Struct({ server: Schema.String });
 
 /** The web address of Immich. */

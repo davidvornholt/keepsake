@@ -9,34 +9,22 @@ import {
   springAt,
   step,
 } from '../motion/spring.ts';
-import type { Layout, Rect } from './layout.ts';
+import type { Hold, Layout, Rect } from './layout.ts';
 import {
   type Anchor,
   type Frame,
-  frameLimits,
   layoutOf,
+  type Placed,
   scrollLimits,
+  stopsFor,
   type Table,
+  viewAtRest,
 } from './table.ts';
+import { nearestStop } from './zoom.ts';
+import { advanceZoom, endZoom } from './zooming.ts';
 
-// How the table changes: frames travel to a new order, grow and shrink
-// about a point, and the table scrolls to what is looked for.
-
-/** Grows or shrinks what lies on the table about a point of it. */
-const scaleAbout = (table: Table, x: number, y: number, ratio: number) => {
-  for (const placed of table.placed.values()) {
-    placed.x.value = x + (placed.x.value - x) * ratio;
-    placed.y.value = y + (placed.y.value - y) * ratio;
-    placed.w.value *= ratio;
-    placed.h.value *= ratio;
-  }
-  for (const paper of table.papers.values()) {
-    paper.x.value = x + (paper.x.value - x) * ratio;
-    paper.y.value = y + (paper.y.value - y) * ratio;
-    paper.w.value *= ratio;
-    paper.h.value *= ratio;
-  }
-};
+// How the table changes: frames travel to a new order, and the table
+// scrolls to what is looked for.
 
 const shiftAll = (table: Table, by: number) => {
   for (const placed of table.placed.values()) {
@@ -47,21 +35,38 @@ const shiftAll = (table: Table, by: number) => {
   }
 };
 
+/** Where a frame that comes out from under another one starts from. */
+const startOf = (table: Table, frame: Frame, rect: Rect): Rect => {
+  const front =
+    frame.opened === null || frame.opened.isFront
+      ? undefined
+      : table.placed.get(frame.opened.front);
+  return front === undefined
+    ? rect
+    : { x: front.x.value, y: front.y.value, w: front.w.value, h: rect.h };
+};
+
 const place = (table: Table, frame: Frame, rect: Rect) => {
   const known = table.placed.get(frame.id);
   if (known === undefined) {
+    const from = startOf(table, frame, rect);
     const alpha = springAt(0);
     alpha.target = 1;
-    table.placed.set(frame.id, {
+    const made = {
       frame,
-      x: springAt(rect.x),
-      y: springAt(rect.y),
-      w: springAt(rect.w),
-      h: springAt(rect.h),
+      x: springAt(from.x),
+      y: springAt(from.y),
+      w: springAt(from.w),
+      h: springAt(from.h),
       alpha,
       light: springAt(frame.isLit ? 1 : 0),
       isLeaving: false,
-    });
+    };
+    made.x.target = rect.x;
+    made.y.target = rect.y;
+    made.w.target = rect.w;
+    made.h.target = rect.h;
+    table.placed.set(frame.id, made);
     return;
   }
   known.frame = frame;
@@ -72,6 +77,23 @@ const place = (table: Table, frame: Frame, rect: Rect) => {
   known.h.target = rect.h;
   known.alpha.target = 1;
   known.light.target = frame.isLit ? 1 : 0;
+};
+
+/** Has a frame that is no longer shown go: back under the one it came from, if it did. */
+const leave = (table: Table, placed: Placed) => {
+  const { opened } = placed.frame;
+  const front =
+    opened === null || opened.isFront
+      ? undefined
+      : table.layout.rects.get(opened.front);
+  if (front !== undefined) {
+    placed.x.target = front.x;
+    placed.y.target = front.y;
+    placed.h.target = front.h;
+    placed.w.target = (placed.w.value / Math.max(1, placed.h.value)) * front.h;
+  }
+  placed.isLeaving = true;
+  placed.alpha.target = 0;
 };
 
 const placePapers = (table: Table, layout: Layout) => {
@@ -108,33 +130,26 @@ const placePapers = (table: Table, layout: Layout) => {
   }
 };
 
-/** Where the anchor's point is on the table as it is drawn right now. */
-const pointOf = (table: Table, anchor: Anchor) => {
-  const placed = table.placed.get(anchor.id);
-  return placed === undefined
-    ? null
-    : {
-        x: placed.x.value + placed.w.value / 2,
-        y: placed.y.value + placed.h.value * anchor.within,
-      };
-};
-
 /**
- * Lays everything out anew. What is on the table keeps its place on the
- * screen for now and travels to the new one; `ratio` says by how much the
- * frames grew since the last time.
+ * Lays everything out anew, with frames as tall as the stop the table is
+ * at. What is on the table keeps its place on the screen for now and
+ * travels to the new one. An anchor keeps its height on the screen; a held
+ * frame keeps its place across the table as well.
  */
 export const arrange = (
   table: Table,
   anchor: Anchor | null = null,
-  ratio = 1,
+  hold: Hold | null = null,
 ): void => {
+  endZoom(table);
   const { content, scroller } = table;
-  const point = anchor === null ? null : pointOf(table, anchor);
-  if (point !== null && ratio !== 1) {
-    scaleAbout(table, point.x, point.y, ratio);
-  }
-  const layout = layoutOf(table, table.frame.value);
+  const stops = stopsFor(table);
+  table.stop =
+    table.zoom === 'fit' ? 0 : Math.max(1, nearestStop(stops, table.zoom));
+  table.stop = Math.min(table.stop, stops.length - 1);
+  table.frame.target = stops[table.stop] ?? table.frame.target;
+  settle(table.frame);
+  const layout = layoutOf(table, table.frame.value, hold);
   table.layout = layout;
   const target = anchor === null ? undefined : layout.rects.get(anchor.id);
   const wanted =
@@ -155,11 +170,11 @@ export const arrange = (
   }
   for (const placed of table.placed.values()) {
     if (!shown.has(placed.frame.id)) {
-      placed.isLeaving = true;
-      placed.alpha.target = 0;
+      leave(table, placed);
     }
   }
   placePapers(table, layout);
+  table.view = viewAtRest(table);
   table.isSettled = false;
 };
 
@@ -230,6 +245,18 @@ const arriveAll = (table: Table): void => {
   }
 };
 
+/** The bars make way as the table is scrolled down, and come back at its top. */
+const tuckAway = (table: Table, scrolled: number) => {
+  const { size, scroller, tuck } = table;
+  const range = Math.max(0, size.top - size.pinned);
+  const further = scrolled > 0 ? tuck.target + scrolled : tuck.target;
+  tuck.target = clamp(Math.min(further, scroller.value), 0, range);
+  if (scrolled !== 0) {
+    // Under the wheel and the finger they move with the table.
+    settle(tuck);
+  }
+};
+
 /**
  * Moves everything on by some seconds. Says whether anything still moves.
  * For those who asked for less motion nothing travels: `isStill` has it
@@ -240,50 +267,22 @@ export const advance = (
   seconds: number,
   isStill = false,
 ): boolean => {
-  const before = table.frame.value;
-  if (isStill) {
-    settle(table.frame);
-  }
-  const isZooming = step(table.frame, calm, seconds);
-  if (table.frame.value !== before && before > 0) {
-    arrange(table, table.anchor, table.frame.value / before);
-  }
+  const isZooming = advanceZoom(table, seconds, isStill);
   if (isStill) {
     arriveAll(table);
   }
-  const isScrolling = advanceScroller(
-    table.scroller,
-    scrollLimits(table),
-    seconds,
-  );
+  let isScrolling = false;
+  if (table.zooming === null) {
+    const before = table.scroller.value;
+    isScrolling = advanceScroller(table.scroller, scrollLimits(table), seconds);
+    tuckAway(table, table.scroller.value - before);
+    table.view = viewAtRest(table);
+  }
+  const isTucking = step(table.tuck, quick, seconds);
   const isDimming = step(table.lights, calm, seconds);
   const isMoving = table.isSettled ? false : advanceFrames(table, seconds);
   table.isSettled = !isMoving;
-  return isZooming || isScrolling || isDimming || isMoving;
-};
-
-/** Starts changing the height of the frames, about an anchor. */
-export const zoomTo = (
-  table: Table,
-  zoom: number | 'fit',
-  anchor: Anchor | null,
-): void => {
-  const { least, most } = frameLimits(table);
-  const frame = zoom === 'fit' ? least : clamp(zoom, least, most);
-  table.zoom = frame <= least ? 'fit' : frame;
-  table.anchor = anchor;
-  table.frame.target = frame;
-  table.stiffness = quick;
-};
-
-/** Changes the height of the frames at once, as two fingers do. */
-export const zoomNow = (table: Table, ratio: number, anchor: Anchor): void => {
-  const before = table.frame.value;
-  zoomTo(table, before * ratio, anchor);
-  settle(table.frame);
-  if (before > 0 && table.frame.value !== before) {
-    arrange(table, anchor, table.frame.value / before);
-  }
+  return isZooming || isScrolling || isTucking || isDimming || isMoving;
 };
 
 const roomAround = 12;
@@ -296,8 +295,9 @@ export const reveal = (table: Table, id: string, isAtOnce = false): void => {
   }
   const { size, scroller } = table;
   const from = scroller.target ?? scroller.value;
-  // Once the table is scrolled the bars have made way.
-  const top = rect.y - size.pinned - roomAround - table.layout.measure.head;
+  // Below what is left of the bars, and of the heading of its sheet.
+  const bars = size.top - table.tuck.target;
+  const top = rect.y - bars - roomAround - table.layout.measure.head;
   const bottom = rect.y + rect.h + roomAround - size.height;
   const { least, most } = scrollLimits(table);
   const next = clamp(clamp(from, bottom, top), least, most);

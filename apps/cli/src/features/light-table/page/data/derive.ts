@@ -1,5 +1,4 @@
-import type { Mark, MarkKind, PhotoView, ShootView } from '../../contract.ts';
-import { opinionKinds } from '../../kinds.ts';
+import type { Mark, PhotoView, ShootView } from '../../contract.ts';
 import { type Filters, type Why, whys } from '../app/route.ts';
 import { dayOf } from './format.ts';
 
@@ -7,10 +6,8 @@ import { dayOf } from './format.ts';
 
 /** The marks of one photo, by how far they have got. */
 export type Marked = {
-  /** Not handed over yet, so it can be taken back. Not about favourites. */
+  /** Not handed over yet, so it can be taken back. */
   readonly open: Mark | null;
-  /** Not handed over yet, about being a favourite. */
-  readonly favorite: Mark | null;
   /** Handed over; an agent hasn't answered. */
   readonly waiting: ReadonlyArray<Mark>;
   /** Answered, and not looked at since. */
@@ -19,10 +16,17 @@ export type Marked = {
   readonly past: ReadonlyArray<Mark>;
 };
 
+/** Photos that show the same. The one in front stands for all of them. */
+export type Pile = {
+  readonly front: PhotoView;
+  /** All of them, the front one too, in the order they were taken. */
+  readonly photos: ReadonlyArray<PhotoView>;
+};
+
 export type Day = {
   readonly date: string;
   readonly taken: number;
-  readonly moments: number;
+  readonly piles: number;
   readonly edited: number;
   readonly inAlbum: number;
   /** Chosen for the album, and not published there yet. */
@@ -34,7 +38,10 @@ export type Index = {
   readonly byId: ReadonlyMap<string, PhotoView>;
   /** The number of a frame in the shoot, from 1. */
   readonly numberOf: ReadonlyMap<string, number>;
-  readonly byMoment: ReadonlyMap<string, ReadonlyArray<PhotoView>>;
+  /** Every pile, in the order of the photos in front. */
+  readonly piles: ReadonlyArray<Pile>;
+  /** The pile each photo lies in. */
+  readonly pileOf: ReadonlyMap<string, Pile>;
   readonly days: ReadonlyArray<Day>;
   readonly marked: ReadonlyMap<string, Marked>;
   /** Every label in use, the most used first. */
@@ -49,25 +56,11 @@ export type Index = {
   readonly hasAlbum: boolean;
 };
 
-const unmarked: Marked = {
-  open: null,
-  favorite: null,
-  waiting: [],
-  news: [],
-  past: [],
-};
-
-export const isAboutFavorites = (kind: MarkKind): boolean =>
-  kind === 'favorite' || kind === 'not-favorite';
-
-export const isOpinion = (kind: MarkKind): boolean =>
-  (opinionKinds as ReadonlyArray<MarkKind>).includes(kind);
+const unmarked: Marked = { open: null, waiting: [], news: [], past: [] };
 
 const withMark = (marked: Marked, mark: Mark): Marked => {
   if (mark.handedOverAt === null) {
-    return isAboutFavorites(mark.kind)
-      ? { ...marked, favorite: mark }
-      : { ...marked, open: mark };
+    return { ...marked, open: mark };
   }
   if (mark.answer === null) {
     return { ...marked, waiting: [...marked.waiting, mark] };
@@ -85,33 +78,49 @@ const markedOf = (marks: ReadonlyArray<Mark>): Map<string, Marked> => {
   return marked;
 };
 
-const daysOf = (photos: ReadonlyArray<PhotoView>): ReadonlyArray<Day> => {
-  const days = new Map<string, Day & { readonly seen: Set<string> }>();
-  for (const photo of photos) {
-    const date = dayOf(photo.takenAt);
+export const isChosen = ({ standing }: PhotoView): boolean =>
+  standing.kind === 'album' || standing.kind === 'picked';
+
+const pilesOf = (
+  { stacks }: ShootView,
+  byId: ReadonlyMap<string, PhotoView>,
+): ReadonlyArray<Pile> =>
+  stacks.flatMap(({ front, photos }) => {
+    const first = byId.get(front);
+    return first === undefined
+      ? []
+      : [
+          {
+            front: first,
+            photos: photos.flatMap((id) => byId.get(id) ?? []),
+          },
+        ];
+  });
+
+const daysOf = (piles: ReadonlyArray<Pile>): ReadonlyArray<Day> => {
+  const days = new Map<string, Day>();
+  for (const { front, photos } of piles) {
+    const date = dayOf(front.takenAt);
     const day = days.get(date) ?? {
       date,
       taken: 0,
-      moments: 0,
+      piles: 0,
       edited: 0,
       inAlbum: 0,
       picked: 0,
-      seen: new Set<string>(),
     };
-    const isNewMoment = !day.seen.has(photo.moment);
-    day.seen.add(photo.moment);
     days.set(date, {
-      ...day,
-      taken: day.taken + 1,
-      moments: day.moments + (isNewMoment ? 1 : 0),
-      edited: day.edited + (photo.edit === null ? 0 : 1),
-      inAlbum: day.inAlbum + (photo.standing.kind === 'album' ? 1 : 0),
-      picked: day.picked + (photo.standing.kind === 'picked' ? 1 : 0),
+      date,
+      taken: day.taken + photos.length,
+      piles: day.piles + 1,
+      edited: day.edited + photos.filter(({ edit }) => edit !== null).length,
+      inAlbum: day.inAlbum + (front.standing.kind === 'album' ? 1 : 0),
+      picked: day.picked + (front.standing.kind === 'picked' ? 1 : 0),
     });
   }
-  return [...days.values()]
-    .map(({ seen: _, ...day }) => day)
-    .toSorted((left, right) => left.date.localeCompare(right.date));
+  return [...days.values()].toSorted((left, right) =>
+    left.date.localeCompare(right.date),
+  );
 };
 
 const labelsOf = (photos: ReadonlyArray<PhotoView>): Index['labels'] => {
@@ -129,21 +138,24 @@ const labelsOf = (photos: ReadonlyArray<PhotoView>): Index['labels'] => {
 
 export const indexOf = (shoot: ShootView): Index => {
   const { photos } = shoot;
+  const byId = new Map(photos.map((photo) => [photo.id, photo]));
+  const piles = pilesOf(shoot, byId);
   const inAlbum = photos.filter(
     (photo) => photo.standing.kind === 'album',
   ).length;
   return {
     shoot,
-    byId: new Map(photos.map((photo) => [photo.id, photo])),
+    byId,
     numberOf: new Map(photos.map((photo, index) => [photo.id, index + 1])),
-    byMoment: Map.groupBy(photos, (photo) => photo.moment),
-    days: daysOf(photos),
+    piles,
+    pileOf: new Map(
+      piles.flatMap((pile) => pile.photos.map(({ id }) => [id, pile] as const)),
+    ),
+    days: daysOf(piles),
     marked: markedOf(shoot.marks),
     labels: labelsOf(photos),
     inAlbum,
-    chosen: photos.filter(
-      ({ standing }) => standing.kind === 'album' || standing.kind === 'picked',
-    ).length,
+    chosen: photos.filter(isChosen).length,
     hasAlbum: shoot.album !== null || inAlbum > 0,
   };
 };
@@ -151,28 +163,36 @@ export const indexOf = (shoot: ShootView): Index => {
 export const markedIn = (index: Index, photo: string): Marked =>
   index.marked.get(photo) ?? unmarked;
 
-/** Why a photo isn't in the album, or null when it is or will be. */
+/** The photos that show the same as this one, itself too. */
+export const pileAround = (index: Index, photo: PhotoView): Pile =>
+  index.pileOf.get(photo.id) ?? { front: photo, photos: [photo] };
+
+/**
+ * Why the photo in front of a pile isn't in the album, or null when it is,
+ * will be, or nothing is decided yet.
+ */
 export const whyOf = ({ standing }: PhotoView): Why | null => {
-  if (standing.kind === 'album' || standing.kind === 'picked') {
-    return null;
+  if (standing.kind === 'taken-out') {
+    return 'taken-out';
   }
-  return standing.kind === 'left-out' ? standing.rule : standing.kind;
+  return standing.kind === 'left-out' ? 'weak' : null;
 };
 
-/** Photos that lie together on the table, under one heading. */
+/** Piles that lie together on the table, under one heading. */
 export type Section = {
   readonly key: string;
   readonly day: Day | null;
   readonly why: Why | null;
-  readonly photos: ReadonlyArray<PhotoView>;
+  readonly piles: ReadonlyArray<Pile>;
 };
 
-const isShown = (photo: PhotoView, filters: Filters): boolean => {
-  const why = whyOf(photo);
+const isShown = ({ front, photos }: Pile, filters: Filters): boolean => {
+  const why = whyOf(front);
+  const { label } = filters;
   return (
-    (filters.day === null || dayOf(photo.takenAt) === filters.day) &&
-    (filters.label === null || photo.labels.includes(filters.label)) &&
-    (filters.show !== 'album' || why === null) &&
+    (filters.day === null || dayOf(front.takenAt) === filters.day) &&
+    (label === null || photos.some(({ labels }) => labels.includes(label))) &&
+    (filters.show !== 'album' || isChosen(front)) &&
     (filters.show !== 'left' ||
       (why !== null && (filters.why === null || filters.why === why)))
   );
@@ -183,67 +203,81 @@ export const sectionsOf = (
   index: Index,
   filters: Filters,
 ): ReadonlyArray<Section> => {
-  const shown = index.shoot.photos.filter((photo) => isShown(photo, filters));
+  const shown = index.piles.filter((pile) => isShown(pile, filters));
   if (filters.show === 'left') {
-    const byWhy = Map.groupBy(shown, whyOf);
+    const byWhy = Map.groupBy(shown, ({ front }) => whyOf(front));
     return whys.flatMap((why) => {
-      const photos = byWhy.get(why);
-      return photos === undefined ? [] : [{ key: why, day: null, why, photos }];
+      const piles = byWhy.get(why);
+      return piles === undefined ? [] : [{ key: why, day: null, why, piles }];
     });
   }
-  const byDay = Map.groupBy(shown, (photo) => dayOf(photo.takenAt));
+  const byDay = Map.groupBy(shown, ({ front }) => dayOf(front.takenAt));
   return index.days.flatMap((day) => {
-    const photos = byDay.get(day.date);
-    return photos === undefined
+    const piles = byDay.get(day.date);
+    return piles === undefined
       ? []
-      : [{ key: day.date, day, why: null, photos }];
+      : [{ key: day.date, day, why: null, piles }];
   });
 };
 
-/** How many photos were left out for each reason, on one day or on all. */
-export const whyCounts = (
-  index: Index,
-  day: string | null,
-): ReadonlyMap<Why, number> => {
-  const counts = new Map<Why, number>();
-  for (const photo of index.shoot.photos) {
-    const why = whyOf(photo);
-    if (why !== null && (day === null || dayOf(photo.takenAt) === day)) {
-      counts.set(why, (counts.get(why) ?? 0) + 1);
-    }
-  }
-  return counts;
+/** How many piles each view of the table holds. They add up. */
+export type Counts = {
+  readonly all: number;
+  readonly album: number;
+  readonly left: number;
+  readonly weak: number;
+  readonly takenOut: number;
+  /** Nothing is decided about them yet. */
+  readonly open: number;
+};
+
+/** How many piles each view holds, on one day or on all. */
+export const countsOf = (index: Index, day: string | null): Counts => {
+  const fronts = index.piles
+    .map(({ front }) => front)
+    .filter(({ takenAt }) => day === null || dayOf(takenAt) === day);
+  const weak = fronts.filter((front) => whyOf(front) === 'weak').length;
+  const takenOut = fronts.filter(
+    (front) => whyOf(front) === 'taken-out',
+  ).length;
+  const album = fronts.filter(isChosen).length;
+  return {
+    all: fronts.length,
+    album,
+    left: weak + takenOut,
+    weak,
+    takenOut,
+    open: fronts.length - album - weak - takenOut,
+  };
 };
 
 /** What waits for the owner or for an agent. */
 export type Attention = {
   /** Answered, and not looked at yet. */
   readonly news: ReadonlyArray<Mark>;
-  /** Not handed over, for an agent to act on. */
+  /** Not handed over yet. */
   readonly wishes: ReadonlyArray<Mark>;
-  /** Not handed over, and nothing an agent acts on. */
-  readonly opinions: ReadonlyArray<Mark>;
   /** Handed over, and not answered yet. */
   readonly waiting: ReadonlyArray<Mark>;
 };
 
-export const attentionOf = (marks: ReadonlyArray<Mark>): Attention => {
-  const open = marks.filter((mark) => mark.handedOverAt === null);
-  return {
-    news: marks.filter((mark) => mark.answer !== null && mark.seenAt === null),
-    wishes: open.filter((mark) => !isOpinion(mark.kind)),
-    opinions: open.filter((mark) => isOpinion(mark.kind)),
-    waiting: marks.filter(
-      (mark) => mark.handedOverAt !== null && mark.answer === null,
-    ),
-  };
-};
+export const attentionOf = (marks: ReadonlyArray<Mark>): Attention => ({
+  news: marks.filter((mark) => mark.answer !== null && mark.seenAt === null),
+  wishes: marks.filter((mark) => mark.handedOverAt === null),
+  waiting: marks.filter(
+    (mark) => mark.handedOverAt !== null && mark.answer === null,
+  ),
+});
 
 /** Whether acting on a mark means editing a photo, which costs money. */
-export const needsEdit = (index: Index, { kind, photo }: Mark): boolean =>
-  kind === 'change' ||
-  ((kind === 'put-in' || kind === 'swap') &&
-    index.byId.get(photo)?.edit === null);
+export const needsEdit = (index: Index, { kind, photo }: Mark): boolean => {
+  const about = index.byId.get(photo);
+  if (kind === 'change') {
+    // A wish for a photo that isn't edited yet is part of its first edit.
+    return about?.standing.kind !== 'picked';
+  }
+  return (kind === 'put-in' || kind === 'swap') && about?.edit === null;
+};
 
 /** How many photos are chosen once these marks are acted on. */
 export const chosenAfter = (index: Index, marks: ReadonlyArray<Mark>): number =>
@@ -251,34 +285,16 @@ export const chosenAfter = (index: Index, marks: ReadonlyArray<Mark>): number =>
   marks.filter(({ kind }) => kind === 'put-in').length -
   marks.filter(({ kind }) => kind === 'take-out').length;
 
-/** Whether a photo will be a favourite, counting the marks about it. */
-export const isFavorite = (index: Index, photo: PhotoView): boolean => {
-  const { favorite, waiting } = markedIn(index, photo.id);
-  const wished =
-    favorite ?? waiting.findLast((mark) => isAboutFavorites(mark.kind));
-  return wished === undefined
-    ? photo.standing.kind === 'album' && photo.standing.favorite
-    : wished.kind === 'favorite';
-};
+/** Whether a photo carries the favorite heart in Immich. */
+export const isFavorite = ({ standing }: PhotoView): boolean =>
+  standing.kind === 'album' && standing.favorite;
 
-/** The photo to look at next to one that isn't in the album. */
-export const counterpartOf = (
+/** The photo that stands in front of this one, if one does. */
+export const frontOf = (
   index: Index,
   { standing }: PhotoView,
-): PhotoView | null => {
-  if (standing.kind === 'left-out' && standing.repeats !== null) {
-    return index.byId.get(standing.repeats) ?? null;
-  }
-  return standing.kind === 'other-frame'
-    ? (index.byId.get(standing.of) ?? null)
-    : null;
-};
-
-/** Whether the owner has said anything about a photo that still holds. */
-export const isLookedAt = (index: Index, photo: string): boolean => {
-  const { open, waiting, past } = markedIn(index, photo);
-  return open !== null || waiting.length > 0 || past.length > 0;
-};
+): PhotoView | null =>
+  standing.kind === 'similar' ? (index.byId.get(standing.to) ?? null) : null;
 
 /** The mark a photo shows on the table, and how far it has got. */
 export type Shown = {
@@ -288,15 +304,23 @@ export type Shown = {
 
 export const shownMarks = (marked: Marked): ReadonlyArray<Shown> => {
   const news = marked.news.at(-1);
-  const waiting = marked.waiting.filter((mark) => mark.kind !== 'favorite');
   return [
     ...(news === undefined ? [] : [{ mark: news, state: 'news' } as const]),
-    ...waiting.slice(-1).map((mark) => ({ mark, state: 'waiting' }) as const),
-    ...[marked.open, marked.favorite]
-      .filter((mark) => mark !== null)
-      .map((mark) => ({ mark, state: 'open' }) as const),
+    ...marked.waiting
+      .slice(-1)
+      .map((mark) => ({ mark, state: 'waiting' }) as const),
+    ...(marked.open === null
+      ? []
+      : [{ mark: marked.open, state: 'open' } as const]),
   ];
 };
+
+/** The marks of every photo of a pile, as the photo in front shows them. */
+export const marksOfPile = (
+  index: Index,
+  { photos }: Pile,
+): ReadonlyArray<Shown> =>
+  photos.flatMap(({ id }) => shownMarks(markedIn(index, id)));
 
 /** The photos with an answer the owner hasn't looked at, in the order of the shoot. */
 export const answeredPhotos = (index: Index): ReadonlyArray<string> =>

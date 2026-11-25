@@ -1,6 +1,6 @@
 ---
 name: keepsake
-description: Turn a folder of the user's photos, such as a trip or a birding day, into a small album of finished ones with the keepsake command, which lets vision models choose the best frames, crops and edits them with an image model, and publishes them to Immich. Use when the user wants a shoot culled, its best photos chosen, rated, cropped or edited with AI, or finished photos published, wants to know why a photo is or isn't in the album, has marked or handed over photos on keepsake's page or wants you to wait for that, gives you a link to that page, or wants to compare how well vision models judge their photos. Not for photos already in Immich, which the photos skill covers.
+description: Turn a folder of the user's photos, such as a trip or a birding day, into a small album of finished ones with the keepsake command, which lets vision models choose the best frames, crops and edits them with an image model, and publishes them to Immich. Use when the user wants a shoot culled, its best photos chosen, rated, cropped or edited with AI, or finished photos published, wants to know why a photo is or isn't in the album, has marked, ordered or handed over something on keepsake's page or wants you to wait for that, gives you a link to that page, or wants to compare how well vision models judge their photos. Not for photos already in Immich, which the photos skill covers.
 ---
 
 # keepsake
@@ -19,7 +19,7 @@ keepsake only reads the folder of photos and never changes it. What it makes is 
 
 ## From a folder to an album
 
-`keepsake run <folder> --about "<place, month and year>"` does everything up to the edits, and `--publish` also uploads them. `--about` tells the models where the photos are from, so always give it. When the trip was in another time zone than the camera's clock, which is the usual case when the time on the photos doesn't fit the light in them, give `--time-zone <such as Asia/Tokyo>` too, so the finished photos carry the time there. Run it in the background: 900 photos take about ten minutes to cull, and each edit takes a few minutes. When it stops for any reason, run the same command again and it goes on where it stopped.
+The user can start an album on the page, or you with `keepsake run <folder> --about "<place, month and year>"`, which does everything up to the edits. With `--unedited` it stops before them, so nothing costs money and the user can look through the choice on the page first, and `--publish` also uploads them. `--about` tells the models where the photos are from, so always give it. When the trip was in another time zone than the camera's clock, which is the usual case when the time on the photos doesn't fit the light in them, give `--time-zone <such as Asia/Tokyo>` too, so the finished photos carry the time there. Run it in the background: 900 photos take about ten minutes to cull, and each edit takes a few minutes. When it stops for any reason, run the same command again and it goes on where it stopped.
 
 The steps are also commands of their own, for a shoot that `scan` has named:
 
@@ -27,30 +27,31 @@ The steps are also commands of their own, for a shoot that `scan` has named:
 2. `cull` finds the best frames of each moment and scores it from 1 to 10. Models are generous: from 7 on a photo is good, and only a few get more than 8. Frames that show something clearly different from the best one are listed under `further`, each with its own score.
 3. `pick` takes the best and the `further` photos of every moment from `--minimum-score` on and leaves out repeats, also of the same thing a few minutes later. With `--maximum` it compares them with each other and keeps the best, with a variety of places, people, animals and the rest. For an album of a certain size give it together with a lower `--minimum-score`, such as 5, so there is enough to choose from.
 4. `edit` crops each pick to an interesting composition, with more room in front of an animal or a person than behind, which may reach a little beyond the photo where a subject is cut off or has no room; the image model continues the scene there. It finds what only distracts, such as strangers in the background or a chair at the edge, and has it removed (listed in the photo's `removals.json`). It makes `--versions` of it, puts the original's people, changed signs and forests back into them, and has them reviewed. People who can be recognised keep their own pixels and get only the light of the edit, so their features can't change; small people in the background and in reflections come back as patches. The versions that pass are inspected part by part at full size, and what is wrong, such as a melted person or woven grass, is put back from the original and inspected again. Where no version passes, it keeps the camera's own picture, listed under `keptFromCamera` with the reason.
-5. `explain` says of every photo that was good enough and isn't in the album why, for the page. It asks the model that culled the shoot, about photos without a reason only, so run it again after the album changed. Put a reason the user gave themselves into `take-out --because`.
+5. `explain` says of every photo that isn't in the album why: what speaks against it, or what the photo that shows the same does better. Run it again after the album changed; it asks only about photos whose reason that touches. Put a reason the user gave themselves into `take-out --because`.
 6. `publish` uploads the finished photos to an album in Immich, each stacked on the camera's own picture and tagged `keepsake`. Publish only when the user asks for it. The album may be changed in Immich too: `publish` puts nothing back that was taken out there unless it is named.
 
 `show <shoot>` says where a shoot stands and where the files are, and `show <shoot> <photo>` gives everything about one photo, with its `standing` and its `link` on the page. Look at a few finished photos yourself before you call them done, and at every one with people, close up and beside the camera's picture: their edges should look natural, with no halo and no second outline.
 
 ## The page
 
-`keepsake serve` serves a page where the user looks through their shoots: every photo with where it stands and why, every edit beside the camera's picture and the edits before it, and what it cost. There they mark what should change and hand the marks over. Nothing changes until an agent acts on them, which is you.
+`keepsake serve` serves a page where the user looks through their albums: every photo with where it stands and why, every edit beside the camera's picture and the edits before it, and what it cost. What costs nothing happens there right away. They make an album out of a folder below one that `--photos` named, which the page gets ready with `run --unedited`, and mark favorites, which are Immich's. For everything else they mark photos, or order the edits of a new album, and hand that over. Nothing of it changes until an agent acts on it, which is you. With `--agent` the page starts a program that starts you.
 
 When you write to the user about photos, link to them on the page with the `link` that `show` and `marks` give, instead of naming files. A `link` is null while the page isn't served. Then it is for this machine only, unless something passes it on and `--address` says where it is reached from. Where it is set up as a service, restart that instead of serving it a second time.
 
-When the user handed marks over, or asks you to go through them:
+When the user handed something over, or asks you to go through it:
 
-1. `marks <shoot>` lists them with their `note`, `boxes` and the photo's files. When the user wants to go through photos while you act on them, run `marks <shoot> --wait` in the background: it ends as soon as they hand something over, and the page shows them that you are waiting. Start it again when you are done with those.
-2. Add up what they cost before you start: a `change` about $0.45, twice that when a place needs a second attempt, and a photo without a `final` about $0.75. Tell the user and go on when they agree or have named a budget. Everything else is free, so do that right away.
-3. Act on each, and look at what came of it as you would without a mark:
+1. `marks <shoot>` lists it: the marks with their `note`, `boxes` and the photo's files, and `album` when they ordered the edits of the chosen photos. When the user wants to go through photos while you act on them, run `marks <shoot> --wait` in the background: it ends as soon as they hand something over, and the page shows them that you are waiting. Start it again when you are done with that.
+2. `agreedDollars` is what they agreed to pay for all of it on the page, so start without asking and stay within it. A `change` costs about $0.45, twice that when a place needs a second attempt, and a photo without a `final` about $0.75. Ask before you pay for more than they agreed to, such as for another attempt.
+3. Act on each mark, and look at what came of it as you would without one:
    - `change`: `edit <shoot> --mark <id>`, which takes the note as the wish and changes only what is in the boxes, if there are any. Give `--wish` when the note needs to be clearer. Then `publish <shoot> <photo>`.
    - `put-in`: `edit <shoot> --mark <id>`, unless it has a `final` and the mark no note, then `publish <shoot> <photo>`.
    - `take-out`: `take-out <shoot> <photo> --because "<the note, or what the user said about it>"`.
    - `swap`: put in `photo`, and take out `other` for it.
-   - `favorite` and `not-favorite`: `photos update <asset> --favorite` or `--no-favorite`.
 4. `answer <shoot> <id> --done "<what changed, in a sentence>"`, or `--not-done "<why>"`, right after each one. The page shows it to the user with the photo, so they know where to look again.
+5. With an `album`, go on with the chosen photos after the marks, which may take some of them out: `edit <shoot> --budget <what is left of agreedDollars>`, look at them, and `publish <shoot>`. The order is done when all of them are in the album. Where the budget ends first, publish what is done and ask.
+6. `explain <shoot>` when the album changed.
 
-Do the same when they tell you in the chat instead: `take-out` with their reason, so the page can show it.
+Do the same when they tell you in the chat instead: `take-out` with their reason, so the page can show it. Photos that are only chosen so far can be taken out too.
 
 ## Changing the result
 

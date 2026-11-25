@@ -8,7 +8,7 @@ const answered = '2026-05-10T20:00:00.000Z';
 const mark = (id: string, photo: string, rest: Partial<Mark>): Mark => ({
   id,
   photo,
-  kind: 'keep',
+  kind: 'take-out',
   note: '',
   boxes: [],
   other: null,
@@ -25,13 +25,12 @@ export const marks: ReadonlyArray<Mark> = [
     note: 'Remove the rope in front of the gull.',
     boxes: [{ left: 0.2, top: 0.6, right: 0.5, bottom: 0.8 }],
   }),
-  mark('a2', 'D60', { kind: 'favorite' }),
   mark('a3', 'D40', {
     kind: 'swap',
     other: 'D30',
     note: 'I like it from behind.',
   }),
-  mark('a4', 'D10', { kind: 'keep' }),
+  mark('a4', 'D10', { kind: 'take-out' }),
   mark('a5', 'D170', { kind: 'put-in', handedOverAt: handed }),
   mark('a6', 'D160', { kind: 'take-out', handedOverAt: handed }),
   mark('a7', 'D120', {

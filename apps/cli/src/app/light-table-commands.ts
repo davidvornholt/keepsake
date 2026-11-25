@@ -1,5 +1,6 @@
-import { Effect, Option } from 'effect';
-import { Command } from 'effect/cli';
+import process from 'node:process';
+import { Effect, Option, Path } from 'effect';
+import { Command, Flag } from 'effect/cli';
 import { serveLightTable } from '../features/light-table/server.ts';
 import { saveAddress } from '../shared/address.ts';
 import {
@@ -11,6 +12,7 @@ import {
 import { emit } from './output.ts';
 
 const highestPort = 65_535;
+const mostFolders = 20;
 const webProtocols = new Set(['http:', 'https:']);
 
 const webAddress = (text: string) =>
@@ -26,6 +28,11 @@ const webAddress = (text: string) =>
     ),
   );
 
+/** How this very program is started, as a binary or from its source. */
+const keepsake = Bun.main.startsWith('/$bunfs/')
+  ? [process.execPath]
+  : [process.execPath, Bun.main];
+
 export const serve = Command.make(
   'serve',
   {
@@ -34,9 +41,20 @@ export const serve = Command.make(
       'address',
       'Where the page is reached from another machine, when something on this one passes it on to the port, such as https://server.example.ts.net:8443',
     ),
+    photos: Flag.String('photos').pipe(
+      Flag.withDescription(
+        'A folder with the owner’s photos, whose folders the page offers to make albums of. Can be given several times.',
+      ),
+      Flag.atMost(mostFolders),
+    ),
+    agent: optionalString(
+      'agent',
+      'A program that starts an agent when the owner hands something over and none waits. It gets the name of the shoot, and may print {"link":"<where to read along>"}.',
+    ),
   },
-  ({ port, address }) =>
+  ({ port, address, photos, agent }) =>
     Effect.gen(function* () {
+      const path = yield* Path.Path;
       const chosenPort = yield* bounded('port', port, {
         fallback: 0,
         min: 0,
@@ -48,6 +66,9 @@ export const serve = Command.make(
       const server = yield* serveLightTable({
         port: chosenPort,
         address: reachedAt,
+        photos: photos.map((folder) => path.resolve(folder)),
+        agent: Option.getOrUndefined(agent) || undefined,
+        keepsake,
       });
       const url = reachedAt?.href ?? `http://127.0.0.1:${server.port}/`;
       yield* saveAddress(url, reachedAt !== undefined);

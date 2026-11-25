@@ -7,14 +7,18 @@ import {
 } from 'react';
 import type { PhotoView as Photo } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
+import { pileAround } from '../data/derive.ts';
 import { reveal } from '../sheet/arrange.ts';
 import type { Engine } from '../sheet/engine.ts';
-import { onScreen, restingOnScreen } from '../sheet/table.ts';
+import { onScreen } from '../sheet/table.ts';
+import { prefersReducedMotion } from '../ui/theme.ts';
 import { useTitle } from '../ui/use-title.ts';
 import { useWindowSize } from '../ui/use-window.ts';
-import { Body } from './body.tsx';
+import { Body, type BodyHandle } from './body.tsx';
+import type { Entry } from './control.ts';
+import { Passing, type PassingHandle } from './passing.tsx';
 import { isWide } from './room.ts';
-import type { FrameOnTable, StageHandle } from './stage.tsx';
+import type { FrameOnTable } from './stage.tsx';
 
 // A photo that is looked at. The lights of the table go down, the frame
 // rises from its sheet, and goes back to it when the owner is done.
@@ -37,6 +41,8 @@ const remembered = 'keepsake:about-photo';
 /** How bright the table gets while a photo is pulled away from it. */
 const pulledLights = 0.85;
 const pulledFrom = 0.03;
+/** A photo that takes the place of another without moving. */
+const inPlace: Entry = { x: 0, speed: 0 };
 
 const wasInfoShown = (): boolean => {
   try {
@@ -54,30 +60,51 @@ const rememberInfo = (isShown: boolean) => {
   }
 };
 
-/** The frame of a photo on the table, as it is seen right now. */
+/**
+ * The frame of the table that stands for a photo: its own, or the one in
+ * front of the pile it lies in.
+ */
+const frameIdOf = (
+  engine: Engine,
+  photo: Photo,
+  front: string,
+): string | null => {
+  const { placed } = engine.table;
+  if (placed.has(photo.id)) {
+    return photo.id;
+  }
+  return placed.has(front) ? front : null;
+};
+
+/** That frame as it is seen right now, if it is in sight. */
 const frameOf = (
   engine: Engine | null,
   photo: Photo,
-  showsEdits: boolean,
-  isResting: boolean,
+  look: { readonly front: string; readonly showsEdits: boolean },
 ): FrameOnTable | null => {
-  if (engine === null) {
+  const id = engine === null ? null : frameIdOf(engine, photo, look.front);
+  if (engine === null || id === null) {
     return null;
   }
   const { table } = engine;
-  const rect = isResting
-    ? restingOnScreen(table, photo.id)
-    : onScreen(table, photo.id);
+  const rect = onScreen(table, id);
   const isInSight =
     rect !== null && rect.y + rect.h > 0 && rect.y < table.size.height;
   return rect !== null && isInSight
-    ? { rect, shows: showsEdits && photo.edit !== null ? 'edit' : 'camera' }
+    ? {
+        rect,
+        shows: look.showsEdits && photo.edit !== null ? 'edit' : 'camera',
+      }
     : null;
 };
 
 /** Dims the table for as long as a photo is looked at, and hides its frame. */
-const useTable = (engineRef: RefObject<Engine | null>, photo: string) => {
-  const firstRef = useRef(photo);
+const useTable = (
+  engineRef: RefObject<Engine | null>,
+  photo: Photo,
+  front: string,
+) => {
+  const firstRef = useRef(photo.id);
   useEffect(() => {
     const engine = engineRef.current;
     if (engine === null) {
@@ -94,17 +121,18 @@ const useTable = (engineRef: RefObject<Engine | null>, photo: string) => {
 
   useEffect(() => {
     const engine = engineRef.current;
-    if (engine === null) {
+    const id = engine === null ? null : frameIdOf(engine, photo, front);
+    if (engine === null || id === null) {
       return;
     }
-    engine.state.hidden = photo;
-    engine.state.cursor = photo;
-    if (firstRef.current !== photo) {
+    engine.state.hidden = id;
+    engine.state.cursor = id;
+    if (firstRef.current !== photo.id) {
       // The table follows behind, so the photo goes back to where it is.
-      reveal(engine.table, photo, true);
+      reveal(engine.table, id, true);
     }
     engine.request();
-  }, [engineRef, photo]);
+  }, [engineRef, photo, front]);
 };
 
 /** Whether the notes about a photo are shown: beside it, or over it on a small screen. */
@@ -124,6 +152,57 @@ const useInfo = (wide: boolean) => {
   };
 };
 
+/** Sends the photo back to its frame of the table once it is left. */
+const useLeaving = (
+  isLeaving: boolean,
+  {
+    engineRef,
+    passingRef,
+    bodyRef,
+    onGone,
+  }: Pick<Props, 'engineRef' | 'onGone'> & {
+    readonly passingRef: RefObject<PassingHandle | null>;
+    readonly bodyRef: RefObject<BodyHandle | null>;
+  },
+  frame: () => ReturnType<typeof frameOf>,
+) => {
+  const leave = useEffectEvent(() => {
+    const engine = engineRef.current;
+    if (engine !== null) {
+      engine.table.lights.target = 1;
+      engine.request();
+    }
+    passingRef.current?.clear();
+    const body = bodyRef.current;
+    if (body === null) {
+      onGone();
+    } else {
+      body.leave(frame, onGone);
+    }
+  });
+
+  useEffect(() => {
+    if (isLeaving) {
+      leave();
+    }
+  }, [isLeaving]);
+};
+
+/** The photo is pulled down to be put away: the table comes up under it. */
+const pull = (
+  view: HTMLElement | null,
+  engine: Engine | null,
+  share: number,
+) => {
+  if (view !== null) {
+    view.dataset.pulled = String(share > pulledFrom);
+  }
+  if (engine !== null) {
+    engine.table.lights.target = Math.min(1, share) * pulledLights;
+    engine.request();
+  }
+};
+
 export const PhotoView = ({
   photo,
   order,
@@ -137,18 +216,23 @@ export const PhotoView = ({
   const { index, filters } = useShootContext();
   const size = useWindowSize();
   const viewRef = useRef<HTMLElement>(null);
-  const stageRef = useRef<StageHandle | null>(null);
-  const sideRef = useRef<-1 | 0 | 1>(0);
-  const [first] = useState(photo.id);
+  const bodyRef = useRef<BodyHandle | null>(null);
+  const passingRef = useRef<PassingHandle | null>(null);
+  /** How the photo shown came in, once a page was turned. */
+  const entryRef = useRef<Entry | null>(null);
   const showsEdits = filters.show === 'album';
+  const pile = pileAround(index, photo);
+  const front = pile.front.id;
   const [from] = useState(() =>
-    frameOf(engineRef.current, photo, showsEdits, false),
+    frameOf(engineRef.current, photo, { front, showsEdits }),
   );
   const [isShown, setIsShown] = useState(false);
   const info = useInfo(isWide(size));
-  const at = order.findIndex(({ id }) => id === photo.id);
+  const own = order.findIndex(({ id }) => id === photo.id);
+  // A photo from behind another one stands where its pile does.
+  const at = own >= 0 ? own : order.findIndex(({ id }) => id === front);
   const number = index.numberOf.get(photo.id) ?? 0;
-  useTable(engineRef, photo.id);
+  useTable(engineRef, photo, front);
   useTitle(`Photo ${number}`, index.shoot.about ?? index.shoot.name);
 
   useEffect(() => {
@@ -161,81 +245,73 @@ export const PhotoView = ({
     return () => cancelAnimationFrame(shown);
   }, []);
 
-  const leave = useEffectEvent(() => {
-    const engine = engineRef.current;
-    if (engine !== null) {
-      engine.table.lights.target = 1;
-      engine.request();
-    }
-    const to = frameOf(engine, photo, showsEdits, true);
-    const stage = stageRef.current;
-    if (stage === null) {
-      onGone();
-    } else {
-      stage.leave(to, onGone);
-    }
-  });
+  // Asked for every frame: the table may be scrolled while it flies.
+  useLeaving(isLeaving, { engineRef, passingRef, bodyRef, onGone }, () =>
+    frameOf(engineRef.current, photo, { front, showsEdits }),
+  );
 
-  useEffect(() => {
-    if (isLeaving) {
-      leave();
-    }
-  }, [isLeaving]);
-
-  const turn = (direction: -1 | 1): boolean => {
-    const next = order[at + direction];
+  /** Shows another photo. The one shown makes way as the other comes in. */
+  const show = (id: string, entry: Entry) => {
     // A photo on its way back to the table stays the one that was left.
+    if (isLeaving || id === photo.id) {
+      return;
+    }
+    const isStill = prefersReducedMotion() || entry.x === 0;
+    entryRef.current = isStill ? inPlace : entry;
+    passingRef.current?.show(
+      isStill ? [] : (bodyRef.current?.stills() ?? []),
+      entry.x,
+    );
+    onTurn(id);
+  };
+
+  const turn = (direction: -1 | 1, entry?: Entry): boolean => {
+    const next = order[at + direction];
     if (isLeaving || at < 0 || next === undefined) {
       return false;
     }
-    sideRef.current = direction;
-    onTurn(next.id);
+    const away = direction * size.width;
+    show(next.id, { x: away + (entry?.x ?? 0), speed: entry?.speed ?? 0 });
     return true;
-  };
-
-  const pull = (share: number) => {
-    const view = viewRef.current;
-    const engine = engineRef.current;
-    if (view !== null) {
-      view.dataset.pulled = String(share > pulledFrom);
-    }
-    if (engine !== null) {
-      engine.table.lights.target = Math.min(1, share) * pulledLights;
-      engine.request();
-    }
   };
 
   return (
     <section
       aria-label={`Photo ${number}`}
-      className="absolute inset-0 z-30 outline-none"
-      data-view=""
+      // On its way back the photo takes nothing: the table has the pointer again.
+      className={`absolute inset-0 z-30 outline-none ${isLeaving ? 'pointer-events-none' : ''}`}
       data-info={info.isShown}
+      data-leaving={isLeaving}
       data-shown={isShown && !isLeaving}
+      data-view=""
       data-wide={isWide(size)}
       ref={viewRef}
       tabIndex={-1}
     >
+      <Passing handleRef={passingRef} />
       <Body
         around={{
           order,
           at,
+          pile,
           size,
           isInfoShown: info.isShown,
           isLeaving,
-          from: photo.id === first ? from : null,
-          side: photo.id === first ? 0 : sideRef.current,
-          stageRef,
+          from: entryRef.current === null ? from : null,
+          entry: entryRef.current,
           onTurn: turn,
           onJump: (to) => {
             const target = to === 'first' ? order[0] : order.at(-1);
-            if (!isLeaving && target !== undefined && target.id !== photo.id) {
-              sideRef.current = to === 'first' ? -1 : 1;
-              onTurn(target.id);
+            if (target !== undefined) {
+              const side = to === 'first' ? -1 : 1;
+              show(target.id, { x: side * size.width, speed: 0 });
             }
           },
+          onShow: (id) => show(id, inPlace),
+          onOffset: (offset) => passingRef.current?.follow(offset),
+          isPassing: () => passingRef.current?.isShown() ?? false,
           onClose,
-          onPull: pull,
+          onPull: (share) => pull(viewRef.current, engineRef.current, share),
           onInfo: info.set,
           // What was looked at makes way for the next answer.
           onSeen: () => {
@@ -245,6 +321,7 @@ export const PhotoView = ({
           },
           place: `${isPile ? 'Answer ' : ''}${at + 1} of ${order.length}`,
         }}
+        handleRef={bodyRef}
         key={photo.id}
         photo={photo}
       />

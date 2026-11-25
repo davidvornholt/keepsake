@@ -11,7 +11,7 @@ import { sketchWax, stampWax } from '../marks/wax.ts';
 import { clamp } from '../motion/spring.ts';
 import type { Rect } from '../sheet/layout.ts';
 import { colorOf } from '../ui/theme.ts';
-import type { Shown } from './motion.ts';
+import type { Shown } from './gliding.ts';
 import { onScreen, type Plane, rectOf, type View } from './plane.ts';
 
 // What is drawn over a photo that is looked at: the owner's marks and boxes
@@ -24,7 +24,6 @@ export type Stamp = {
   readonly wax: Wax;
   /** When it was made, in milliseconds, so that it is drawn by hand. */
   readonly since: number;
-  readonly corner: 'mark' | 'star';
 };
 
 export type Ink = {
@@ -67,21 +66,12 @@ const stampShare = 0.2;
 const leastStamp = 44;
 const mostStamp = 104;
 const stampInset = 0.045;
-const starShare = 0.5;
 
-const stampPlace = (part: Rect, corner: Stamp['corner']): Rect => {
+/** Where the mark of a photo is drawn: in its lower left corner. */
+const stampPlace = (part: Rect): Rect => {
   const side = Math.min(part.w, part.h);
   const size = clamp(side * stampShare, leastStamp, mostStamp);
   const inset = side * stampInset;
-  if (corner === 'star') {
-    const small = size * starShare;
-    return {
-      x: part.x + part.w - small - inset,
-      y: part.y + inset,
-      w: small,
-      h: small,
-    };
-  }
   return {
     x: part.x + inset,
     y: part.y + part.h - size - inset,
@@ -125,7 +115,7 @@ const drawWaxOn = (pencil: Pencil, scene: Scene, part: Rect, scale: number) => {
   for (const stamp of ink.stamps) {
     const progress = (now - stamp.since) / drawingTime;
     isDrawing = isDrawing || progress < 1;
-    const place = stampPlace(part, stamp.corner);
+    const place = stampPlace(part);
     if (progress < 1) {
       sketchWax(pencil, glyphOf(stamp.shape, stamp.seed), place, {
         color: colorOf(`--color-${stamp.wax}`),

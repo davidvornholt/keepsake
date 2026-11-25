@@ -176,8 +176,13 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     lock: path.join(root, 'lock'),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
-    /** The agent that waits for marks. */
+    /** The agent that waits for marks, and the one the page started last. */
     waiting: path.join(root, 'waiting.json'),
+    agent: path.join(root, 'agent.json'),
+    /** When the owner handed something over, and what they agreed to pay. */
+    handOvers: path.join(root, 'hand-overs.json'),
+    /** The program that gets the shoot ready for the owner. */
+    preparation: path.join(root, 'preparation.json'),
     preview: (photo: string) => path.join(root, 'previews', `${photo}.jpg`),
     verdicts: (model: string) =>
       path.join(root, 'verdicts', model.replaceAll('/', '--')),

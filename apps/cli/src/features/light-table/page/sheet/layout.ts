@@ -1,5 +1,11 @@
 import { clamp } from '../motion/spring.ts';
-import { breaksOf, type Piece, scaleOf, widthOf } from './rows.ts';
+import {
+  breaksHolding,
+  breaksOf,
+  type Piece,
+  scaleOf,
+  widthOf,
+} from './rows.ts';
 
 // Where every frame lies on the table. Each group of frames is a sheet of
 // paper with a heading; the frames run in rows like strips of film, and
@@ -16,8 +22,8 @@ export type Item = {
   readonly id: string;
   /** Width by height. */
   readonly aspect: number;
-  /** Whether a new moment begins with it. */
-  readonly isMomentStart: boolean;
+  /** Whether it lies a little apart from the one before it. */
+  readonly isApart: boolean;
 };
 
 export type Group = {
@@ -44,9 +50,9 @@ export type Sheet = {
 /** The distances on the table, all following from the height of a frame. */
 export type Measure = {
   readonly frame: number;
-  /** Between the frames of one moment, and between two moments. */
+  /** Between two frames, and before one that lies apart. */
   readonly gap: number;
-  readonly momentGap: number;
+  readonly apartGap: number;
   readonly rowGap: number;
   /** Around the frames on a sheet, and around the sheets on the table. */
   readonly inset: number;
@@ -66,7 +72,7 @@ export type Layout = {
 };
 
 const gapShare = 0.045;
-const momentGapShare = 0.2;
+const apartGapShare = 0.2;
 const insetShare = 0.28;
 const marginShare = 0.3;
 const leastInset = 5;
@@ -77,16 +83,16 @@ const headHeight = 26;
 /** From this height on a frame has room for its number and time below it. */
 export const edgePrintFrom = 88;
 const edgePrintHeight = 18;
-/** Below this height the frames of all moments lie evenly. */
-const momentsFrom = 30;
+/** Below this height all frames lie evenly. */
+const apartFrom = 30;
 
 /** On a narrow table the paper and its edges take less of the width. */
 const insetOfWidth = 0.02;
 const marginOfWidth = 0.014;
-/** However large the frames, two moments are never further apart than this. */
-const mostMomentGap = 22;
-const leastMomentGap = 6;
-const momentGapOfWidth = 0.018;
+/** However large the frames, none lies further apart than this. */
+const mostApartGap = 22;
+const leastApartGap = 6;
+const apartGapOfWidth = 0.018;
 
 /** The distances for frames of some height, on a table of some width. */
 export const measureOf = (
@@ -103,12 +109,12 @@ export const measureOf = (
   return {
     frame,
     gap,
-    momentGap:
-      frame >= momentsFrom
+    apartGap:
+      frame >= apartFrom
         ? Math.round(
             Math.min(
-              frame * momentGapShare,
-              clamp(width * momentGapOfWidth, leastMomentGap, mostMomentGap),
+              frame * apartGapShare,
+              clamp(width * apartGapOfWidth, leastApartGap, mostApartGap),
             ),
           )
         : gap,
@@ -144,10 +150,10 @@ const leastPaper = 330;
  */
 const mostAlone = 1.6;
 
-const stripOf = (group: Group, { frame, gap, momentGap }: Measure): Strip => {
-  const pieces = group.items.map(({ aspect, isMomentStart }) => ({
+const stripOf = (group: Group, { frame, gap, apartGap }: Measure): Strip => {
+  const pieces = group.items.map(({ aspect, isApart }) => ({
     width: Math.max(1, frame * aspect),
-    before: isMomentStart ? momentGap : gap,
+    before: isApart ? apartGap : gap,
   }));
   return { group, pieces, ...widthOf(pieces) };
 };
@@ -215,7 +221,19 @@ const layRow = (
   rows.push({ top: at.top, height: at.height, from, to: order.length });
 };
 
-type Bounds = { readonly top?: number; readonly tallest?: number };
+/** A point of a frame that is to stay where it is across the table. */
+export type Hold = {
+  readonly id: string;
+  /** From 0 at the left of the frame to 1 at its right. */
+  readonly share: number;
+  readonly x: number;
+};
+
+type Bounds = {
+  readonly top?: number;
+  readonly tallest?: number;
+  readonly hold?: Hold | null;
+};
 
 type Line = {
   readonly left: number;
@@ -223,6 +241,7 @@ type Line = {
   readonly across: number;
   /** By how much a sheet of one row may grow. */
   readonly most: number;
+  readonly hold: Hold | null;
 };
 
 /** A sheet with rows from edge to edge. Returns where its paper ends. */
@@ -230,13 +249,25 @@ const laySheet = (
   flow: Flow,
   strip: Strip,
   measure: Measure,
-  { left, top, across }: Line,
+  { left, top, across, hold }: Line,
 ): number => {
   const { frame, inset, head, rowGap } = measure;
   const room = Math.max(1, across - inset * 2);
+  const at =
+    hold === null
+      ? -1
+      : strip.group.items.findIndex(({ id }) => id === hold.id);
+  const breaks =
+    hold === null || at === -1
+      ? breaksOf(strip.pieces, room)
+      : breaksHolding(strip.pieces, room, {
+          at,
+          share: hold.share,
+          x: hold.x - left - inset,
+        });
   let y = top + head;
   let from = 0;
-  for (const to of breaksOf(strip.pieces, room)) {
+  for (const to of breaks) {
     const { frames, gaps } = widthOf(strip.pieces, from, to);
     const scale = scaleOf(frames, gaps, room);
     const height = frame * scale;
@@ -325,7 +356,7 @@ export const layOut = (
   groups: ReadonlyArray<Group>,
   width: number,
   frame: number,
-  { top = 0, tallest = Number.POSITIVE_INFINITY }: Bounds = {},
+  { top = 0, tallest = Number.POSITIVE_INFINITY, hold = null }: Bounds = {},
 ): Layout => {
   const measure = measureOf(frame, width);
   const { inset, margin } = measure;
@@ -336,7 +367,7 @@ export const layOut = (
   let y = top;
   for (const line of linesOf(strips, across, measure)) {
     const [first] = line;
-    const place = { left: margin, top: y + margin, across, most };
+    const place = { left: margin, top: y + margin, across, most, hold };
     const isLong =
       first !== undefined &&
       line.length === 1 &&

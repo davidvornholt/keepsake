@@ -1,5 +1,6 @@
-import { DateTime, Option } from 'effect';
+import { DateTime, Effect, Option } from 'effect';
 import type { Photo, Shoot } from './domain.ts';
+import { InvalidInput } from './errors/errors.ts';
 
 const isoPattern = /^(?<clock>[\d-]+T[\d:]+)(?:\.\d+)?(?<offset>.+)$/u;
 
@@ -29,3 +30,13 @@ export const takenThere = (
     onSome: ({ clock, offset }) => `${clock}${offset}`,
   });
 };
+
+/** A time zone, if there is one with this name. */
+export const checkTimeZone = (zone: string) =>
+  Option.isSome(DateTime.zoneMakeNamed(zone))
+    ? Effect.succeed(zone)
+    : Effect.fail(
+        new InvalidInput({
+          message: `There is no time zone called ${JSON.stringify(zone)}. Use a name such as Europe/Lisbon.`,
+        }),
+      );

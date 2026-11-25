@@ -79,6 +79,19 @@ export const withoutRemoved = (
         `The following will be removed from the photo, so leave it out of your answer:\n${listed(removed)}`,
       ];
 
+/** The same for what the user wants to have removed, also where nothing names it. */
+export const withoutUnwanted = (
+  removed: ReadonlyArray<string>,
+  wish: string | null,
+): ReadonlyArray<string> => [
+  ...withoutRemoved(removed),
+  ...(wish === null
+    ? []
+    : [
+        `Whoever took the photo wants this: “${wish}” Leave out everyone who isn’t to be in it any more, also where nothing above names them.`,
+      ]),
+];
+
 /** What to know about versions something was removed from. */
 export const aboutRemoved = (
   removed: ReadonlyArray<string>,

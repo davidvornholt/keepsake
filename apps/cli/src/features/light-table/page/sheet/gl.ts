@@ -1,5 +1,7 @@
 // The two things the table draws with WebGL: pictures, many from one
-// texture in a single call, and plain boxes with a soft shadow.
+// texture in a single call, and plain boxes with a soft shadow. What was
+// drawn can also be laid over the rest as a whole, part of it showing
+// through.
 
 const pictureVertex = `#version 300 es
 in vec2 aCorner;
@@ -70,6 +72,25 @@ void main() {
     ? 1.0 - smoothstep(-vBlur, vBlur, distance)
     : clamp(0.5 - distance, 0.0, 1.0);
   color = vColor * cover;
+}`;
+
+const wholeVertex = `#version 300 es
+in vec2 aCorner;
+in vec4 aRect;
+out vec2 vUv;
+void main() {
+  vUv = aRect.xy + aCorner * aRect.zw;
+  gl_Position = vec4(vUv * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const wholeFragment = `#version 300 es
+precision mediump float;
+uniform sampler2D uPicture;
+uniform float uShare;
+in vec2 vUv;
+out vec4 color;
+void main() {
+  color = texture(uPicture, vUv) * uShare;
 }`;
 
 const compile = (
@@ -169,6 +190,76 @@ const makeBatch = (
   };
 };
 
+/**
+ * A second canvas that isn't seen, for what is laid over the table as a
+ * whole. Two things that lie on each other and each let some of the table
+ * through would let too little of it through together.
+ */
+const makeApart = (gl: WebGL2RenderingContext) => {
+  const program = link(gl, wholeVertex, wholeFragment);
+  const whole = makeBatch(gl, program, [{ name: 'aRect', size: 4 }]);
+  const everywhere = new Float32Array([0, 0, 1, 1]);
+  const share = gl.getUniformLocation(program, 'uShare');
+  const buffer = gl.createFramebuffer();
+  const texture = gl.createTexture();
+  let size = { width: 0, height: 0 };
+
+  const makeRoom = ({ width, height }: typeof size) => {
+    if (size.width === width && size.height === height) {
+      return;
+    }
+    size = { width, height };
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    for (const kind of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) {
+      gl.texParameteri(gl.TEXTURE_2D, kind, gl.NEAREST);
+    }
+    for (const kind of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) {
+      gl.texParameteri(gl.TEXTURE_2D, kind, gl.CLAMP_TO_EDGE);
+    }
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      texture,
+      0,
+    );
+  };
+
+  return {
+    /** Has all that is drawn from here on go to the canvas that isn't seen. */
+    begin: () => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, buffer);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      makeRoom({
+        width: gl.drawingBufferWidth,
+        height: gl.drawingBufferHeight,
+      });
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    },
+    /** Lays what was drawn there over the table, as strongly as `amount`. */
+    end: (amount: number) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      whole.load(everywhere, 1);
+      gl.uniform1f(share, amount);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      whole.draw(0, 1);
+    },
+  };
+};
+
 /** How many numbers describe one picture: place, part of the texture, look. */
 export const pictureStride = 10;
 /** How many numbers describe one box: place, colour, blur. */
@@ -210,6 +301,7 @@ export const makePainter = (canvas: HTMLCanvasElement) => {
 
   return {
     gl,
+    apart: makeApart(gl),
     /** Fits the drawing to the canvas, whose size is in device pixels. */
     resize: (width: number, height: number, scale: number) => {
       canvas.width = Math.max(1, Math.round(width * scale));

@@ -39,7 +39,7 @@ export const samplePhoto = (
 ): PhotoView => ({
   id,
   takenAt: '2026-05-01T10:00:00+01:00',
-  moment: id,
+  stack: id,
   camera: null,
   lens: null,
   focalLength: null,
@@ -55,10 +55,22 @@ export const samplePhoto = (
   ...change,
 });
 
+/** A photo that lies behind another, which shows the same. */
+export const sampleBehind = (
+  id: string,
+  front: string,
+  change: Partial<PhotoView> = {},
+): PhotoView =>
+  samplePhoto(id, {
+    stack: front,
+    standing: { kind: 'similar', to: front, because: null },
+    ...change,
+  });
+
 export const sampleMark = (id: string, change: Partial<Mark> = {}): Mark => ({
   id,
   photo: id,
-  kind: 'keep',
+  kind: 'take-out',
   note: '',
   boxes: [],
   other: null,
@@ -80,11 +92,13 @@ export const sampleShoot = (
   picked: { minimumScore: 7, maximum: 170 },
   dollars: { spent: 0, perEdit: 0.75 },
   photos,
-  moments: [...Map.groupBy(photos, (photo) => photo.moment)].map(
-    ([id, own]) => ({ id, photos: own.map((photo) => photo.id) }),
+  stacks: [...Map.groupBy(photos, (photo) => photo.stack)].map(
+    ([front, own]) => ({ front, photos: own.map((photo) => photo.id) }),
   ),
   marks,
   activity: null,
-  agentWaitsSince: null,
+  preparation: null,
+  agent: { waitsSince: null, canStart: true, started: null },
+  ordered: null,
   rating: null,
 });

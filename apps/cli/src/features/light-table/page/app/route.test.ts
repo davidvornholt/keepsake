@@ -15,6 +15,19 @@ describe('routeOf', () => {
     expect(routeOf('/lisbon/anything', '').screen).toBe('sheet');
   });
 
+  it('reads the making of an album, of a folder or of one still to choose', () => {
+    expect(routeOf('/', '?new')).toEqual({ screen: 'new', folder: null });
+    expect(routeOf('/', '?new=2026%2F2026-03-31%20Gardens')).toEqual({
+      screen: 'new',
+      folder: '2026/2026-03-31 Gardens',
+    });
+    // A shoot can be called anything, "new" too.
+    expect(routeOf('/new', '')).toMatchObject({
+      screen: 'sheet',
+      shoot: 'new',
+    });
+  });
+
   it('reads the photo an agent links to', () => {
     expect(routeOf('/lisbon/photos/_DSC0001', '')).toEqual({
       screen: 'photo',
@@ -36,13 +49,13 @@ describe('routeOf', () => {
   it('reads which photos lie on the table', () => {
     const route = routeOf(
       '/lisbon',
-      '?show=left&day=2026-05-01&why=repeat&label=for%20print',
+      '?show=left&day=2026-05-01&why=weak&label=for%20print',
     );
     expect(route).toMatchObject({
       filters: {
         show: 'left',
         day: '2026-05-01',
-        why: 'repeat',
+        why: 'weak',
         label: 'for print',
       },
     });
@@ -62,7 +75,9 @@ describe('hrefOf', () => {
       '/',
       '/lisbon',
       '/lisbon/hand-over',
-      '/lisbon?show=left&day=2026-05-01&why=score',
+      '/lisbon?show=left&day=2026-05-01&why=taken-out',
+      '/?new',
+      '/?new=2026%2F2026-03-31%20Gardens',
       '/lisbon/photos/day%2Fa?show=all',
       '/lisbon/photos/a?show=album&label=for+print',
     ];
@@ -80,5 +95,7 @@ describe('hrefOf', () => {
     expect(withFilters({ screen: 'shoots' }, { show: 'left' })).toEqual({
       screen: 'shoots',
     });
+    const making = { screen: 'new', folder: 'Camera' } as const;
+    expect(withFilters(making, { show: 'left' })).toEqual(making);
   });
 });

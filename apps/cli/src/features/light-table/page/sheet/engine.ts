@@ -1,14 +1,14 @@
-import { calm, settle } from '../motion/spring.ts';
+import { calm, soft } from '../motion/spring.ts';
 import { prefersReducedMotion } from '../ui/theme.ts';
-import { advance, arrange, settleAll, zoomTo } from './arrange.ts';
+import { advance, arrange, settleAll } from './arrange.ts';
 import type { Scene } from './draw.ts';
+import type { Hold } from './layout.ts';
 import { drawOverlay, makeOverlayState, noteMarks } from './overlay.ts';
 import { keepScene } from './scene.ts';
 import type { Zoom } from './sizes.ts';
 import {
   type Anchor,
   type Content,
-  fitOf,
   inSight,
   makeTable,
   type Size,
@@ -48,7 +48,7 @@ const shutterOf = (overlay: HTMLCanvasElement) => {
 
 /** Asks for the pictures, the ones in sight first. */
 const askFor = ({ loader }: Scene, table: Table) => {
-  const seen = inSight(table).map(({ frame }) => frame);
+  const seen = inSight(table).map(({ placed }) => placed.frame);
   const all = table.content.flatMap(({ frames }) => frames);
   loader.want(
     [...seen, ...all].map(({ picture }) => ({ key: picture.src, picture })),
@@ -139,37 +139,29 @@ export const makeEngine = (
       overlay.height = Math.round(size.height * scale);
       table.size = size;
       paint();
-      if (table.zoom === 'fit') {
-        table.frame.value = fitOf(table);
-        table.frame.target = table.frame.value;
-      }
       arrange(table);
       settleAll(table);
       request();
     },
     /**
-     * Lays other frames on the table; an anchor keeps its place. `opening`
-     * says how large the frames of a view are that opens with them.
+     * Lays other frames on the table; an anchor keeps its place, and a held
+     * frame its place across the table too. `opening` says how large the
+     * frames of a view are that opens with them.
      */
     setContent: (
       content: Content,
-      anchor: Anchor | null,
+      keeping: { readonly anchor: Anchor | null; readonly hold?: Hold | null },
       opening: ((table: Table) => Zoom) | null,
     ) => {
       table.content = content;
       noteMarks(state, content, performance.now());
       if (opening !== null) {
-        zoomTo(table, opening(table), anchor);
-        // The frames of the view before travel to where they lie in this one.
-        table.stiffness = calm;
-      } else if (table.zoom === 'fit') {
-        table.frame.target = fitOf(table);
+        table.zoom = opening(table);
       }
-      if (isFirst || (opening === null && anchor === null)) {
-        settle(table.frame);
-      }
-      table.anchor = anchor;
-      arrange(table, anchor);
+      // The frames of the view before travel to where they lie in this one.
+      const isCalm = opening !== null || (keeping.hold ?? null) !== null;
+      table.stiffness = isCalm ? calm : soft;
+      arrange(table, keeping.anchor, keeping.hold ?? null);
       if (isFirst) {
         settleAll(table);
       }

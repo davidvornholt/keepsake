@@ -34,6 +34,9 @@ const wantedSize = /(?<width>\d+)x(?<height>\d+)!/u;
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
+const takenAt = (second: number) =>
+  `2026:03:30 10:${pad(Math.floor(second / 60))}:${pad(second % 60)}`;
+
 const tagsOf = (file: string, taken: string) => ({
   SourceFile: file,
   SubSecDateTimeOriginal: taken,
@@ -63,6 +66,8 @@ export const fakeTools = {
   isSubscribed: false,
   /** What the claude and codex programs answer to a question. */
   assistant: undefined as ((run: Run) => string) | undefined,
+  /** Other programs, which print something or fail with an error. */
+  programs: {} as Record<string, (run: Run) => string>,
 };
 
 export const resetTools = () => {
@@ -73,6 +78,7 @@ export const resetTools = () => {
   fakeTools.broken = new Set();
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
+  fakeTools.programs = {};
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
@@ -82,14 +88,13 @@ const exiftool = (args: ReadonlyArray<string>): string => {
   if (args[0] !== '-json') {
     return '';
   }
-  const folder = args.at(-1) ?? '';
+  const places = args.filter((arg) => arg.startsWith('/'));
   return JSON.stringify(
-    fakeTools.files.map(({ file, second }) =>
-      tagsOf(
-        `${folder}/${file}`,
-        `2026:03:30 10:${pad(Math.floor(second / 60))}:${pad(second % 60)}`,
-      ),
-    ),
+    args.includes('-r')
+      ? fakeTools.files.map(({ file, second }) =>
+          tagsOf(`${places[0]}/${file}`, takenAt(second)),
+        )
+      : places.map((file, second) => tagsOf(file, takenAt(second))),
   );
 };
 
@@ -181,7 +186,22 @@ const answer = (run: Run): string | Uint8Array => {
     case 'photos':
       return JSON.stringify(photos(args));
     default:
-      return '';
+      return fakeTools.programs[command]?.(run) ?? '';
+  }
+};
+
+/** What a program prints, or why it fails. */
+const outcomeOf = (run: Run) => {
+  const isBroken = run.args.some((arg) =>
+    [...fakeTools.broken].some((file) => arg.endsWith(file)),
+  );
+  if (isBroken) {
+    return { output: '', error: 'unreadable file' };
+  }
+  try {
+    return { output: answer(run), error: '' };
+  } catch (error) {
+    return { output: '', error: (error as Error).message };
   }
 };
 
@@ -206,23 +226,20 @@ const spawner = ChildProcessSpawner.make((spawned) =>
         }
       : { command: '', args: [], input: '', env: {} };
     fakeTools.runs.push(run);
-    const isBroken = run.args.some((arg) =>
-      [...fakeTools.broken].some((file) => arg.endsWith(file)),
-    );
-    const output = isBroken ? '' : answer(run);
+    const { output, error } = outcomeOf(run);
     const stdout = Stream.make(
       typeof output === 'string' ? new TextEncoder().encode(output) : output,
     );
     return ChildProcessSpawner.makeHandle({
       pid: ChildProcessSpawner.ProcessId(firstPid + fakeTools.runs.length),
-      exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(isBroken ? 1 : 0)),
+      exitCode: Effect.succeed(
+        ChildProcessSpawner.ExitCode(error === '' ? 0 : 1),
+      ),
       isRunning: Effect.succeed(false),
       kill: () => Effect.void,
       stdin: Sink.drain,
       stdout,
-      stderr: Stream.make(
-        new TextEncoder().encode(isBroken ? 'unreadable file' : ''),
-      ),
+      stderr: Stream.make(new TextEncoder().encode(error)),
       all: stdout,
       getInputFd: () => Sink.drain,
       getOutputFd: () => Stream.empty,

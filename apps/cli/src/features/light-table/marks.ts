@@ -6,7 +6,6 @@ import {
   type ShootFiles,
   writeJson,
 } from '../../shared/store.ts';
-import { type MarkKind, opinionKinds } from './kinds.ts';
 import { Mark, type NewMark } from './schemas.ts';
 
 const idPattern = /^[a-z0-9]+$/u;
@@ -40,7 +39,7 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
     .toSorted((left, right) => left.madeAt.localeCompare(right.madeAt));
 });
 
-const save = (files: ShootFiles, mark: Mark) =>
+export const saveMark = (files: ShootFiles, mark: Mark) =>
   writeJson(Mark, fileOf(files, mark.id), mark);
 
 const remove = (files: ShootFiles, { id }: Mark) =>
@@ -50,12 +49,6 @@ const remove = (files: ShootFiles, { id }: Mark) =>
       .remove(fileOf(files, id), { force: true })
       .pipe(Effect.mapError(storeFailed));
   });
-
-const isAboutFavorites = (kind: MarkKind) =>
-  kind === 'favorite' || kind === 'not-favorite';
-
-export const isOpinion = (kind: MarkKind): boolean =>
-  (opinionKinds as ReadonlyArray<MarkKind>).includes(kind);
 
 /** Marks the owner can still take back. */
 export const isOpen = ({ handedOverAt }: Mark): boolean =>
@@ -76,7 +69,7 @@ const seeAll = Effect.fn('seeAll')(function* (
 ) {
   const seenAt = yield* now;
   yield* Effect.forEach(marks.filter(isNews), (mark) =>
-    save(files, { ...mark, seenAt }),
+    saveMark(files, { ...mark, seenAt }),
   );
 });
 
@@ -109,14 +102,8 @@ export const makeMark = Effect.fn('makeMark')(function* (
     answer: null,
     seenAt: null,
   };
-  yield* save(open.files, mark);
-  yield* Effect.forEach(
-    own.filter(
-      (one) =>
-        isOpen(one) && isAboutFavorites(one.kind) === isAboutFavorites(kind),
-    ),
-    (one) => remove(open.files, one),
-  );
+  yield* saveMark(open.files, mark);
+  yield* Effect.forEach(own.filter(isOpen), (one) => remove(open.files, one));
   yield* seeAll(open.files, own);
   return mark;
 });
@@ -150,18 +137,6 @@ export const takeBack = Effect.fn('takeBack')(function* (
   yield* remove(files, mark);
 });
 
-/** Hands every open mark an agent can act on over to one. */
-export const handOver = Effect.fn('handOver')(function* (files: ShootFiles) {
-  const marks = (yield* readMarks(files)).filter(
-    (mark) => isOpen(mark) && !isOpinion(mark.kind),
-  );
-  const handedOverAt = yield* now;
-  return yield* Effect.forEach(marks, (mark) => {
-    const handed: Mark = { ...mark, handedOverAt };
-    return Effect.as(save(files, handed), handed);
-  });
-});
-
 /** Notes what an agent did about a mark. */
 export const answerMark = Effect.fn('answerMark')(function* (
   files: ShootFiles,
@@ -182,7 +157,7 @@ export const answerMark = Effect.fn('answerMark')(function* (
     answer: { outcome, note, at: yield* now },
     seenAt: null,
   };
-  yield* save(files, answered);
+  yield* saveMark(files, answered);
   return answered;
 });
 

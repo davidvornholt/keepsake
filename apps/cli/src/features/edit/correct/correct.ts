@@ -61,7 +61,10 @@ const known = Effect.fn('known')(function* (
     wholePicture,
     removed,
   );
-  const kept = yield* peopleAndSigns(files, wholePicture, removed);
+  const kept = yield* peopleAndSigns(files, wholePicture, {
+    removed,
+    wish: null,
+  });
   return {
     description,
     crop: wholePicture,

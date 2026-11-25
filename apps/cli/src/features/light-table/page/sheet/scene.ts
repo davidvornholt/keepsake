@@ -43,6 +43,7 @@ const makeScene = (
       table: readGrey('--color-table'),
       dark: readGrey('--color-dark'),
       paper: readGrey('--color-sheet'),
+      raised: readGrey('--color-raised'),
     },
   };
 };

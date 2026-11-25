@@ -9,22 +9,25 @@ import {
   SpendingRecord,
   totalDollars,
 } from '../../shared/spending.ts';
-import { type Standings, standings } from '../../shared/standing.ts';
+import { frontOf, type Standings, standings } from '../../shared/standing.ts';
 import { exists, type OpenShoot, readJson } from '../../shared/store.ts';
+import { agentOf } from './agent.ts';
 import type {
   Changed,
   PhotoView,
   Picture,
   ShootList,
   ShootView,
+  Stack,
 } from './contract.ts';
 import { editOf } from './edits.ts';
+import { orderOf } from './hand-over.ts';
 import { readLabels } from './labels.ts';
-import { isNews, isOpen, isOpinion, readMarks } from './marks.ts';
+import { isNews, isOpen, readMarks } from './marks.ts';
 import { type Gallery, type Kind, pictureOf } from './pictures.ts';
+import { readPreparation } from './preparation.ts';
 import { revisionOf } from './revision.ts';
 import { spread } from './spread.ts';
-import { agentWaitsSince } from './waiting.ts';
 
 const cents = 100;
 const inCents = (dollars: number) => Math.round(dollars * cents) / cents;
@@ -116,7 +119,7 @@ const photoViews = Effect.fn('photoViews')(function* (
         return {
           id,
           takenAt: takenThere(open.shoot, photo),
-          moment,
+          stack: frontOf(known, id),
           camera: photo.camera,
           lens: photo.lens,
           focalLength: photo.focalLength,
@@ -125,12 +128,7 @@ const photoViews = Effect.fn('photoViews')(function* (
           iso: photo.iso,
           picture,
           full: yield* fullOf(gallery, photo, picture),
-          standing: known.of.get(id) ?? {
-            kind: 'left-out',
-            rule: 'unknown',
-            repeats: null,
-            because: null,
-          },
+          standing: known.of.get(id) ?? { kind: 'open' },
           verdict: verdictOn(known.verdicts.get(moment), id),
           edit: yield* editOf(gallery, id),
           labels: labels[id] ?? [],
@@ -140,10 +138,24 @@ const photoViews = Effect.fn('photoViews')(function* (
   );
 });
 
+/** The photos that show the same, in the order of those in front. */
+const stacksOf = (photos: ReadonlyArray<PhotoView>): ReadonlyArray<Stack> => {
+  const behind = Map.groupBy(photos, ({ stack }) => stack);
+  return photos.flatMap(({ id }) => {
+    const all = behind.get(id);
+    return all === undefined
+      ? []
+      : [{ front: id, photos: all.map((photo) => photo.id) }];
+  });
+};
+
 /** Everything the page shows of a shoot. */
-export const shootView = Effect.fn('shootView')(function* (gallery: Gallery) {
+export const shootView = Effect.fn('shootView')(function* (
+  gallery: Gallery,
+  canStartAgent: boolean,
+) {
   const { open } = gallery;
-  const { files, shoot, moments } = open;
+  const { files, shoot } = open;
   const model = yield* modelOf(open);
   const revision = yield* revisionOf(open, model);
   const known = yield* standings(open, model);
@@ -153,6 +165,7 @@ export const shootView = Effect.fn('shootView')(function* (gallery: Gallery) {
     onNone: () => 0,
     onSome: totalDollars,
   });
+  const photos = yield* photoViews(gallery, known);
   return {
     name: shoot.name,
     about: shoot.about,
@@ -170,11 +183,13 @@ export const shootView = Effect.fn('shootView')(function* (gallery: Gallery) {
         ? null
         : { minimumScore: picks.minimumScore, maximum: picks.maximum },
     dollars: { spent: inCents(spent), perEdit: dollarsForOneEdit },
-    photos: yield* photoViews(gallery, known),
-    moments,
+    photos,
+    stacks: stacksOf(photos),
     marks: yield* readMarks(files),
     activity: yield* readActivity(files),
-    agentWaitsSince: yield* agentWaitsSince(files),
+    preparation: yield* readPreparation(files),
+    agent: yield* agentOf(files, canStartAgent),
+    ordered: yield* orderOf(files, known),
     rating: yield* ratingOf(open),
   } satisfies ShootView;
 });
@@ -182,20 +197,24 @@ export const shootView = Effect.fn('shootView')(function* (gallery: Gallery) {
 /** What may have changed since the page was given a shoot. */
 export const changedSince = Effect.fn('changedSince')(function* (
   open: OpenShoot,
+  canStartAgent: boolean,
 ) {
   const { files } = open;
   return {
     revision: yield* revisionOf(open, yield* modelOf(open)),
     activity: yield* readActivity(files),
-    agentWaitsSince: yield* agentWaitsSince(files),
+    preparation: yield* readPreparation(files),
+    agent: yield* agentOf(files, canStartAgent),
   } satisfies Changed;
 });
 
 const coverCount = 60;
 
 /** The photos that show best what a shoot is like, the first few most of all. */
-const coversOf = (known: Standings): ReadonlyArray<readonly [string, Kind]> => {
-  const { album, verdicts } = known;
+const coversOf = (
+  open: OpenShoot,
+  { album, verdicts }: Standings,
+): ReadonlyArray<readonly [string, Kind]> => {
   if (album !== null && album.photos.length > 0) {
     const { photos } = album;
     const favorites = photos.filter(({ favorite }) => favorite);
@@ -204,11 +223,12 @@ const coversOf = (known: Standings): ReadonlyArray<readonly [string, Kind]> => {
       .slice(0, coverCount)
       .map(({ photo }) => [photo, 'final'] as const);
   }
-  return [...verdicts.values()]
+  const best = [...verdicts.values()]
     .toSorted((left, right) => right.score - left.score)
-    .flatMap(({ best }) => best.slice(0, 1))
-    .slice(0, coverCount)
-    .map((photo) => [photo, 'preview'] as const);
+    .flatMap((verdict) => verdict.best.slice(0, 1));
+  const shown =
+    best.length > 0 ? best : spread([...open.photos.keys()], coverCount);
+  return shown.slice(0, coverCount).map((photo) => [photo, 'preview'] as const);
 };
 
 /** A shoot in short. */
@@ -216,22 +236,27 @@ export const shootInShort = Effect.fn('shootInShort')(function* (
   gallery: Gallery,
 ) {
   const { open } = gallery;
+  const { files, shoot } = open;
   const known = yield* standings(open, yield* modelOf(open));
-  const marks = yield* readMarks(open.files);
+  const marks = yield* readMarks(files);
   const times = [...open.photos.values()]
     .toSorted(byTime)
-    .map((photo) => takenThere(open.shoot, photo));
+    .map((photo) => takenThere(shoot, photo));
   return {
-    name: open.shoot.name,
-    about: open.shoot.about,
-    from: times[0] ?? '',
-    to: times.at(-1) ?? '',
+    name: shoot.name,
+    about: shoot.about,
+    from: times[0] ?? null,
+    to: times.at(-1) ?? null,
     photos: open.photos.size,
     inAlbum: known.album?.photos.length ?? 0,
-    openMarks: marks.filter((mark) => isOpen(mark) && !isOpinion(mark.kind))
+    picked: [...known.of.values()].filter(({ kind }) => kind === 'picked')
       .length,
+    preparation: yield* readPreparation(files),
+    activity: yield* readActivity(files),
+    isOrdered: (yield* orderOf(files, known)) !== null,
+    openMarks: marks.filter(isOpen).length,
     newAnswers: marks.filter(isNews).length,
-    covers: yield* Effect.forEach(coversOf(known), ([photo, kind]) =>
+    covers: yield* Effect.forEach(coversOf(open, known), ([photo, kind]) =>
       pictureOf(gallery, photo, kind).pipe(Effect.option),
     ).pipe(Effect.map((covers) => covers.flatMap(Option.toArray))),
   } satisfies ShootList['shoots'][number];

@@ -3,16 +3,22 @@ import type { ReactNode, RefObject } from 'react';
 import type { Box, Mark, PhotoView } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { markedIn } from '../data/derive.ts';
-import { clockOf, dayAndMonth, dayOf, fileName } from '../data/format.ts';
-import { exposureLine, standingOf, stateOf } from '../data/words.ts';
+import {
+  clockOf,
+  dayAndMonth,
+  dayOf,
+  fileName,
+  frameNumber,
+} from '../data/format.ts';
+import { exposureLine, standingOf, stateOf, whyOf } from '../data/words.ts';
 import { lookOf, seedTextOf } from '../marks/kinds.ts';
 import { WaxMark } from '../marks/wax-mark.tsx';
 import { Mentioned, PhotoLink } from '../ui/photo-link.tsx';
 import { Labels } from './labels.tsx';
 
-// Everything there is to know about a photo, beside it: where it stands and
-// why, what the machine did to it, what the owner said, what the camera
-// wrote down.
+// Everything there is to know about a photo, beside it: what the machine did
+// to it, what the owner said, what the camera wrote down. Where it stands and
+// why is said below the photo.
 
 const iconSize = 14;
 
@@ -29,9 +35,11 @@ const Part = ({
   </section>
 );
 
+/** Where the photo stands, for when the panel lies over what says so below it. */
 const Standing = ({ photo }: { readonly photo: PhotoView }) => {
-  const { index } = useShootContext();
+  const { index, state } = useShootContext();
   const said = standingOf(index, photo);
+  const why = whyOf(index, photo, state.preparation !== null);
   return (
     <section aria-label="Where it stands">
       <p className="type-name text-[0.9375rem] text-lamp">{said.text}</p>
@@ -40,21 +48,22 @@ const Standing = ({ photo }: { readonly photo: PhotoView }) => {
           <PhotoLink className="h-24" photo={said.other} />
         </div>
       )}
-      {said.because === null ? null : (
+      {why === null ? null : (
         <p className="mt-2 text-print">
-          <Mentioned text={said.because} />
+          <Mentioned text={why} />
         </p>
       )}
     </section>
   );
 };
 
+/** What the judging model said, unless that is already why the photo stands where it does. */
 const Judged = ({ photo }: { readonly photo: PhotoView }) => {
+  const { index, state } = useShootContext();
   const { verdict } = photo;
-  if (verdict === null) {
-    return null;
-  }
-  return (
+  const said = verdict?.reason ?? verdict?.description ?? '';
+  const why = whyOf(index, photo, state.preparation !== null);
+  return verdict === null || said === '' || said === why ? null : (
     <Part
       label={
         <>
@@ -62,7 +71,7 @@ const Judged = ({ photo }: { readonly photo: PhotoView }) => {
         </>
       }
     >
-      <p className="text-print">{verdict.reason ?? verdict.description}</p>
+      <p className="text-print">{said}</p>
     </Part>
   );
 };
@@ -174,31 +183,9 @@ const History = ({ photo }: { readonly photo: PhotoView }) => {
   );
 };
 
-const Moment = ({ photo }: { readonly photo: PhotoView }) => {
-  const { index } = useShootContext();
-  const frames = index.byMoment.get(photo.moment) ?? [];
-  const others = frames.filter(({ id }) => id !== photo.id);
-  return others.length === 0 ? null : (
-    <Part label={`This moment, ${frames.length} frames`}>
-      <ul className="flex flex-wrap gap-1.5">
-        {others.map(({ id }) => (
-          <li key={id}>
-            <PhotoLink className="h-14" photo={id} />
-          </li>
-        ))}
-      </ul>
-    </Part>
-  );
-};
-
-const numberLength = 4;
-
 const Camera = ({ photo }: { readonly photo: PhotoView }) => {
   const { index } = useShootContext();
-  const number = String(index.numberOf.get(photo.id) ?? 0).padStart(
-    numberLength,
-    '0',
-  );
+  const number = frameNumber(index.numberOf.get(photo.id) ?? 0);
   const lines = [
     `${number} of ${index.shoot.photos.length}`,
     `${dayAndMonth(dayOf(photo.takenAt))}, ${clockOf(photo.takenAt)}`,
@@ -220,10 +207,13 @@ const Camera = ({ photo }: { readonly photo: PhotoView }) => {
 
 export const Info = ({
   photo,
+  isOver,
   labelRef,
   onPrinted,
 }: {
   readonly photo: PhotoView;
+  /** Whether it lies over what is said below the photo. */
+  readonly isOver: boolean;
   readonly labelRef: RefObject<HTMLInputElement | null>;
   /** Shows where something was removed while it is pointed at. */
   readonly onPrinted: (box: Box | null) => void;
@@ -231,7 +221,7 @@ export const Info = ({
   const { standing, edit } = photo;
   return (
     <div className="flex flex-col gap-5 text-[0.875rem] leading-[1.5]">
-      <Standing photo={photo} />
+      {isOver ? <Standing photo={photo} /> : null}
       <Judged photo={photo} />
       {edit?.caption === null || edit === null ? null : (
         <Part label="Caption">
@@ -243,7 +233,6 @@ export const Info = ({
       <Part label="Labels">
         <Labels inputRef={labelRef} labels={photo.labels} photo={photo.id} />
       </Part>
-      <Moment photo={photo} />
       <Camera photo={photo} />
       {standing.kind === 'album' ? (
         <a
