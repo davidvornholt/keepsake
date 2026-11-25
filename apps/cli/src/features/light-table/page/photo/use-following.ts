@@ -28,8 +28,9 @@ export const useFollowing = (around: Around) => {
       seenRef.current = seen;
       boxesRef.current?.follow(seen.edit);
       besideRef.current?.follow(seen);
-      if (shareRef.current !== null) {
-        shareRef.current.textContent = `${Math.round(seen.share * percent)} %`;
+      const share = `${Math.round(seen.share * percent)} %`;
+      if (shareRef.current !== null && shareRef.current.textContent !== share) {
+        shareRef.current.textContent = share;
       }
     },
     /** The photo is pulled aside, towards the one before or after it. */

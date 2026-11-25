@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Schedule, type Semaphore } from 'effect';
+import { Clock, Effect, Option, Schedule, Semaphore } from 'effect';
 import { readAlbum } from '../../shared/album.ts';
 import { isBusy } from '../../shared/lock.ts';
 import { type OpenShoot, openShoot, shootNames } from '../../shared/store.ts';
@@ -16,6 +16,9 @@ import { changedSince, shootInShort, shootView } from './view.ts';
 const currentFor = 900;
 /** How long what Immich said about the album is taken as current. */
 const albumCurrentFor = 300_000;
+
+/** How many covers are looked at together. They are few, and don't wait for anything else. */
+const coversAtOnce = 4;
 
 /** How often the server looks for new shoots. */
 const prepareEvery = '30 seconds';
@@ -62,6 +65,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
   const changes = new Map<string, { readonly at: number; changed: Changed }>();
   const albums = new Map<string, number>();
   const warmOnce = makeWarming();
+  const forCovers = yield* Semaphore.make(coversAtOnce);
 
   const galleryOf = Effect.fn('galleryOf')(function* (name: string) {
     const open = yield* openShoot(name);
@@ -108,7 +112,10 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
       (name) =>
         Effect.gen(function* () {
           const gallery = yield* galleryOf(name);
-          const inShort = yield* shootInShort(gallery);
+          const inShort = yield* shootInShort({
+            ...gallery,
+            workers: forCovers,
+          });
           yield* saveLooks(gallery);
           return [inShort];
         }).pipe(

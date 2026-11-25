@@ -1,6 +1,6 @@
 import { mobileDeviceTag } from '@davidvornholt/a11y-testing/playwright-config';
 import { expect, test } from '@playwright/test';
-import { lay, scan, title } from './page.ts';
+import { lay, scan, shelf, title } from './page.ts';
 
 // The shelf of albums, and the way of a new one: from a folder of photos
 // to the choice, the order, and the agent that edits it. Tests that change
@@ -16,7 +16,7 @@ const newAlbumName = /^New album N$/u;
 test('shows every album on a shelf, with what waits at each', async ({
   page,
 }) => {
-  await page.goto('/');
+  await shelf(page);
   await expect(title(page)).toHaveText('Keepsake');
   await expect(page.getByText(albumCount)).toBeVisible();
   const album = (name: string) => page.getByRole('link', { name });
@@ -51,7 +51,7 @@ test('says when an album is not there', async ({ page }) => {
 });
 
 test('makes a new album of a folder, and throws it away', async ({ page }) => {
-  await page.goto('/');
+  await shelf(page);
   await expect(page.getByRole('link', { name: newAlbumName })).toBeVisible();
   await page.keyboard.press('n');
   await expect(title(page)).toHaveText('New album');

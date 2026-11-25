@@ -42,6 +42,15 @@ export const pressed = (page: Page, name: string | RegExp) =>
 /** Where a photo stands and why, as it is said right below it. */
 export const standing = (page: Page) => large(page).locator('[data-standing]');
 
+const everyAlbum = /\/api\/shoots$/u;
+
+/** Opens the shelf. The first time, the server looks at every cover for it. */
+export const shelf = async (page: Page) => {
+  const answer = page.waitForResponse(everyAlbum);
+  await page.goto('/');
+  await answer;
+};
+
 /** Opens a photo by its address and waits until the keys reach it. */
 export const open = async (page: Page, path: string) => {
   await page.goto(path);

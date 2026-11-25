@@ -10,6 +10,7 @@ import {
   open,
   pressed,
   scan,
+  shelf,
   standing,
   title,
   whole,
@@ -327,7 +328,7 @@ test('hands marks over to an agent that is started for them', async ({
 test('fits a phone, where a photo is marked with a finger', {
   tag: mobileDeviceTag,
 }, async ({ page, isMobile }) => {
-  await page.goto('/');
+  await shelf(page);
   await scan(page);
   await page.getByRole('link', { name: 'Braga, July' }).click();
   await expect(title(page)).toHaveText('Braga, July 2026');

@@ -256,8 +256,10 @@ export const shootInShort = Effect.fn('shootInShort')(function* (
     isOrdered: (yield* orderOf(files, known)) !== null,
     openMarks: marks.filter(isOpen).length,
     newAnswers: marks.filter(isNews).length,
-    covers: yield* Effect.forEach(coversOf(open, known), ([photo, kind]) =>
-      pictureOf(gallery, photo, kind).pipe(Effect.option),
+    covers: yield* Effect.forEach(
+      coversOf(open, known),
+      ([photo, kind]) => pictureOf(gallery, photo, kind).pipe(Effect.option),
+      { concurrency: 'unbounded' },
     ).pipe(Effect.map((covers) => covers.flatMap(Option.toArray))),
   } satisfies ShootList['shoots'][number];
 });
