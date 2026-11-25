@@ -40,7 +40,7 @@ const doubtful = 0.15;
 /** What the light leaves over is measured in a view of this size. */
 const smallSide = 64;
 /** How far it is looked for, in pixels of that view, twice as far each time. */
-const reach = { nearest: 2, furthest: 32 };
+const lookedFor = { nearest: 2, furthest: 32 };
 /** The share of known pixels from which a neighbourhood is known. */
 const known = 0.05;
 /** The most that is added to or taken from the light. */
@@ -96,7 +96,7 @@ const filledOut = (averages: Plane, counts: Plane, size: Size): Plane => {
   const isKnown = counts.map((count) => (count > 0 ? 1 : 0));
   let result: Plane = new Float32Array(averages.length);
   let done: Plane = new Float32Array(averages.length);
-  for (let far = reach.nearest; far <= reach.furthest; far *= 2) {
+  for (let far = lookedFor.nearest; far <= lookedFor.furthest; far *= 2) {
     const average = averaging(counts, size, far)(averages);
     const near = averaging(ones(size), size, far)(isKnown);
     const before = done;
@@ -107,7 +107,7 @@ const filledOut = (averages: Plane, counts: Plane, size: Size): Plane => {
       value > 0 || (near[index] ?? 0) > known ? 1 : 0,
     );
   }
-  return averaging(ones(size), size, reach.nearest)(result);
+  return averaging(ones(size), size, lookedFor.nearest)(result);
 };
 
 /** Adds what is still missing to look like the edit, from around the box. */
@@ -179,35 +179,72 @@ type Place = {
   readonly room: number;
 };
 
+/** What to put into an edit. */
+type Wanted = {
+  readonly box: Box;
+  /** All that may be put into the edit. */
+  readonly boxes: ReadonlyArray<Box>;
+  /** How far around a box pixels are put into the edit. */
+  readonly reach: Room;
+  /** Whether the original's border goes on where the edit shows more. */
+  readonly isContinued: boolean;
+};
+
+/** What is put into an edit, and what both showed there before. */
+type Patch = {
+  readonly place: Place;
+  readonly before: Planes;
+  readonly after: Planes;
+  readonly tones: ReadonlyArray<Tone>;
+  readonly kept: Planes;
+  /** 1 where nothing is put into the edit. */
+  readonly free: Plane;
+};
+
 /** Where an edit shows a box, or null when it shows nothing of it. */
-const placeOf = (original: Raster, edit: Raster, box: Box): Place | null => {
+const placeOf = (
+  original: Raster,
+  edit: Raster,
+  { box, reach, isContinued }: Wanted,
+): Place | null => {
   const exact = frameAround(box, original);
   const wide = withRoom(exact, roomOf(surroundings, exact), original);
   const shift = shiftOf(original, edit, wide);
-  const frame = shiftable(wide, shift, original);
+  const frame = isContinued
+    ? { ...wide, left: wide.left - shift.x, top: wide.top - shift.y }
+    : shiftable(wide, shift, original);
   return frame.width === 0 || frame.height === 0
     ? null
-    : { frame, shift, exact, room: roomOf(spare, exact) };
+    : { frame, shift, exact, room: roomOf(reach, exact) };
 };
 
-/** Writes a part of a picture into an edit, with a soft edge. */
-const blend = (
-  kept: Planes,
+/** Says for a pixel of a frame how much of it is replaced, from 0 to 1. */
+type Part = (column: number, row: number) => number;
+
+/** How far a pixel is inside what is put back, with a soft edge. */
+export const softly =
+  ({ exact, room }: Place): Part =>
+  (column, row) =>
+    fading(distanceFrom(exact, column, row), room * half, room);
+
+/** Writes a patch into an edit, as far as each pixel is replaced. */
+export const blend = (
+  { kept, place: { frame, shift } }: Patch,
   edit: Raster,
-  { frame, shift, exact, room }: Place,
+  part: Part,
 ): void => {
   for (let y = 0; y < frame.height; y += 1) {
     for (let x = 0; x < frame.width; x += 1) {
       const column = frame.left + x;
       const row = frame.top + y;
-      const part = fading(distanceFrom(exact, column, row), room * half, room);
-      if (part > 0) {
+      const share = part(column, row);
+      if (share > 0) {
         const target = indexOf(edit, column + shift.x, row + shift.y);
         for (const channel of channels) {
           const value = kept[channel][y * frame.width + x] ?? 0;
           edit.pixels[target + channel] = Math.round(
-            part * value * brightest +
-              (1 - part) * (edit.pixels[target + channel] ?? 0),
+            share * value * brightest +
+              (1 - share) * (edit.pixels[target + channel] ?? 0),
           );
         }
       }
@@ -232,6 +269,51 @@ const fits = (
 };
 
 /**
+ * What an original shows in a box and around it, in the light an edit gave it,
+ * or null when the edit shows nothing of it.
+ */
+export const patchOf = (
+  original: Raster,
+  edit: Raster,
+  wanted: Wanted,
+): Patch | null => {
+  const place = placeOf(original, edit, wanted);
+  if (place === null) {
+    return null;
+  }
+  const { frame, shift, exact, room } = place;
+  const before = valuesIn(original, frame);
+  const after = valuesIn(edit, {
+    ...frame,
+    left: frame.left + shift.x,
+    top: frame.top + shift.y,
+  });
+  const others = wanted.boxes.map((other) =>
+    withRoom(frameAround(other, original), room, original),
+  );
+  const { width, height } = original;
+  const isShown = (x: number, y: number) =>
+    isIn({ left: 0, top: 0, width, height }, x, y);
+  const free = maskIn(
+    frame,
+    (x, y) => isShown(x, y) && others.every((other) => !isIn(other, x, y)),
+  );
+  const { tones, values } = inLightOf(
+    before,
+    after,
+    countedOf(free, frame),
+    frame,
+  );
+  const near = withRoom(exact, room, original);
+  const weights = maskIn(
+    frame,
+    (x, y) => isShown(x, y) && !isIn(near, x, y),
+  ).map((weight, index) => weight * Math.max(free[index] ?? 0, doubtful));
+  const kept = withLeftOver(values, after, weights, frame);
+  return { place, before, after, tones, kept, free };
+};
+
+/**
  * Puts what is in a box of the original photo into an edit of it, such as
  * somebody in the background, in the light the edit gave it. Nothing is put
  * back where the photo is almost black or the edit shows something else.
@@ -243,39 +325,21 @@ export const keepPatch = (
   box: Box,
   boxes: ReadonlyArray<Box>,
 ): boolean => {
-  const place = placeOf(original, edit, box);
-  if (place === null) {
+  const patch = patchOf(original, edit, {
+    box,
+    boxes,
+    reach: spare,
+    isContinued: false,
+  });
+  if (patch === null) {
     return false;
   }
-  const { frame, shift, exact, room } = place;
-  const before = valuesIn(original, frame);
-  const after = valuesIn(edit, {
-    ...frame,
-    left: frame.left + shift.x,
-    top: frame.top + shift.y,
-  });
-  const others = boxes.map((other) =>
-    withRoom(frameAround(other, original), room, original),
-  );
-  const free = maskIn(frame, (x, y) =>
-    others.every((other) => !isIn(other, x, y)),
-  );
-  const { tones, values } = inLightOf(
-    before,
-    after,
-    countedOf(free, frame),
-    frame,
-  );
-  const near = withRoom(exact, room, original);
-  const weights = maskIn(frame, (x, y) => !isIn(near, x, y)).map(
-    (weight, index) => weight * Math.max(free[index] ?? 0, doubtful),
-  );
-  const kept = withLeftOver(values, after, weights, frame);
-  const inside = maskIn(frame, (x, y) => isIn(exact, x, y));
+  const { place, before, after, tones, kept } = patch;
+  const inside = maskIn(place.frame, (x, y) => isIn(place.exact, x, y));
   const isRight =
     gainOn(inside, before, tones) <= mostGain && fits(kept, after, place);
   if (isRight) {
-    blend(kept, edit, place);
+    blend(patch, edit, softly(place));
   }
   return isRight;
 };

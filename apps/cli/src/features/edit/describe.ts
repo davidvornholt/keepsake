@@ -1,8 +1,8 @@
 import { Effect, Option, Schema } from 'effect';
 import { whatToDescribe } from '../../shared/describing.ts';
-import type { Box } from '../../shared/domain.ts';
+import type { Box, Shoot } from '../../shared/domain.ts';
 import { rendered } from '../../shared/pictures.ts';
-import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
+import { type EditFiles, readJson, writeJson } from '../../shared/store.ts';
 import { Vision } from '../../shared/vision.ts';
 import { edgesBeyond } from './beyond.ts';
 import { withoutRemoved } from './removals.ts';
@@ -20,19 +20,17 @@ const Description = Schema.Struct({ description: Schema.String });
  * would bring it back.
  */
 export const descriptionOf = Effect.fn('descriptionOf')(function* (
-  open: OpenShoot,
-  photo: string,
+  shoot: Shoot,
+  files: EditFiles,
   frame: Box,
   removed: ReadonlyArray<string>,
 ) {
   const vision = yield* Vision;
-  const files = open.files.edit(photo);
   const before = yield* readJson(Description, files.description);
   if (Option.isSome(before)) {
     return before.value.description;
   }
-  const about =
-    open.shoot.about === null ? '' : `The shoot: ${open.shoot.about}. `;
+  const about = shoot.about === null ? '' : `The shoot: ${shoot.about}. `;
   const edges = edgesBeyond(frame);
   const beyond =
     edges === null

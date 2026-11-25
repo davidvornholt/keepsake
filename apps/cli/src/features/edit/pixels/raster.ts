@@ -1,3 +1,4 @@
+import { clamp } from '../../../shared/boxes.ts';
 import type { Frame, Raster, Size } from '../../../shared/pictures.ts';
 
 export const channels = [0, 1, 2] as const;
@@ -59,7 +60,10 @@ export const lightAt = (value: number): number => lights[value] ?? 0;
 export const indexOf = (raster: Raster, x: number, y: number): number =>
   (y * raster.width + x) * channelCount;
 
-/** The sRGB values in a part of a raster, from 0 to 1. */
+/**
+ * The sRGB values in a part of a raster, from 0 to 1. Its border goes on
+ * beyond it.
+ */
 export const valuesIn = (raster: Raster, frame: Frame): Planes => {
   const planes: Planes = [
     new Float32Array(frame.width * frame.height),
@@ -68,7 +72,11 @@ export const valuesIn = (raster: Raster, frame: Frame): Planes => {
   ];
   for (let y = 0; y < frame.height; y += 1) {
     for (let x = 0; x < frame.width; x += 1) {
-      const source = indexOf(raster, frame.left + x, frame.top + y);
+      const source = indexOf(
+        raster,
+        clamp(frame.left + x, 0, raster.width - 1),
+        clamp(frame.top + y, 0, raster.height - 1),
+      );
       for (const channel of channels) {
         planes[channel][y * frame.width + x] =
           (raster.pixels[source + channel] ?? 0) / brightest;

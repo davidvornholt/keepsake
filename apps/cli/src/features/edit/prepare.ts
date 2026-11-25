@@ -14,10 +14,10 @@ import { renderExactly, type Size, sizeOf } from '../../shared/pictures.ts';
 import { askReviewer } from '../../shared/review-vision.ts';
 import {
   atomically,
+  type EditFiles,
   exists,
   type OpenShoot,
   readJson,
-  type ShootFiles,
   writeBytes,
   writeJson,
 } from '../../shared/store.ts';
@@ -35,8 +35,6 @@ import { findTextures } from './textures/find-textures.ts';
 export const cameraQuality = 95;
 const inputQuality = 95;
 
-export type EditFiles = ReturnType<ShootFiles['edit']>;
-
 /** A photo with everything needed to prepare its edit. */
 export type ToPrepare = {
   readonly open: OpenShoot;
@@ -45,22 +43,20 @@ export type ToPrepare = {
   readonly camera: CameraData;
   /** What the photo shows, for framing it. */
   readonly description: string;
+  /** What the user wants to be done with it. */
+  readonly wish: string | null;
 };
 
 /** What is known about a photo before the image model gets it. */
 export type Prepared = {
   readonly crop: Crop;
   readonly size: Size;
-  readonly wish: string | null;
   /** What is removed from the photo. */
   readonly removed: ReadonlyArray<string>;
   /** What the finished photo shows. */
   readonly description: string;
   readonly originals: Originals;
 };
-
-/** What the user wants to be done with a photo. */
-export const Wish = Schema.Struct({ wish: Schema.String });
 
 /** What was found out before, or else what is found out now. */
 export const remembered = <S extends Schema.Constraint, E, R>(
@@ -109,16 +105,17 @@ const imageInput = Effect.fn('imageInput')(function* (
   return size;
 });
 
-const originalsOf = Effect.fn('originalsOf')(function* (
+/** The people and signs that are in a photo to stay. */
+export const peopleAndSigns = Effect.fn('peopleAndSigns')(function* (
   files: EditFiles,
-  crop: Crop,
-  removals: ReadonlyArray<Removal>,
+  /** What the picture shows of the photo. */
+  crop: Box,
+  removed: ReadonlyArray<string>,
 ) {
-  const removed = removals.map(({ what }) => what);
   const people = yield* remembered(
     Schema.Array(Person),
     files.people,
-    findPeople(files.input, within(wholePicture, crop.box), removed),
+    findPeople(files.input, within(wholePicture, crop), removed),
   );
   const bystanders = yield* remembered(
     Schema.Array(Box),
@@ -130,27 +127,33 @@ const originalsOf = Effect.fn('originalsOf')(function* (
     files.signs,
     findSigns(files.input, removed),
   );
+  return { people, bystanders, signs };
+});
+
+const originalsOf = Effect.fn('originalsOf')(function* (
+  files: EditFiles,
+  crop: Crop,
+  removals: ReadonlyArray<Removal>,
+) {
+  const removed = removals.map(({ what }) => what);
+  const kept = yield* peopleAndSigns(files, crop.box, removed);
   const textures = yield* remembered(
     Schema.Array(Outline),
     files.textures,
     findTextures(files.input, removed),
   );
   const gone = removals.map(({ box }) => box);
-  return { people, bystanders, signs, textures, gone } satisfies Originals;
+  return { ...kept, textures, gone } satisfies Originals;
 });
 
 /** Frames a photo and finds out what is in it and what isn't to stay. */
 export const prepared = Effect.fn('prepared')(function* (job: ToPrepare) {
-  const { open, photo, files } = job;
+  const { open, files, wish } = job;
   yield* cameraPicture(job);
-  const wish = Option.match(yield* readJson(Wish, files.wish), {
-    onNone: () => null,
-    onSome: (known) => (known.wish === '' ? null : known.wish),
-  });
   const crop = yield* remembered(
     Crop,
     files.crop,
-    chooseCrop(open.shoot, files.camera, { ...job, wish }),
+    chooseCrop(open.shoot, files.camera, job),
   );
   const size = yield* imageInput(files, crop);
   return yield* askReviewer(
@@ -162,8 +165,8 @@ export const prepared = Effect.fn('prepared')(function* (job: ToPrepare) {
       );
       const removed = removals.map(({ what }) => what);
       const description = yield* descriptionOf(
-        open,
-        photo.id,
+        open.shoot,
+        files,
         crop.box,
         removed,
       );
@@ -171,7 +174,6 @@ export const prepared = Effect.fn('prepared')(function* (job: ToPrepare) {
       return {
         crop,
         size,
-        wish,
         removed,
         description,
         originals,

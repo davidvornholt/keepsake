@@ -76,36 +76,45 @@ type Source = {
   readonly part: number;
 };
 
+/** The part of an axis that shows the photo. */
+type Extent = { readonly start: number; readonly end: number };
+
+/** Where each position of an edit would come from. */
+const positionsOf = ({ scale, offset }: Line, length: number) =>
+  Array.from({ length }, (_, position) => (position - offset) / scale);
+
+const sourceAt = (exact: number, end: number): Source => {
+  const low = Math.floor(exact);
+  return { low, high: Math.min(low + 1, end - 1), part: exact - low };
+};
+
 /** Where each position of an edit comes from, or null if not from the photo. */
 const sourcesOf = (
-  { scale, offset }: Line,
+  line: Line,
   length: number,
-  start: number,
-  end: number,
+  { start, end }: Extent,
 ): ReadonlyArray<Source | null> =>
-  Array.from({ length }, (_, position) => {
-    const exact = (position - offset) / scale;
-    if (exact < start || exact > end - 1) {
-      return null;
-    }
-    const low = Math.floor(exact);
-    return { low, high: Math.min(low + 1, end - 1), part: exact - low };
-  });
+  positionsOf(line, length).map((exact) =>
+    exact < start || exact > end - 1 ? null : sourceAt(exact, end),
+  );
 
-/**
- * The original with everything where the edit shows it, and the edit itself
- * where the photo shows nothing.
- */
-export const placed = (
+/** The same, with the border going on beyond the photo. */
+const nearestOf = (line: Line, length: number): ReadonlyArray<Source> =>
+  positionsOf(line, length).map((exact) =>
+    sourceAt(clamp(exact, 0, length - 1), length),
+  );
+
+type Sources = {
+  readonly columns: ReadonlyArray<Source | null>;
+  readonly rows: ReadonlyArray<Source | null>;
+};
+
+/** Writes pixels of a picture to where they are wanted. */
+const write = (
   original: Raster,
-  edit: Raster,
-  photo: Frame,
-  { x, y }: Placement,
-): Raster => {
-  const { width, height } = original;
-  const pixels = edit.pixels.slice();
-  const columns = sourcesOf(x, width, photo.left, photo.left + photo.width);
-  const rows = sourcesOf(y, height, photo.top, photo.top + photo.height);
+  pixels: Uint8Array,
+  { columns, rows }: Sources,
+) => {
   for (const [row, down] of rows.entries()) {
     for (const [column, across] of columns.entries()) {
       if (down !== null && across !== null) {
@@ -128,5 +137,35 @@ export const placed = (
       }
     }
   }
+};
+
+/**
+ * The original with everything where the edit shows it, and the edit itself
+ * where the photo shows nothing.
+ */
+export const placed = (
+  original: Raster,
+  edit: Raster,
+  photo: Frame,
+  { x, y }: Placement,
+): Raster => {
+  const { width, height } = original;
+  const pixels = edit.pixels.slice();
+  const { left, top } = photo;
+  write(original, pixels, {
+    columns: sourcesOf(x, width, { start: left, end: left + photo.width }),
+    rows: sourcesOf(y, height, { start: top, end: top + photo.height }),
+  });
+  return { width, height, pixels };
+};
+
+/** A picture with everything elsewhere. Its border goes on where it ends. */
+export const placedOn = (picture: Raster, { x, y }: Placement): Raster => {
+  const { width, height } = picture;
+  const pixels = new Uint8Array(picture.pixels.length);
+  write(picture, pixels, {
+    columns: nearestOf(x, width),
+    rows: nearestOf(y, height),
+  });
   return { width, height, pixels };
 };

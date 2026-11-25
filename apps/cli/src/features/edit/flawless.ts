@@ -1,9 +1,9 @@
 import { Effect, Schema } from 'effect';
 import type { Box, Outline } from '../../shared/domain.ts';
-import { atomically } from '../../shared/store.ts';
+import { atomically, type EditFiles } from '../../shared/store.ts';
 import { Fault, inspect } from './inspect.ts';
 import { keepOriginals, type Originals } from './keep-originals.ts';
-import { type EditFiles, type Prepared, remembered } from './prepare.ts';
+import { type Prepared, remembered } from './prepare.ts';
 
 const Inspection = Schema.Struct({
   found: Schema.Array(Fault),
