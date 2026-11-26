@@ -137,6 +137,18 @@ const attempt = Effect.fn('attempt')(function* (
   return { base: files.result(number), left, isRefused: false };
 });
 
+/** Prepares an attempt and makes it, with what the picture shows. */
+const tryOnce = Effect.fn('tryOnce')(function* (
+  job: Correction,
+  files: CorrectionFiles,
+  start: Start,
+) {
+  const size = yield* inputFor(start.base, files.input);
+  const about = yield* known(job, files);
+  const made = yield* attempt(job, files, start, { size, about });
+  return { ...made, description: about.description };
+});
+
 /**
  * Changes single places of a finished photo and leaves everything else as it
  * is. Answers with the file, or null when nothing worked, and with what didn't.
@@ -154,21 +166,22 @@ export const correct = Effect.fn('correct')(function* (job: Correction) {
   while (left.length > 0 && attempts < mostAttempts && !isRefused) {
     attempts += 1;
     const files = { ...job.files, input: job.files.inputOf(attempts) };
-    const size = yield* inputFor(base, files.input);
-    const about = yield* known(job, files);
-    ({ description } = about);
     const start: Start = { number: attempts, base, changes: left };
-    const result = yield* attempt(job, files, start, { size, about }).pipe(
-      Effect.catchTag('PhotoRefused', ({ message }) =>
+    const result = yield* tryOnce(job, files, start).pipe(
+      // When the photo is refused, or what is left of the budget doesn't
+      // cover another attempt, the places left stay as they are.
+      Effect.catchTag(['PhotoRefused', 'OverBudget'], ({ message }) =>
         Effect.succeed({
           base: start.base,
           left: start.changes.map(
             ({ place }): ToChange => ({ place, problem: message }),
           ),
           isRefused: true,
+          description: null,
         }),
       ),
     );
+    description = result.description ?? description;
     ({ base, left, isRefused } = result);
   }
   return { file: base === final ? null : base, description, attempts, left };

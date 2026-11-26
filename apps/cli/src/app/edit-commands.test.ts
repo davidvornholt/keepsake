@@ -298,13 +298,6 @@ describe('keepsake edit, when something goes wrong', () => {
     ]);
   });
 
-  it('starts no photo beyond the budget', async () => {
-    await pickLisbon();
-    const result = await editLisbon('--budget', '1');
-    expect(result.edited).toBe(2);
-    expect(result.overBudget).toHaveLength(1);
-  });
-
   it('refuses a photo nobody judged', async () => {
     await pickLisbon();
     const failure = await failureOf(

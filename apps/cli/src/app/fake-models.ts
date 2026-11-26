@@ -3,8 +3,12 @@
 export type Asked = {
   readonly name: AnswerName;
   readonly model: string;
+  /** Where it was asked, such as the provider's host. */
+  readonly host: string;
   readonly texts: ReadonlyArray<string>;
   readonly images: number;
+  /** The most output tokens the answer may use, if any. */
+  readonly outputLimit?: number;
 };
 
 /** An edit that was asked of the image model. */
@@ -71,6 +75,16 @@ export type AnswerName = keyof typeof usualAnswers;
 
 type Answer = object | ((asked: Asked) => object);
 
+type ChatUsage = {
+  readonly prompt_tokens: number;
+  readonly completion_tokens: number;
+};
+
+const usualChatUsage: ChatUsage = {
+  prompt_tokens: 10_000,
+  completion_tokens: 1000,
+};
+
 /** Stands in for Azure, so no test reaches a real model. */
 export const fakeModels = {
   asked: [] as Array<Asked>,
@@ -79,6 +93,8 @@ export const fakeModels = {
   answers: {} as Partial<Record<AnswerName, Answer>>,
   /** Answers the image model's requests. */
   editAnswer: undefined as (() => Response) | undefined,
+  /** What a question uses, or nothing when the answer doesn't say. */
+  chatUsage: usualChatUsage as ChatUsage | undefined,
   key: 'test-api-key',
 };
 
@@ -87,6 +103,7 @@ export const resetModels = () => {
   fakeModels.edits = [];
   fakeModels.answers = {};
   fakeModels.editAnswer = undefined;
+  fakeModels.chatUsage = usualChatUsage;
 };
 
 type ChatPart = { readonly type: string; readonly text?: string };
@@ -99,6 +116,7 @@ type ChatRequest = {
   readonly response_format: {
     readonly json_schema: { readonly name: AnswerName };
   };
+  readonly max_completion_tokens?: number;
 };
 
 const chat = async (request: Request): Promise<Response> => {
@@ -109,8 +127,10 @@ const chat = async (request: Request): Promise<Response> => {
   const asked: Asked = {
     name: body.response_format.json_schema.name,
     model: body.model,
+    host: new URL(request.url).host,
     texts: parts.flatMap(({ text }) => (text === undefined ? [] : [text])),
     images: parts.filter(({ type }) => type === 'image_url').length,
+    outputLimit: body.max_completion_tokens,
   };
   fakeModels.asked.push(asked);
   const chosen = fakeModels.answers[asked.name] ?? usualAnswers[asked.name];
@@ -131,11 +151,16 @@ const chat = async (request: Request): Promise<Response> => {
         finish_reason: 'stop',
       },
     ],
-    usage: {
-      prompt_tokens: 10_000,
-      completion_tokens: 1000,
-      total_tokens: 11_000,
-    },
+    ...(fakeModels.chatUsage === undefined
+      ? {}
+      : {
+          usage: {
+            ...fakeModels.chatUsage,
+            total_tokens:
+              fakeModels.chatUsage.prompt_tokens +
+              fakeModels.chatUsage.completion_tokens,
+          },
+        }),
   });
 };
 

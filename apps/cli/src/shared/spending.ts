@@ -1,24 +1,17 @@
-import { Context, Effect, Layer, Option, Ref, Schema } from 'effect';
-import { readJson, type ShootFiles, writeJson } from './store.ts';
-import { isSubscription } from './subscriptions/subscriptions.ts';
-
-/** Dollars for a million tokens. */
-type Price = {
-  readonly input: number;
-  readonly output: number;
-};
-
-const million = 1_000_000;
-
-// List prices in US dollars for a million tokens, by the model's name without
-// its provider. A model that isn't here counts as free, so its tokens are
-// shown instead, and so does every model of a subscription.
-const prices: ReadonlyMap<string, Price> = new Map([
-  ['gpt-6-astra', { input: 10, output: 50 }],
-  // Image tokens; the few text tokens of the prompt cost less.
-  ['gpt-image-2.5-sunburst', { input: 8, output: 30 }],
-  ['gpt-image-2.5-flare', { input: 8, output: 30 }],
-]);
+import {
+  Context,
+  Effect,
+  type FileSystem,
+  Layer,
+  Option,
+  type Path,
+  Ref,
+  Schema,
+  Semaphore,
+} from 'effect';
+import { OverBudget, type StoreFailed } from './errors/errors.ts';
+import { costOf, mostCostOf, type RequestSize, type Usage } from './prices.ts';
+import { readJson, writeJson } from './store.ts';
 
 /** About what editing or changing one photo costs. */
 export const dollarsForOneEdit = 0.75;
@@ -42,24 +35,6 @@ const nothing: ModelSpending = {
   dollars: 0,
 };
 
-const priceOf = (model: string): Price | undefined => {
-  const slash = model.indexOf('/');
-  return isSubscription(model.slice(0, slash))
-    ? undefined
-    : prices.get(model.slice(slash + 1));
-};
-
-export const costOf = (
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-): number => {
-  const price = priceOf(model);
-  return price === undefined
-    ? 0
-    : (inputTokens * price.input + outputTokens * price.output) / million;
-};
-
 const add = (left: ModelSpending, right: ModelSpending): ModelSpending => ({
   calls: left.calls + right.calls,
   inputTokens: left.inputTokens + right.inputTokens,
@@ -78,63 +53,264 @@ const merge = (left: SpendingRecord, right: SpendingRecord): SpendingRecord => {
   return merged;
 };
 
-/** Adds up what one command spends on models. */
-export class Spending extends Context.Service<
-  Spending,
-  {
-    readonly add: (
-      model: string,
-      inputTokens: number,
-      outputTokens: number,
-    ) => Effect.Effect<void>;
-    /** Everything this command spent. */
-    readonly soFar: Effect.Effect<SpendingRecord>;
-    /** What was spent since this was last asked for. */
-    readonly sinceSaved: Effect.Effect<SpendingRecord>;
-  }
->()('@keepsake/cli/shared/Spending') {
-  static readonly layer = Layer.effect(
-    Spending,
-    Effect.gen(function* () {
-      const total = yield* Ref.make<SpendingRecord>({});
-      const unsaved = yield* Ref.make<SpendingRecord>({});
-      return Spending.of({
-        add: (model, inputTokens, outputTokens) => {
-          const call: SpendingRecord = {
-            [model]: {
-              calls: 1,
-              inputTokens,
-              outputTokens,
-              dollars: costOf(model, inputTokens, outputTokens),
-            },
-          };
-          return Effect.andThen(
-            Ref.update(total, (current) => merge(current, call)),
-            Ref.update(unsaved, (current) => merge(current, call)),
-          );
-        },
-        soFar: Ref.get(total),
-        sinceSaved: Ref.getAndSet(unsaved, {}),
-      });
-    }),
-  );
-}
+/** What this command spent, and what the requests that run may still cost. */
+type State = { readonly total: SpendingRecord; readonly held: number };
 
-/** Adds what was just spent to what the shoot has cost before. */
-export const saveSpending = Effect.fn('saveSpending')(function* (
-  files: ShootFiles,
-) {
-  const spending = yield* Spending;
-  const spent = yield* spending.sinceSaved;
-  if (Object.keys(spent).length > 0) {
-    const before = yield* readJson(SpendingRecord, files.spending);
+/** A budget, and what was spent before it began. */
+type Limit = { readonly dollars: number; readonly from: number };
+
+const leftOf = ({ total, held }: State, limit: Option.Option<Limit>) =>
+  Option.match(limit, {
+    onNone: () => Number.POSITIVE_INFINITY,
+    onSome: ({ dollars, from }) =>
+      dollars - (totalDollars(total) - from) - held,
+  });
+
+const inDollars = (dollars: number) => `$${Math.max(0, dollars).toFixed(2)}`;
+
+/** Adds what was spent to what a shoot's spending file says. */
+const save = (path: string, spent: SpendingRecord) =>
+  Effect.gen(function* () {
+    const before = yield* readJson(SpendingRecord, path);
     yield* writeJson(
       SpendingRecord,
-      files.spending,
+      path,
       merge(
         Option.getOrElse(before, () => ({})),
         spent,
       ),
     );
+  });
+
+/** Holds the most a request can cost, if what is left of the budget covers it. */
+const hold = (
+  state: Ref.Ref<State>,
+  {
+    model,
+    most,
+    budget,
+  }: {
+    readonly model: string;
+    readonly most: number;
+    readonly budget: Option.Option<Limit>;
+  },
+) =>
+  Effect.gen(function* () {
+    const short = yield* Ref.modify(state, (now) =>
+      most <= leftOf(now, budget)
+        ? [null, { ...now, held: now.held + most }]
+        : [leftOf(now, budget), now],
+    );
+    if (short !== null) {
+      return yield* new OverBudget({
+        message: `A request to ${model} can cost up to ${inDollars(most)}, and ${inDollars(short)} is left of the budget.`,
+      });
+    }
+    return most;
+  });
+
+/** A paid request, while it runs. */
+export type Paid = {
+  /** The most it can cost, in dollars. */
+  readonly most: number;
+  /**
+   * Counts it at the most, now that its answer is coming, so it stays
+   * counted when the answer is lost.
+   */
+  readonly answered: Effect.Effect<void, StoreFailed>;
+  /**
+   * Counts what it used, or the most when its answer doesn't say, in place
+   * of what `answered` counted.
+   */
+  readonly settle: (
+    used: Usage | undefined,
+  ) => Effect.Effect<void, StoreFailed>;
+};
+
+/** Changes what was spent and what is held in one step, and writes it. */
+type Ledger = {
+  readonly charge: (
+    model: string,
+    entry: ModelSpending,
+    release: number,
+  ) => Effect.Effect<void, StoreFailed>;
+  readonly release: (held: number) => Effect.Effect<void>;
+};
+
+/**
+ * What a request adds when it settles: all it cost, or what it cost beyond
+ * its most once that was counted when its answer began.
+ */
+const settlementOf = (
+  model: string,
+  used: Usage | undefined,
+  {
+    most,
+    wasAnswered,
+  }: { readonly most: number; readonly wasAnswered: boolean },
+): ModelSpending => {
+  const dollars = used === undefined ? most : costOf(model, used);
+  return {
+    calls: wasAnswered ? 0 : 1,
+    inputTokens: used?.inputTokens ?? 0,
+    outputTokens: used?.outputTokens ?? 0,
+    dollars: wasAnswered ? dollars - most : dollars,
+  };
+};
+
+const paymentFor = (
+  model: string,
+  { most, held }: { readonly most: number; readonly held: number },
+  ledger: Ledger,
+) => {
+  let stage: 'held' | 'answered' | 'settled' = 'held';
+  const paid: Paid = {
+    most,
+    answered: Effect.suspend(() => {
+      if (stage !== 'held') {
+        return Effect.void;
+      }
+      stage = 'answered';
+      const entry = { ...nothing, calls: 1, dollars: most };
+      return ledger.charge(model, entry, held);
+    }).pipe(Effect.uninterruptible),
+    settle: (used) =>
+      Effect.suspend(() => {
+        if (stage === 'settled') {
+          return Effect.void;
+        }
+        const wasAnswered = stage === 'answered';
+        stage = 'settled';
+        const entry = settlementOf(model, used, { most, wasAnswered });
+        return ledger.charge(model, entry, wasAnswered ? 0 : held);
+      }).pipe(Effect.uninterruptible),
+  };
+  // A request that got no answer cost nothing.
+  const release = Effect.suspend(() =>
+    stage === 'held' ? ledger.release(held) : Effect.void,
+  );
+  return { paid, release };
+};
+
+/** Adds up what one command spends on models. */
+export class Spending extends Context.Service<
+  Spending,
+  {
+    /**
+     * Sends a paid request only when what is left of the budget covers the
+     * most it can cost, and holds that much until the request counts what
+     * it cost with `paid`.
+     */
+    readonly paying: <A, E, R>(
+      model: string,
+      size: RequestSize,
+      request: (paid: Paid) => Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | OverBudget, R>;
+    /** Keeps what the paid requests of `work` cost within a budget. */
+    readonly within: (
+      dollars: number,
+    ) => <A, E, R>(work: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+    /** What is left of the budget, less what running requests hold. */
+    readonly left: Effect.Effect<number>;
+    /** Everything this command spent. */
+    readonly soFar: Effect.Effect<SpendingRecord>;
+    /** Adds what `work` spends to a shoot's spending file as it is spent. */
+    readonly savingTo: (
+      path: string,
+    ) => <A, E, R>(
+      work: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | StoreFailed, R>;
   }
-});
+>()('@keepsake/cli/shared/Spending') {
+  static readonly layer = Layer.effect(
+    Spending,
+    Effect.gen(function* () {
+      const services = yield* Effect.context<
+        FileSystem.FileSystem | Path.Path
+      >();
+      const state = yield* Ref.make<State>({ total: {}, held: 0 });
+      const unsaved = yield* Ref.make<SpendingRecord>({});
+      const target = yield* Ref.make(Option.none<string>());
+      const limit = yield* Ref.make(Option.none<Limit>());
+      const writing = yield* Semaphore.make(1);
+
+      // What can't be written stays to be written with the next request.
+      const flush = Effect.gen(function* () {
+        const path = yield* Ref.get(target);
+        if (Option.isNone(path)) {
+          return;
+        }
+        const spent = yield* Ref.getAndSet(unsaved, {});
+        if (Object.keys(spent).length === 0) {
+          return;
+        }
+        yield* save(path.value, spent).pipe(
+          Effect.provideContext(services),
+          Effect.tapError(() =>
+            Ref.update(unsaved, (later) => merge(spent, later)),
+          ),
+        );
+      }).pipe(writing.withPermits(1), Effect.uninterruptible);
+
+      const ledger: Ledger = {
+        charge: (model, entry, release) =>
+          Ref.update(state, (now) => ({
+            total: merge(now.total, { [model]: entry }),
+            held: now.held - release,
+          })).pipe(
+            Effect.andThen(
+              Ref.update(unsaved, (now) => merge(now, { [model]: entry })),
+            ),
+            Effect.andThen(flush),
+          ),
+        release: (held) =>
+          Ref.update(state, (now) => ({ ...now, held: now.held - held })),
+      };
+
+      return Spending.of({
+        paying: (model, size, request) =>
+          Effect.gen(function* () {
+            const budget = yield* Ref.get(limit);
+            const most = mostCostOf(model, size);
+            if (most === undefined && Option.isSome(budget)) {
+              return yield* new OverBudget({
+                message: `keepsake doesn't know what ${model} costs, so it can't keep to a budget with it.`,
+              });
+            }
+            const holding =
+              Option.isNone(budget) || most === undefined || most === 0
+                ? Effect.succeed(0)
+                : hold(state, { model, most, budget });
+            return yield* Effect.acquireUseRelease(
+              Effect.map(holding, (held) =>
+                paymentFor(model, { most: most ?? 0, held }, ledger),
+              ),
+              ({ paid }) => request(paid),
+              ({ release }) => release,
+            );
+          }),
+        within: (dollars) => (work) =>
+          Effect.acquireUseRelease(
+            Effect.flatMap(Ref.get(state), ({ total }) =>
+              Ref.set(
+                limit,
+                Option.some({ dollars, from: totalDollars(total) }),
+              ),
+            ),
+            () => work,
+            () => Ref.set(limit, Option.none()),
+          ),
+        left: Effect.flatMap(Ref.get(limit), (budget) =>
+          Effect.map(Ref.get(state), (now) => leftOf(now, budget)),
+        ),
+        soFar: Effect.map(Ref.get(state), ({ total }) => total),
+        savingTo: (path) => (work) =>
+          Effect.acquireUseRelease(
+            Ref.set(target, Option.some(path)),
+            () => work,
+            () => flush.pipe(Effect.ensuring(Ref.set(target, Option.none()))),
+          ),
+      });
+    }),
+  );
+}

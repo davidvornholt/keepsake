@@ -1,7 +1,7 @@
 import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot, judgedTooFew } from '../features/cull/cull.ts';
-import { edit as editShoot } from '../features/edit/edit.ts';
+import { checkPrices, edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel, imageModelAccess } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { markWith } from '../features/light-table/marks.ts';
@@ -83,7 +83,7 @@ const pickInput = (flags: {
 const editFlags = {
   budget: optionalNumber(
     'budget',
-    `Start no more photos when the edits have cost this many dollars (default ${defaultBudget})`,
+    `Spend at most this many dollars on the edits: a paid request is sent only when what is left covers the most it can cost (default ${defaultBudget})`,
   ),
   versions: optionalInt(
     'versions',
@@ -129,6 +129,7 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
     readonly photos: ReadonlyArray<string>;
     readonly wish: Option.Option<string>;
     readonly mark: Option.Option<string>;
+    readonly budget: Option.Option<number>;
   },
 ) {
   const { photos, mark } = asked;
@@ -144,6 +145,13 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
   if (photos.length > 0) {
     return yield* new InvalidInput({
       message: 'Name no photos with --mark, which is about one already.',
+    });
+  }
+  // A mark is answered without the owner there to agree to the default.
+  if (Option.isNone(asked.budget)) {
+    return yield* new InvalidInput({
+      message:
+        'Give --budget with --mark: what is left of what the owner agreed to spend.',
     });
   }
   const { files } = yield* openShoot(shoot);
@@ -230,7 +238,12 @@ export const edit = Command.make(
   ({ shoot, photos, model, wish, mark, again: startOver, ...flags }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
-      const asked = yield* whatToEdit(shoot, { photos, wish, mark });
+      const asked = yield* whatToEdit(shoot, {
+        photos,
+        wish,
+        mark,
+        budget: flags.budget,
+      });
       yield* workOn(shoot, (open) =>
         editShoot(open, asked.photos, {
           ...input,
@@ -346,6 +359,9 @@ export const run = Command.make(
       const scanned = yield* scan(flags);
       const { shoot } = scanned;
       yield* Effect.gen(function* () {
+        if (!flags.unedited) {
+          yield* checkPrices(imageModel);
+        }
         const culled = yield* workOn(shoot, (open) => cullShoot(open, false));
         yield* checkCulled(culled);
         const picked = yield* workOn(shoot, (open) =>
