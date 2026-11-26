@@ -260,7 +260,7 @@ const albumNow = Effect.fn('albumNow')(function* (
  * Forgets the replaced uploads that the output of a command named, which
  * happens only once it was printed.
  */
-export const forgetOutdated = Effect.fn('forgetOutdated')(function* (
+const forgetOutdated = Effect.fn('forgetOutdated')(function* (
   open: OpenShoot,
   named: ReadonlyArray<string>,
 ) {
@@ -274,6 +274,33 @@ export const forgetOutdated = Effect.fn('forgetOutdated')(function* (
     });
   }
 });
+
+/**
+ * Of these replaced uploads, those still noted and in no album keepsake knows
+ * of, as a publish since may have brought one back.
+ */
+const stillOutdated = Effect.fn('stillOutdated')(function* (
+  open: OpenShoot,
+  candidates: ReadonlyArray<string>,
+) {
+  const publication = yield* readPublication(open);
+  const noted = new Set(publication === null ? [] : outdatedOf(publication));
+  return candidates.filter((asset) => noted.has(asset));
+});
+
+/**
+ * Tells of the replaced uploads that are still outdated and forgets them once
+ * told. Run it on the shoot it holds, so no publish changes them in between.
+ */
+export const tellOutdated = <E, R>(
+  open: OpenShoot,
+  candidates: ReadonlyArray<string>,
+  tell: (outdated: ReadonlyArray<string>) => Effect.Effect<void, E, R>,
+) =>
+  stillOutdated(open, candidates).pipe(
+    Effect.tap(tell),
+    Effect.flatMap((outdated) => forgetOutdated(open, outdated)),
+  );
 
 /** Uploads the picked photos, or those named, to an album in Immich. */
 export const publish = Effect.fn('publish')(function* (

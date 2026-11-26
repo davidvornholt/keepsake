@@ -16,6 +16,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
+import { fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
 const first = 'Lisbon, May 2026';
@@ -235,6 +236,45 @@ describe('keepsake run --publish', () => {
     judge,
     '--publish',
   ];
+
+  it('doesn’t name an upload another publish brought back meanwhile', async () => {
+    await scanLisbon();
+    await runOk(...runLisbon());
+    const original = await Bun.file(finalOf('B')).bytes();
+    const { photos } = await shootJson('publication.json');
+    const earlier = photos.find(
+      ({ photo }: { photo: string }) => photo === 'B',
+    );
+    await editAgain('B');
+    // While the run explains, after it published, the owner goes back to the
+    // first edit and publishes it, which brings its upload back.
+    fakeModels.answers.reasons = async () => {
+      await writeFile(finalOf('B'), original);
+      const now = await shootJson('publication.json');
+      const replacing = now.photos.find(
+        ({ photo }: { photo: string }) => photo === 'B',
+      ).asset;
+      await Bun.write(
+        shootFile('publication.json'),
+        JSON.stringify({
+          ...now,
+          photos: [
+            ...now.photos.filter(
+              ({ photo }: { photo: string }) => photo !== 'B',
+            ),
+            earlier,
+          ],
+          outdated: [replacing],
+        }),
+      );
+      return { reasons: [] };
+    };
+    const result = await runOk(...runLisbon());
+    expect(result.published).toMatchObject({ published: 1, outdated: [] });
+    const after = await shootJson('publication.json');
+    expect(after.outdated).toHaveLength(1);
+    expect(after.outdated).not.toContain(earlier.asset);
+  });
 
   it('names a replaced upload again when a later step failed', async () => {
     await scanLisbon();

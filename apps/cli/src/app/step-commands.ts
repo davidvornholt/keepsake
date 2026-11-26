@@ -7,8 +7,8 @@ import { explain as explainShoot } from '../features/explain/explain.ts';
 import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import {
-  forgetOutdated,
   publish as publishShoot,
+  tellOutdated,
 } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
 import { InvalidInput, ModelFailed } from '../shared/errors/errors.ts';
@@ -265,9 +265,11 @@ export const publish = Command.make(
   ({ shoot, photos, album }) =>
     workOn(shoot, (open) =>
       publishShoot(open, photos, album).pipe(
-        Effect.tap(emit),
-        // Only what was printed is told, so only that is forgotten.
-        Effect.flatMap(({ outdated }) => forgetOutdated(open, outdated)),
+        Effect.flatMap((published) =>
+          tellOutdated(open, published.outdated, (outdated) =>
+            emit({ ...published, outdated }),
+          ),
+        ),
       ),
     ).pipe(Effect.provide(Spending.layer)),
 ).pipe(
@@ -366,19 +368,22 @@ export const run = Command.make(
         const explained = yield* workOn(shoot, (open) =>
           askReviewer(explainShoot(open, false)),
         );
-        yield* emitWithCost({
-          scanned,
-          culled,
-          picked,
-          edited,
-          published,
-          explained,
-        });
-        if (published !== null) {
-          yield* workOn(shoot, (open) =>
-            forgetOutdated(open, published.outdated),
-          );
-        }
+        const tell = (outdated: ReadonlyArray<string>) =>
+          emitWithCost({
+            scanned,
+            culled,
+            picked,
+            edited,
+            published: published && { ...published, outdated },
+            explained,
+          });
+        // The lock was let go after publishing, so another publish may have
+        // brought a replaced upload back; it is held again until it told.
+        yield* published === null
+          ? tell([])
+          : workOn(shoot, (open) =>
+              tellOutdated(open, published.outdated, tell),
+            );
       }).pipe(
         Effect.provide(reviewLayer(flags.reviewModel)),
         withVision(shoot, flags.model),
