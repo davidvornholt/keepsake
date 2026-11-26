@@ -57,6 +57,7 @@ const usualAnswers = {
   choices: { places: [] },
   people: { people: [] },
   everyone: { everyone: [] },
+  animals: { animals: [] },
   signs: { signs: [] },
   textures: { outlines: [] },
   'changed-signs': { changed: [], gone: [] },

@@ -118,6 +118,8 @@ const editFiles = (path: Path.Path, directory: string, base: string) => ({
   /** The people who can be recognised, and everyone else. */
   people: path.join(directory, 'people.json'),
   bystanders: path.join(directory, 'bystanders.json'),
+  /** The animals too small for the image model to draw. */
+  animals: path.join(directory, 'animals.json'),
   signs: path.join(directory, 'signs.json'),
   /** The areas that keep the photo's own texture. */
   textures: path.join(directory, 'textures.json'),

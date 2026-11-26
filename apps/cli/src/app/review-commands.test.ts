@@ -26,6 +26,7 @@ describe('the model that looks after the edits', () => {
       ['description', 'reviewer'],
       ['people', 'reviewer'],
       ['everyone', 'reviewer'],
+      ['animals', 'reviewer'],
       ['signs', 'reviewer'],
       ['textures', 'reviewer'],
       ['assessment', 'reviewer'],
