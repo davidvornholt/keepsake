@@ -2,6 +2,7 @@ import { mobileDeviceTag } from '@davidvornholt/a11y-testing/playwright-config';
 import { expect, test } from '@playwright/test';
 import {
   aside,
+  frame,
   large,
   marks,
   notes,
@@ -17,6 +18,8 @@ import {
 // they run side by side against one server.
 
 const boxName = /^Box 1 of 1$/u;
+const anyBox = /^Box \d+ of \d+$/u;
+const portoMarks = /\/api\/shoots\/porto\/marks$/u;
 
 test('shows a finished photo whole and from close', async ({ page }) => {
   await open(page, '/lisbon/photos/D121');
@@ -131,6 +134,45 @@ test('asks for a change in words', async ({ page }) => {
   await scan(page);
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(said).toBeHidden();
+});
+
+test('gives back a change that keepsake didn’t get', async ({ page }) => {
+  // Saving fails only once another photo is shown.
+  const shown = Promise.withResolvers<void>();
+  await page.route(portoMarks, async (route) => {
+    await shown.promise;
+    await route.abort();
+  });
+  await open(page, '/porto/photos/D84');
+  await page.keyboard.press('c');
+  const note = page.getByRole('textbox', { name: 'What should change?' });
+  await expect(note).toBeFocused();
+  const photo = await large(page).locator('[data-boxes]').boundingBox();
+  const { x = 0, y = 0, width = 0, height = 0 } = photo ?? {};
+  await page.mouse.move(x + width * 0.3, y + height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(x + width * 0.6, y + height * 0.6, { steps: 4 });
+  await page.mouse.up();
+  const boxes = page.getByRole('button', { name: anyBox });
+  const drawn = await boxes.count();
+  await note.fill('Less sky.');
+  await note.press('Enter');
+  await expect(note).toBeHidden();
+  const first = await large(page).getAttribute('aria-label');
+  await page.keyboard.press('ArrowRight');
+  await expect(large(page)).not.toHaveAccessibleName(first ?? '');
+  const failed = page.waitForEvent('requestfailed');
+  shown.resolve();
+  await failed;
+
+  // Back on the table, a change of the photo before is asked for again. It
+  // had one keepsake got before, which the lost one was to replace.
+  await page.keyboard.press('Escape');
+  await expect(frame(page)).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('c');
+  await expect(note).toHaveValue('Less sky.');
+  await expect(boxes).toHaveCount(drawn);
 });
 
 test('labels a photo', async ({ page }) => {
