@@ -9,6 +9,8 @@ export type Asked = {
 
 /** An edit that was asked of the image model. */
 export type AskedEdit = {
+  /** The model asked, by the provider's name for it. */
+  readonly model: string;
   readonly prompt: string;
   readonly size: string;
   /** The photo it was given. */
@@ -146,6 +148,7 @@ const images = async (request: Request): Promise<Response> => {
   const form = await request.formData();
   const picture = form.get('image[]');
   fakeModels.edits.push({
+    model: String(form.get('model')),
     prompt: String(form.get('prompt')),
     size: String(form.get('size')),
     picture: new Uint8Array(

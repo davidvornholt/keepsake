@@ -1,7 +1,7 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
 import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import { askReviewer } from '../../shared/review-vision.ts';
+import { askReviewer, ReviewVision } from '../../shared/review-vision.ts';
 import {
   atomically,
   type EditFiles,
@@ -97,21 +97,43 @@ type ToChange = {
   readonly areas: ReadonlyArray<Box>;
 };
 
-/** Forgets an earlier change, but goes on with one that isn't over. */
+/** The models a change is made with, as what they make differs. */
+const Models = Schema.Struct({
+  imageModel: Schema.String,
+  reviewModel: Schema.String,
+});
+const sameModels = Schema.toEquivalence(Models);
+
+/**
+ * Forgets an earlier change, but goes on with one that isn't over and is made
+ * with the same models. One from before they were noted goes on, since what it
+ * made was paid for.
+ */
 const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
+  const models = {
+    imageModel: (yield* ImageModel).model,
+    reviewModel: (yield* ReviewVision).model,
+  };
+  const modelsFile = `${files.directory}/models.json`;
   const before = yield* wishIn(files.wish);
   const areasBefore = yield* readJson(Areas, files.areas);
+  const modelsBefore = yield* readJson(Models, modelsFile);
   const isSame =
     before === wish &&
     sameAreas(
       Option.getOrElse(areasBefore, () => []),
       areas,
-    );
+    ) &&
+    Option.match(modelsBefore, {
+      onNone: () => true,
+      onSome: (known) => sameModels(known, models),
+    });
   if (!isSame || (yield* exists(files.outcome))) {
     yield* emptied(files.directory, []);
     yield* writeJson(Areas, files.areas, areas);
     yield* writeWish(files.wish, wish);
   }
+  yield* writeJson(Models, modelsFile, models);
 });
 
 /** Changes single places of a finished photo. */

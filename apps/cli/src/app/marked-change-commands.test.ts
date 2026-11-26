@@ -161,6 +161,25 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     expect(fakeModels.edits).toHaveLength(1);
   });
 
+  it('starts the change anew with another image model', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    await markB();
+    chairAt(marked);
+    fakeModels.answers.choices = () => new Response(null, { status: 400 });
+    expect((await editLisbon('--mark', 'one')).failed).toHaveLength(1);
+    const before = fakeModels.edits.length;
+    chairAt(marked);
+    const other = 'gpt-image-other';
+    await editLisbon('--mark', 'one', '--image-model', `azure/${other}`);
+    expect(fakeModels.edits.slice(before).map(({ model }) => model)).toEqual([
+      other,
+    ]);
+    expect(await shootJson('edits', 'B', 'edit.json')).toMatchObject({
+      model: `azure/${other}`,
+    });
+  });
+
   it('says so when the wish is about all of the photo', async () => {
     await pickLisbon();
     await editLisbon('B');
