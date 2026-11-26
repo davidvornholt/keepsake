@@ -5,6 +5,7 @@ import {
   asked,
   editLisbon,
   failureOf,
+  judge,
   pickLisbon,
   runOk,
   setUp,
@@ -189,7 +190,7 @@ describe('keepsake edit --mark', () => {
     await pickLisbon();
     await editLisbon('B');
     await mark('one');
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result).toMatchObject({ edited: 1 });
     expect(fakeModels.edits.at(-1)?.prompt).toContain('Remove the chair');
   });
@@ -205,7 +206,7 @@ describe('keepsake edit --mark', () => {
       places: [{ place: 1, best: 1, notes: 'Clean' }],
     };
     await mark('one', { boxes: [box] });
-    await editLisbon('--mark', 'one');
+    await editLisbon('--mark', 'one', '--budget', '5');
     expect(asked('places')[0]?.texts.join(' ')).toContain('marked');
     expect(await shootJson('edits', 'B', 'correction', 'areas.json')).toEqual([
       box,
@@ -215,8 +216,31 @@ describe('keepsake edit --mark', () => {
   it('needs to know what to do at the places of a mark', async () => {
     await pickLisbon();
     await mark('one', { note: '', boxes: [box] });
-    const failure = await failureOf('edit', 'lisbon', '--mark', 'one');
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      '--mark',
+      'one',
+      '--budget',
+      '5',
+    );
     expect(failure.message).toContain('--wish');
+  });
+
+  it('needs a budget, which only the owner can give', async () => {
+    await pickLisbon();
+    await mark('one');
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      '--mark',
+      'one',
+      '--review-model',
+      judge,
+    );
+    expect(failure._tag).toBe('InvalidInput');
+    expect(failure.message).toContain('--budget');
+    expect(fakeModels.edits).toHaveLength(0);
   });
 
   it('takes the photo from the mark', async () => {

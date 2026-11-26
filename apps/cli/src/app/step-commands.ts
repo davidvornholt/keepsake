@@ -126,6 +126,7 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
     readonly photos: ReadonlyArray<string>;
     readonly wish: Option.Option<string>;
     readonly mark: Option.Option<string>;
+    readonly budget: Option.Option<number>;
   },
 ) {
   const { photos, mark } = asked;
@@ -141,6 +142,13 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
   if (photos.length > 0) {
     return yield* new InvalidInput({
       message: 'Name no photos with --mark, which is about one already.',
+    });
+  }
+  // A mark is answered without the owner there to agree to the default.
+  if (Option.isNone(asked.budget)) {
+    return yield* new InvalidInput({
+      message:
+        'Give --budget with --mark: what is left of what the owner agreed to spend.',
     });
   }
   const { files } = yield* openShoot(shoot);
@@ -226,7 +234,12 @@ export const edit = Command.make(
   ({ shoot, photos, model, wish, mark, again: startOver, ...flags }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
-      const asked = yield* whatToEdit(shoot, { photos, wish, mark });
+      const asked = yield* whatToEdit(shoot, {
+        photos,
+        wish,
+        mark,
+        budget: flags.budget,
+      });
       yield* workOn(shoot, (open) =>
         editShoot(open, asked.photos, {
           ...input,
