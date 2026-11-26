@@ -7,8 +7,13 @@ const digits = 6;
 const beyond = { left: -0.2, top: -0.2, right: 1.2, bottom: 1.2 };
 
 /** The sides of a frame: left, top, right and bottom. */
-const framed = (frame: Box, subject: Box, facing: Side) => {
-  const box = withOwnRoomFirst(frame, subject, facing);
+const framed = (
+  frame: Box,
+  subject: Box,
+  facing: Side,
+  belongings: ReadonlyArray<Box> = [],
+) => {
+  const box = withOwnRoomFirst(frame, subject, facing, belongings);
   return [box.left, box.top, box.right, box.bottom].map((side) =>
     Number(side.toFixed(digits)),
   );
@@ -23,6 +28,18 @@ describe('withOwnRoomFirst', () => {
   it('completes a subject that an edge cuts off', () => {
     const subject = { left: 0, top: 0.3, right: 0.5, bottom: 0.995 };
     expect(framed(beyond, subject, 'neither')).toEqual([-0.2, 0, 1, 1.2]);
+  });
+
+  it('completes what belongs to the photo where an edge cuts it off', () => {
+    const bee = { left: 0.45, top: 0.17, right: 0.62, bottom: 0.37 };
+    const flower = { left: 0.15, top: 0.3, right: 0.7, bottom: 1 };
+    expect(framed(beyond, bee, 'neither', [flower])).toEqual([0, 0, 1, 1.2]);
+  });
+
+  it('stays in the photo around what belongs to it and is whole', () => {
+    const bee = { left: 0.45, top: 0.17, right: 0.62, bottom: 0.37 };
+    const flower = { left: 0.15, top: 0.3, right: 0.7, bottom: 0.9 };
+    expect(framed(beyond, bee, 'neither', [flower])).toEqual([0, 0, 1, 1]);
   });
 
   it('adds the room that is missing, and more of it in front', () => {
