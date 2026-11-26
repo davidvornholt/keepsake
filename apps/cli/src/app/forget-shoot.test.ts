@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BunServices } from '@effect/platform-bun';
 import { ConfigProvider, Effect, FileSystem, Layer } from 'effect';
@@ -8,6 +7,7 @@ import { forgetShoot } from '../features/light-table/new-shoot.ts';
 import {
   failureOf,
   fake,
+  putPhotos,
   runOk,
   scanLisbon,
   setUp,
@@ -102,7 +102,7 @@ describe('forgetting a shoot', () => {
   it('removes its smaller pictures once those being made are there, and only its own', async () => {
     await scanLisbon();
     const porto = join(fake.home, 'porto');
-    await mkdir(porto);
+    await putPhotos(porto);
     await runOk('scan', porto, '--name', 'porto');
     const cache = (shoot: string) =>
       join(fake.home, 'cache', 'keepsake', shoot);

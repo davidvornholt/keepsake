@@ -1,5 +1,5 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
@@ -57,7 +57,7 @@ const tagsOf = (file: string, taken: string) => ({
  */
 export const fakeTools = {
   runs: [] as Array<Run>,
-  /** The RAW files in the folder that is scanned, by the second each was taken. */
+  /** The RAW files in the folder that is scanned, by the second each was taken; `putPhotos` puts them there. */
   files: [] as Array<{ readonly file: string; readonly second: number }>,
   /** Assets the photos command has uploaded, by file. */
   uploads: [] as Array<string>,
@@ -90,6 +90,25 @@ export const resetTools = () => {
   fakeTools.late = undefined;
 };
 
+const unescaped = new Map([
+  ['n', '\n'],
+  ['r', '\r'],
+]);
+
+/** The files of an argument file of exiftool, one in a line as a C string. */
+const filesIn = (list: string) =>
+  readFileSync(list, 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('#[CSTR]'))
+    .map((line) =>
+      line
+        .slice('#[CSTR]'.length)
+        .replaceAll(
+          /\\(?<escaped>.)/gu,
+          (_, escaped: string) => unescaped.get(escaped) ?? escaped,
+        ),
+    );
+
 const exiftool = (args: ReadonlyArray<string>): string => {
   if (args[0] === '-s3') {
     return '2026:03:30 10:00:00.000+02:00\n';
@@ -97,13 +116,20 @@ const exiftool = (args: ReadonlyArray<string>): string => {
   if (args[0] !== '-json') {
     return '';
   }
+  const list = args[args.indexOf('-@') + 1];
+  if (args.includes('-@') && list !== undefined) {
+    return JSON.stringify(
+      filesIn(list).map((path, index) => {
+        const second =
+          fakeTools.files.find(({ file }) => path.endsWith(`/${file}`))
+            ?.second ?? index;
+        return tagsOf(path, takenAt(second));
+      }),
+    );
+  }
   const places = args.filter((arg) => arg.startsWith('/'));
   return JSON.stringify(
-    args.includes('-r')
-      ? fakeTools.files.map(({ file, second }) =>
-          tagsOf(`${places[0]}/${file}`, takenAt(second)),
-        )
-      : places.map((file, second) => tagsOf(file, takenAt(second))),
+    places.map((file, second) => tagsOf(file, takenAt(second))),
   );
 };
 

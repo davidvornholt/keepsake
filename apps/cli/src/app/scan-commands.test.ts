@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   fake,
   photosFolder,
+  putPhotos,
   run,
   setUp,
   shootFile,
@@ -22,6 +23,7 @@ describe('a scan that stopped half-way', () => {
       { file: 'A.ARW', second: 0 },
       { file: 'B.ARW', second: 300 },
     ];
+    await putPhotos();
     // B stops the first scan once A has its preview.
     fakeTools.pause = ({ args }) =>
       args.some((arg) => arg.endsWith('B.ARW'))

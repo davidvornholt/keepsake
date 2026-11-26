@@ -1,7 +1,7 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { Effect, FileSystem, Path, Schema } from 'effect';
+import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import type { Photo } from './domain.ts';
-import { InvalidInput, ToolFailed } from './errors/errors.ts';
+import { InvalidInput, StoreFailed, ToolFailed } from './errors/errors.ts';
 import { runTool } from './tools.ts';
 
 const rawExtensions = [
@@ -158,30 +158,78 @@ export const isInside = (path: Path.Path, folder: string, file: string) => {
   );
 };
 
+const unusable = (error: { readonly message: string }) =>
+  new StoreFailed({
+    message: `Could not use a temporary folder: ${error.message}`,
+  });
+
+const isPhoto = new Set<string>(photoExtensions);
+
+/** A photo's file, and when it was last changed. */
+export type PhotoFile = { readonly file: string; readonly modified: number };
+
+/** How many files are looked at at once. */
+const concurrency = 64;
+
 /**
- * Leaves out the files that a link takes from outside the folder, since
- * keepsake reads only the folder it is given. One that can't be found stays,
- * to be listed as unreadable.
+ * The photo's file, unless it can't be read now or a link takes it from
+ * outside the folder, since keepsake reads only the folder it is given.
  */
-const onlyInside = Effect.fn('onlyInside')(function* <A>(
-  source: string,
-  files: ReadonlyArray<A>,
-  fileOf: (one: A) => string,
+const photoFileAt = Effect.fn('photoFileAt')(function* (
+  folder: string,
+  file: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const folder = yield* fs
-    .realPath(source)
-    .pipe(Effect.orElseSucceed(() => source));
-  const kept = yield* Effect.forEach(files, (one) =>
-    fs.realPath(fileOf(one)).pipe(
-      Effect.map((real) => isInside(path, folder, real)),
-      Effect.orElseSucceed(() => true),
-      Effect.map((isKept) => (isKept ? [one] : [])),
-    ),
-  );
-  return kept.flat();
+  const real = yield* fs.realPath(file).pipe(Effect.option);
+  const info = yield* fs.stat(file).pipe(Effect.option);
+  return Option.isNone(real) ||
+    Option.isNone(info) ||
+    info.value.type !== 'File' ||
+    !isInside(path, folder, real.value)
+    ? []
+    : [
+        {
+          file,
+          modified: Option.match(info.value.mtime, {
+            onNone: () => 0,
+            onSome: Number,
+          }),
+        } satisfies PhotoFile,
+      ];
 });
+
+/** Every photo in a folder and the folders below it that aren't hidden. */
+export const photoFilesIn = Effect.fn('photoFilesIn')(function* (
+  folder: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const unreadable = (error: { readonly message: string }) =>
+    new StoreFailed({ message: `Could not read ${folder}: ${error.message}` });
+  const names = yield* fs
+    .readDirectory(folder, { recursive: true })
+    .pipe(Effect.mapError(unreadable));
+  const real = yield* fs.realPath(folder).pipe(Effect.mapError(unreadable));
+  const candidates = names.filter(
+    (name) =>
+      !name.split(path.sep).some((part) => part.startsWith('.')) &&
+      isPhoto.has(path.extname(name).slice(1).toLowerCase()),
+  );
+  const found = yield* Effect.forEach(
+    candidates,
+    (name) => photoFileAt(real, path.join(folder, name)),
+    { concurrency },
+  );
+  return found.flat();
+});
+
+/**
+ * A line of an argument file of exiftool that is exactly the path, whatever
+ * it has in it.
+ */
+const argumentLine = (file: string) =>
+  `#[CSTR]${file.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('\r', '\\r')}`;
 
 const readExif = Effect.fn('readExif')(function* (
   source: string,
@@ -222,22 +270,41 @@ const readExif = Effect.fn('readExif')(function* (
         }),
     ),
   );
-  const inside = yield* onlyInside(source, list, (exif) => exif.SourceFile);
   return foundPhotos(
-    inside.map((exif) => ({
+    list.map((exif) => ({
       file: path.relative(source, exif.SourceFile),
       exif,
     })),
   );
 });
 
-/** Every photo in a folder and the folders below it. */
-export const findPhotos = (source: string) =>
-  readExif(source, [
-    '-r',
-    ...photoExtensions.flatMap((extension) => ['-ext', extension]),
-    source,
-  ]);
+/**
+ * Every photo in a folder and the folders below it. exiftool gets only the
+ * files that are, in a file of its own, since there may be very many.
+ */
+export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const files = yield* photoFilesIn(source);
+  if (files.length === 0) {
+    return yield* new InvalidInput({
+      message: `There are no photos in ${source}.`,
+    });
+  }
+  const list = path.join(
+    yield* fs
+      .makeTempDirectoryScoped({ prefix: 'keepsake-' })
+      .pipe(Effect.mapError(unusable)),
+    'files.txt',
+  );
+  yield* fs
+    .writeFileString(
+      list,
+      `${files.map(({ file }) => argumentLine(file)).join('\n')}\n`,
+    )
+    .pipe(Effect.mapError(unusable));
+  return yield* readExif(source, ['-@', list]);
+}, Effect.scoped);
 
 /** Some photos of a folder, by their paths below it. */
 export const readPhotos = Effect.fn('readPhotos')(function* (

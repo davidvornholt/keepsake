@@ -68,12 +68,42 @@ describe('the folders of photos on the page', () => {
 
   it('get no photo into a shoot that a link takes from outside them', async () => {
     const { trip } = await withLinkOutside();
-    fakeTools.files = [
-      { file: 'A.jpg', second: 0 },
-      { file: 'B.jpg', second: 300 },
-    ];
+    await Bun.write(join(trip, '.hidden', 'C.jpg'), 'a photo');
+    await Bun.write(join(trip, 'notes.txt'), 'notes');
+    const lists: Array<string> = [];
+    fakeTools.pause = async ({ command, args }) => {
+      if (command === 'exiftool' && args.includes('-@')) {
+        lists.push(await Bun.file(args[args.indexOf('-@') + 1] ?? '').text());
+      }
+    };
     const scanned = await runOk('scan', trip, '--name', 'trip');
     expect(scanned).toMatchObject({ photos: 1, moments: 1 });
-    expect(readOf('B.jpg').map(({ command }) => command)).toEqual([]);
+    const [exiftool] = fakeTools.runs.filter(
+      ({ command }) => command === 'exiftool',
+    );
+    const [option, list] = exiftool?.args.slice(-2) ?? [];
+    expect(option).toBe('-@');
+    // No other file or folder than its list of files.
+    expect(exiftool?.args.filter((arg) => arg.startsWith('/'))).toEqual([
+      list ?? '',
+    ]);
+    expect(lists).toEqual([`#[CSTR]${join(trip, 'A.jpg')}\n`]);
+    expect(readOf('B.jpg')).toEqual([]);
+  });
+
+  it('hands exiftool any name a photo can have', async () => {
+    const odd = join(photosFolder(), 'odd', 'a\\b\nc.jpg');
+    await Bun.write(odd, 'a photo');
+    const lists: Array<string> = [];
+    fakeTools.pause = async ({ command, args }) => {
+      if (command === 'exiftool' && args.includes('-@')) {
+        lists.push(await Bun.file(args[args.indexOf('-@') + 1] ?? '').text());
+      }
+    };
+    const scanned = await runOk('scan', join(photosFolder(), 'odd'));
+    expect(scanned).toMatchObject({ photos: 1 });
+    expect(lists).toEqual([
+      `#[CSTR]${join(photosFolder(), 'odd')}/a\\\\b\\nc.jpg\n`,
+    ]);
   });
 });
