@@ -1,5 +1,11 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
@@ -100,6 +106,13 @@ export const resetTools = () => {
 const exiftool = (args: ReadonlyArray<string>): string => {
   if (args[0] === '-s3') {
     return '2026:03:30 10:00:00.000+02:00\n';
+  }
+  if (args.includes('-overwrite_original')) {
+    // The data copied into a picture makes its bytes those of its photo, so
+    // Immich tells the uploads of different photos apart by their checksum.
+    const target = args.at(-1) ?? '';
+    appendFileSync(target, `\n${args.slice(0, -1).join(' ')}`);
+    return '';
   }
   if (args[0] !== '-json') {
     return '';
@@ -203,15 +216,10 @@ const removeAssets = (album: FakeAlbum, ids: ReadonlyArray<string>) => {
   return { album: named(album), removed: changed, unchanged };
 };
 
-/**
- * Immich knows a file again by its checksum. Every picture the fake programs
- * write has the same bytes, so the file's path stands in for the rest of it.
- */
+/** Immich knows a file again by its checksum, wherever the file is. */
 const assetFor = (file: string) => {
-  const bytes = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  const known = fakeTools.library.find(
-    (asset) => asset.file === file && asset.bytes === bytes,
-  );
+  const bytes = existsSync(file) ? readFileSync(file, 'utf8') : file;
+  const known = fakeTools.library.find((asset) => asset.bytes === bytes);
   if (known !== undefined) {
     return { status: 'duplicate', assetId: known.id, trashed: false };
   }

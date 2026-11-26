@@ -237,6 +237,6 @@ describe('a photo that is edited again', () => {
     await editLisbon('B', '--again');
     const earlier = shootFile('edits', 'B', 'earlier', `${made}.jpg`);
     expect(await Bun.file(earlier).text()).toBe('the former edit');
-    expect(await Bun.file(final).text()).toBe('a picture');
+    expect(await Bun.file(final).text()).toStartWith('a picture');
   });
 });

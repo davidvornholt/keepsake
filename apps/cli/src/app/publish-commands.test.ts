@@ -72,7 +72,10 @@ describe('keepsake publish', () => {
 });
 
 const editAgain = (photo: string) =>
-  writeFile(shootFile('edits', photo, `${photo}-keepsake.jpg`), 'another');
+  writeFile(
+    shootFile('edits', photo, `${photo}-keepsake.jpg`),
+    `another ${photo}`,
+  );
 
 const publishLisbon = async () => {
   await pickLisbon();
