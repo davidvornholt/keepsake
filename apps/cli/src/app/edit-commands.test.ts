@@ -298,6 +298,20 @@ describe('keepsake edit, when something goes wrong', () => {
     ]);
   });
 
+  it('lists a photo as failed when the image model answers with no image', async () => {
+    await pickLisbon();
+    fakeModels.editAnswer = () => Response.json({ data: [] });
+    const result = await editLisbon('B');
+    expect(result.failed).toEqual([
+      { photo: 'B', reason: expect.stringContaining('without an image') },
+    ]);
+    expect(result.keptFromCamera).toEqual([]);
+    expect(existsSync(shootFile('edits', 'B', 'B-keepsake.jpg'))).toBe(false);
+    fakeModels.editAnswer = undefined;
+    expect((await editLisbon('B')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(2);
+  });
+
   it('starts no photo beyond the budget', async () => {
     await pickLisbon();
     const result = await editLisbon('--budget', '1');
