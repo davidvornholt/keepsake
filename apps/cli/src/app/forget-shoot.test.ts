@@ -149,15 +149,22 @@ describe('forgetting a shoot', () => {
     expect(existsSync(shootFile())).toBe(false);
   });
 
-  it('leaves nothing of one whose removal stopped half-way', async () => {
-    const left = (name: string) =>
-      join(fake.home, 'data', 'keepsake', 'shoots', name);
+  const left = (name: string) =>
+    join(fake.home, 'data', 'keepsake', 'shoots', name);
+
+  it('leaves nothing of one whose removal stopped before the page started', async () => {
     await Bun.write(join(left('.forgotten-1'), 'shoot.json'), '{}');
     await whileServing(async () => undefined);
     expect(existsSync(left('.forgotten-1'))).toBe(false);
-    await Bun.write(join(left('.forgotten-2'), 'shoot.json'), '{}');
+  });
+
+  it('leaves nothing of one whose removal stopped while the page ran', async () => {
     await scanLisbon();
-    await forget();
+    const status = await whileServing(async (address) => {
+      await Bun.write(join(left('.forgotten-2'), 'shoot.json'), '{}');
+      return statusOf(send('DELETE', `${address}/api/shoots/lisbon`));
+    });
+    expect(status).toBe(204);
     expect(existsSync(left('.forgotten-2'))).toBe(false);
     expect(existsSync(left('lisbon'))).toBe(false);
   });
