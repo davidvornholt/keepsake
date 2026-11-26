@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { Clock, Effect, Option, Schedule, Semaphore } from 'effect';
 import { readAlbum } from '../../shared/album.ts';
-import { isBusy } from '../../shared/lock.ts';
+import { withAlbumIfFree } from '../../shared/lock.ts';
 import { type OpenShoot, openShoot, shootNames } from '../../shared/store.ts';
 import type { Changed, ShootView } from './contract.ts';
 import {
+  forgetPictures,
   type Gallery,
   type Kind,
   openGallery,
@@ -112,6 +113,38 @@ const makeView = (
   });
 };
 
+/**
+ * Reads the album again, if that was long ago, without anyone waiting, and
+ * not while a command or the owner changes it.
+ */
+const makeRefreshing = () => {
+  const albums = new Map<string, number>();
+  return Effect.fn('refreshAlbum')(function* (open: OpenShoot) {
+    const { name } = open.shoot;
+    const now = yield* Clock.currentTimeMillis;
+    if (now - (albums.get(name) ?? 0) > albumCurrentFor) {
+      albums.set(name, now);
+      yield* readAlbum(open).pipe(
+        withAlbumIfFree(open.files),
+        // Busy now, so it is read again the next time it is asked for.
+        Effect.tap((read) =>
+          Effect.sync(() => Option.isNone(read) && albums.delete(name)),
+        ),
+        Effect.ignore,
+        Effect.forkDetach,
+      );
+    }
+  });
+};
+
+/** Every shoot that can be read. */
+const readable = Effect.gen(function* () {
+  const found = yield* Effect.forEach(yield* shootNames, (name) =>
+    Effect.option(openShoot(name)),
+  );
+  return found.flatMap(Option.toArray).map(({ shoot }) => shoot);
+});
+
 /** The shoots as the server has them, so it needn't read them every time. */
 export const makeShoots = Effect.fn('makeShoots')(function* (
   canStartAgent: boolean,
@@ -120,8 +153,8 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
   const galleries = new Map<string, Gallery>();
   const views = new Map<string, View>();
   const changes = new Map<string, { readonly at: number; changed: Changed }>();
-  const albums = new Map<string, number>();
   const warmOnce = makeWarming();
+  const refreshAlbum = makeRefreshing();
   const forCovers = yield* Semaphore.make(coversAtOnce);
 
   const galleryOf = Effect.fn('galleryOf')(function* (name: string) {
@@ -133,20 +166,6 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
         : { ...known, open };
     galleries.set(name, gallery);
     return gallery;
-  });
-
-  /**
-   * Reads the album again, if that was long ago, without anyone waiting.
-   * Commands that change the album read it themselves.
-   */
-  const refreshAlbum = Effect.fn('refreshAlbum')(function* (open: OpenShoot) {
-    const { name } = open.shoot;
-    const now = yield* Clock.currentTimeMillis;
-    const isOld = now - (albums.get(name) ?? 0) > albumCurrentFor;
-    if (isOld && !(yield* isBusy(open.files))) {
-      albums.set(name, now);
-      yield* readAlbum(open).pipe(Effect.ignore, Effect.forkDetach);
-    }
   });
 
   const changed = Effect.fn('changed')(function* (name: string) {
@@ -199,20 +218,15 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     changed,
     list,
     view,
-    /** Every shoot that can be read. */
-    all: Effect.gen(function* () {
-      const found = yield* Effect.forEach(yield* shootNames, (name) =>
-        Effect.option(openShoot(name)),
-      );
-      return found.flatMap(Option.toArray).map(({ shoot }) => shoot);
+    all: readable,
+    /** Forgets a shoot that isn't there any more, and its smaller pictures. */
+    forget: Effect.fn('forget')(function* (name: string) {
+      const gallery = galleries.get(name);
+      galleries.delete(name);
+      views.delete(name);
+      changes.delete(name);
+      yield* forgetPictures(name, gallery);
     }),
-    /** Forgets what the server knows of a shoot that isn't there any more. */
-    forget: (name: string) =>
-      Effect.sync(() => {
-        galleries.delete(name);
-        views.delete(name);
-        changes.delete(name);
-      }),
     /** Gets every shoot ready, also new ones, so nobody waits for it later. */
     prepare: Effect.gen(function* () {
       const names = yield* shootNames;

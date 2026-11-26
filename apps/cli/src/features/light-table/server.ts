@@ -5,6 +5,7 @@ import { InvalidInput } from '../../shared/errors/errors.ts';
 import { type Has, makeAnswers } from './answers.ts';
 import { eventsOf } from './events.ts';
 import { makeFolders } from './folders.ts';
+import { removeForgotten } from './new-shoot.ts';
 // biome-ignore lint/correctness/noUnresolvedImports: Bun turns an imported page into a bundle to serve
 import page from './page/index.html';
 import { makePreparations } from './preparation.ts';
@@ -186,6 +187,7 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
     { shoots, folders, preparations, workers, agent, launching: new Set() },
     address,
   );
+  yield* removeForgotten;
   yield* Effect.forkScoped(shoots.prepare);
   yield* preparations.resume;
   return yield* Effect.acquireRelease(
