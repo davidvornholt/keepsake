@@ -173,6 +173,7 @@ describe('putBack', () => {
 
 /** A person whose face is the top of the place, and the edit in place. */
 const face = { ...box, bottom: box.top + (box.bottom - box.top) / 4 };
+const faceBottom = Math.round(face.bottom * size.height);
 const lowerHalf = Math.round(((box.top + box.bottom) / 2) * size.height);
 const redrawnSkin = (x: number, y: number) =>
   isRedrawn(x, y) ? skin.bright : skin.dark;
@@ -219,8 +220,9 @@ describe.each([
     expect(changed(place.top + 10, lowerHalf - 20)).toBeGreaterThan(0);
   });
 
-  it('brings all of them back when it reaches their face', () => {
+  it('brings back only their face when it reaches it', () => {
     const changed = changes({ ...box, top: face.top });
-    expect(changed(lowerHalf + 20, place.bottom - 10)).toBeGreaterThan(0);
+    expect(changed(place.top + 10, faceBottom - 10)).toBeGreaterThan(0);
+    expect(changed(faceBottom + 20, place.bottom - 10)).toBe(0);
   });
 });

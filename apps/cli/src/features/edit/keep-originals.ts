@@ -58,19 +58,6 @@ const boundsOf = ({ face, outline }: Person): Box =>
     ...outline.map(({ x, y }) => ({ left: x, top: y, right: x, bottom: y })),
   ]);
 
-const overlap = (one: Box, other: Box): boolean =>
-  one.left < other.right &&
-  other.left < one.right &&
-  one.top < other.bottom &&
-  other.top < one.bottom;
-
-/**
- * Where something was removed that doesn't come back with a person. One that
- * reaches their face does, since no face of an edit is let through.
- */
-const removedBeside = (face: Box, gone: ReadonlyArray<Box>) =>
-  gone.filter((box) => !overlap(box, face));
-
 /** The texts and logos on a person. */
 const writtenOn = (
   person: Person,
@@ -125,16 +112,23 @@ const keepMoved = (
     const shift = shiftOf(moved, edit, frameOf(boundsOf(rough), original));
     const exact = movedOn(placement, shift);
     const there = placedPerson(person, exact, original);
-    changeOutside(removedBeside(there.face, gone), edit, () => {
-      keepPerson(
-        placed(original, edit, photo, exact),
-        edit,
-        there,
-        writtenOn(person, originals.signs).map(
-          (sign) => placedSign(sign, exact, original).box,
-        ),
-      );
-    });
+    // Where something was removed, only their face comes back, since no
+    // face of an edit is let through.
+    changeOutside(
+      gone,
+      edit,
+      () => {
+        keepPerson(
+          placed(original, edit, photo, exact),
+          edit,
+          there,
+          writtenOn(person, originals.signs).map(
+            (sign) => placedSign(sign, exact, original).box,
+          ),
+        );
+      },
+      [there.face],
+    );
   }
   const signs = signsApart(originals).map((sign) =>
     placedSign(sign, placement, original),
@@ -188,14 +182,19 @@ export const putBack = (
   });
   for (const person of originals.people) {
     const written = writtenOn(person, originals.signs);
-    changeOutside(removedBeside(person.face, originals.gone), edit, () => {
-      keepPerson(
-        original,
-        edit,
-        person,
-        written.map(({ box }) => box),
-      );
-    });
+    changeOutside(
+      originals.gone,
+      edit,
+      () => {
+        keepPerson(
+          original,
+          edit,
+          person,
+          written.map(({ box }) => box),
+        );
+      },
+      [person.face],
+    );
   }
   const signs = signsApart(originals);
   changeOutside(originals.gone, edit, () => {
