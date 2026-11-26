@@ -10,6 +10,7 @@ import { useShootContext } from '../app/shoot-context.ts';
 import { pileAround } from '../data/derive.ts';
 import { reveal } from '../sheet/arrange.ts';
 import type { Engine } from '../sheet/engine.ts';
+import { pileIn } from '../sheet/pile.ts';
 import { onScreen } from '../sheet/table.ts';
 import { prefersReducedMotion } from '../ui/theme.ts';
 import { useTitle } from '../ui/use-title.ts';
@@ -87,10 +88,15 @@ const frameOf = (
     return null;
   }
   const { table } = engine;
-  const rect = onScreen(table, id);
-  const isInSight =
-    rect !== null && rect.y + rect.h > 0 && rect.y < table.size.height;
-  return rect !== null && isInSight
+  const whole = onScreen(table, id);
+  const placed = table.placed.get(id);
+  if (whole === null || placed === undefined) {
+    return null;
+  }
+  // The table draws the photo in front of a pile a little smaller than its place.
+  const rect = pileIn(whole, placed.frame.pile, table.layout.measure).face;
+  const isInSight = rect.y + rect.h > 0 && rect.y < table.size.height;
+  return isInSight
     ? {
         rect,
         shows: look.showsEdits && photo.edit !== null ? 'edit' : 'camera',
@@ -152,6 +158,21 @@ const useInfo = (wide: boolean) => {
   };
 };
 
+/**
+ * Lets the table draw the frame again before the photo that lies on it goes:
+ * the table's next frame is drawn before this callback runs, so no frame of
+ * the screen shows neither.
+ */
+const handBack = (engine: Engine | null, then: () => void) => {
+  if (engine === null) {
+    then();
+    return;
+  }
+  engine.state.hidden = null;
+  engine.request();
+  requestAnimationFrame(then);
+};
+
 /** Sends the photo back to its frame of the table once it is left. */
 const useLeaving = (
   isLeaving: boolean,
@@ -177,7 +198,7 @@ const useLeaving = (
     if (body === null) {
       onGone();
     } else {
-      body.leave(frame, onGone);
+      body.leave(frame, () => handBack(engineRef.current, onGone));
     }
   });
 

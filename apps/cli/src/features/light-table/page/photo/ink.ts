@@ -1,6 +1,7 @@
 import type { Box } from '../../contract.ts';
 import { glyphOf, type Shape } from '../marks/glyphs.ts';
 import type { Wax } from '../marks/kinds.ts';
+import { markBetween, markOnPhoto } from '../marks/place.ts';
 import {
   printCorners,
   printDashes,
@@ -52,33 +53,25 @@ export const noInk: Ink = {
 
 type Pencil = CanvasRenderingContext2D;
 
+/** The frame of the table a photo came out of or goes back to. */
+export type Travel = {
+  /** The part of the plane the frame shows. */
+  readonly part: Rect;
+  /** How far the photo is on its way from the frame to where it rests, from 0 to 1. */
+  readonly share: number;
+};
+
 export type Scene = {
   readonly ink: Ink;
   readonly plane: Plane;
   readonly view: View;
   readonly shown: Shown;
   readonly now: number;
+  readonly travel: Travel | null;
 };
 
 /** How long the hand takes to draw a mark or a box, in milliseconds. */
 const drawingTime = 360;
-const stampShare = 0.2;
-const leastStamp = 44;
-const mostStamp = 104;
-const stampInset = 0.045;
-
-/** Where the mark of a photo is drawn: in its lower left corner. */
-const stampPlace = (part: Rect): Rect => {
-  const side = Math.min(part.w, part.h);
-  const size = clamp(side * stampShare, leastStamp, mostStamp);
-  const inset = side * stampInset;
-  return {
-    x: part.x + inset,
-    y: part.y + part.h - size - inset,
-    w: size,
-    h: size,
-  };
-};
 
 const boxWeightShare = 0.5;
 const leastBoxWeight = 26;
@@ -87,9 +80,23 @@ const mostBoxWeight = 44;
 const boxWeight = ({ w, h }: Rect): number =>
   clamp(Math.min(w, h) * boxWeightShare, leastBoxWeight, mostBoxWeight);
 
+/**
+ * How much is seen of what the table doesn't draw on a frame, such as the
+ * boxes of a change: it fades as the photo comes close to its frame, so that
+ * nothing vanishes at once when the photo is handed back.
+ */
+const onlyHere = ({ travel }: Scene): number => travel?.share ?? 1;
+
 /** Draws the owner's wax. Says whether the hand is still drawing. */
 const drawWaxOn = (pencil: Pencil, scene: Scene, part: Rect, scale: number) => {
-  const { ink, now } = scene;
+  const { ink, now, travel, view, shown } = scene;
+  pencil.globalAlpha = shown.all * onlyHere(scene);
+  // Near its frame the mark lies as the table draws it, so it doesn't jump
+  // when the photo is handed back to the table.
+  const mark =
+    travel === null
+      ? markOnPhoto(part)
+      : markBetween(onScreen(travel.part, view), part, travel.share);
   const color = colorOf('--color-wax-yellow');
   let isDrawing = false;
   for (const { box, seed, since } of ink.boxes) {
@@ -112,18 +119,23 @@ const drawWaxOn = (pencil: Pencil, scene: Scene, part: Rect, scale: number) => {
       scale,
     });
   }
+  pencil.globalAlpha = shown.all;
   for (const stamp of ink.stamps) {
     const progress = (now - stamp.since) / drawingTime;
     isDrawing = isDrawing || progress < 1;
-    const place = stampPlace(part);
     if (progress < 1) {
-      sketchWax(pencil, glyphOf(stamp.shape, stamp.seed), place, {
-        color: colorOf(`--color-${stamp.wax}`),
-        progress,
-        scale,
-      });
+      sketchWax(
+        pencil,
+        glyphOf(stamp.shape, stamp.seed),
+        { x: mark.x, y: mark.y, w: mark.size, h: mark.size },
+        {
+          color: colorOf(`--color-${stamp.wax}`),
+          progress,
+          scale,
+        },
+      );
     } else {
-      stampWax(pencil, stamp, { x: place.x, y: place.y, size: place.w }, scale);
+      stampWax(pencil, stamp, mark, scale);
     }
   }
   return isDrawing;
@@ -151,15 +163,16 @@ const drawPrinted = (
   scale: number,
 ) => {
   const { plane, view, shown, ink } = scene;
+  const seen = shown.all * onlyHere(scene);
   if (plane.edit !== null && shown.camera > 0) {
-    pencil.globalAlpha = shown.camera * shown.all;
+    pencil.globalAlpha = shown.camera * seen;
     for (const strip of plane.beyond) {
       drawBeyond(pencil, onScreen(strip, view), scale);
     }
     printCorners(pencil, onScreen(plane.edit, view), corners);
   }
   if (ink.printed !== null) {
-    pencil.globalAlpha = shown.all;
+    pencil.globalAlpha = seen;
     printEdge(pencil, rectOf(ink.printed, part), corners);
   }
 };
@@ -177,11 +190,10 @@ export const drawInk = (
     readonly scale: number;
   },
 ): boolean => {
-  const { plane, view, shown } = scene;
+  const { plane, view } = scene;
   pencil.setTransform(size.scale, 0, 0, size.scale, 0, 0);
   pencil.clearRect(0, 0, size.width, size.height);
   const part = onScreen(plane.edit ?? plane.camera, view);
-  pencil.globalAlpha = shown.all;
   const isDrawing = drawWaxOn(pencil, scene, part, size.scale);
   drawPrinted(pencil, scene, part, size.scale);
   pencil.globalAlpha = 1;
