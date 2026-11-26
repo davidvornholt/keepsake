@@ -12,6 +12,7 @@ import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
+import { anewFor, doneIn, doneWithAnew } from './anew.ts';
 import {
   type Edited,
   type EditOptions,
@@ -109,20 +110,30 @@ export const edit = Effect.fn('edit')(function* (
   options: EditOptions & { readonly budget: number },
 ) {
   const todo = yield* jobs(open, names);
-  const isAnew = options.again || options.wish !== null;
+  const { again, wish, areas } = options;
+  const photos = todo.map(({ photo }) => photo.id);
+  const anew =
+    again || wish !== null
+      ? yield* anewFor(open, { again, wish, areas, photos })
+      : null;
   const withinBudget = yield* makeBudget(options.budget);
   const outcomes = yield* inSteps('edit', todo, concurrency, (toEdit) =>
     Effect.gen(function* () {
       const before = yield* editOf(open, toEdit.photo.id);
-      if (Option.isSome(before) && !isAnew) {
+      // Done before, or by this command before it stopped.
+      const notDone =
+        anew === null
+          ? Option.some([])
+          : yield* doneIn(open.files.edit(toEdit.photo.id), anew);
+      if (Option.isSome(before) && Option.isSome(notDone)) {
         return {
           kind: 'done',
           record: before.value,
-          notDone: [],
+          notDone: notDone.value,
         } satisfies Outcome;
       }
       const edited = yield* withinBudget(
-        editPhoto(open, toEdit, options).pipe(during(toEdit.photo.id)),
+        editPhoto(open, toEdit, options, anew).pipe(during(toEdit.photo.id)),
       );
       return Option.match(edited, {
         onNone: (): Outcome => ({
@@ -145,6 +156,9 @@ export const edit = Effect.fn('edit')(function* (
   const done = outcomes.flatMap((outcome) =>
     outcome.kind === 'done' ? [outcome] : [],
   );
+  if (anew !== null && done.length === outcomes.length) {
+    yield* doneWithAnew(open);
+  }
   const records = done.map(({ record }) => record);
   return {
     shoot: open.shoot.name,

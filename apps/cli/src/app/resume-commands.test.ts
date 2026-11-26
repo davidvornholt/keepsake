@@ -47,3 +47,42 @@ describe('keepsake edit, after it was stopped', () => {
     expect(fakeModels.edits).toHaveLength(2);
   });
 });
+
+describe('keepsake edit, starting over after it was stopped', () => {
+  it('goes on with the same command and starts anew with a later one', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    fakeModels.answers.assessment = failing;
+    expect((await editLisbon('B', '--again')).failed).toHaveLength(1);
+    expect(fakeModels.edits).toHaveLength(2);
+    fakeModels.answers.assessment = undefined;
+    expect((await editLisbon('B', '--again')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(2);
+    await editLisbon('B', '--again');
+    expect(fakeModels.edits).toHaveLength(3);
+  });
+
+  it('goes on with a first edit with a wish', async () => {
+    await pickLisbon();
+    fakeModels.answers.assessment = failing;
+    expect((await editLisbon('B', '--wish', 'Warmer')).failed).toHaveLength(1);
+    fakeModels.answers.assessment = undefined;
+    expect((await editLisbon('B', '--wish', 'Warmer')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(1);
+  });
+
+  it('doesn’t start over the photos it finished', async () => {
+    await pickLisbon();
+    await editLisbon();
+    const before = asked('assessment').length;
+    fakeModels.answers.assessment = () =>
+      asked('assessment').length === before + 2
+        ? failing()
+        : { assessments: [assessment(1)] };
+    expect((await editLisbon('--again')).failed).toHaveLength(1);
+    expect(fakeModels.edits).toHaveLength(6);
+    fakeModels.answers.assessment = undefined;
+    expect((await editLisbon('--again')).edited).toBe(3);
+    expect(fakeModels.edits).toHaveLength(6);
+  });
+});

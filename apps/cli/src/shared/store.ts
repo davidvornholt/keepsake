@@ -143,6 +143,8 @@ const editFiles = (path: Path.Path, directory: string, base: string) => ({
   /** The same without what could be mended. */
   versionMended: (number: number) =>
     path.join(directory, `version-${number}-mended.png`),
+  /** The edit command that starts it over, and whether it is done with it. */
+  anew: path.join(directory, 'anew.json'),
   final: path.join(directory, `${base}-keepsake.jpg`),
   /** The finished photos that newer ones replaced. */
   earlier: path.join(directory, 'earlier'),
@@ -208,6 +210,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         model.replaceAll('/', '--'),
         `${moment}.json`,
       ),
+    /** The edit command that starts photos over, until it has done all. */
+    anew: path.join(root, 'anew.json'),
     edits: path.join(root, 'edits'),
     /** That the edits of photos in folders are no longer nested. */
     flatEdits: path.join(root, 'flat-edits'),

@@ -11,6 +11,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { wishIn, writeWish } from '../../shared/wishes.ts';
+import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
 import { type CorrectionFiles, correct } from './correct/correct.ts';
 import { Change, findPlaces, type Place } from './correct/places.ts';
@@ -216,6 +217,8 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   open: OpenShoot,
   { pick, photo }: ToEdit,
   options: EditOptions,
+  /** The command that starts it over or edits it with a wish, if one does. */
+  anew: string | null,
 ) {
   const files = open.files.edit(photo.id);
   const jobFor = (wanted: string | null): Job => ({
@@ -233,7 +236,12 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   });
   const { wish, areas, again } = options;
   const former = Option.getOrNull(yield* editOf(open, photo.id));
-  yield* keepEarlier(files);
+  const isResumed = anew !== null && (yield* isGoingOn(files, anew));
+  const noted = (notDone: ReadonlyArray<string> | null) =>
+    anew === null ? Effect.void : noteProgress(files, anew, notDone);
+  if (!isResumed) {
+    yield* keepEarlier(files);
+  }
   if (wish !== null && wish !== '' && !again && former?.version === 'ai') {
     const { correction } = files;
     const changed = yield* change({
@@ -246,10 +254,16 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     yield* writeJson(Outcome, correction.outcome, {
       notDone: changed.notDone,
     });
+    yield* noted(changed.notDone);
     return changed;
   }
-  yield* forget(files, options);
+  // What this command made before it stopped stays, since it cost money.
+  if (!isResumed) {
+    yield* forget(files, options);
+    yield* noted(null);
+  }
   const job = jobFor(yield* wishIn(files.wish));
   const record = yield* writeEdit(job, yield* bestEdit(job));
+  yield* noted([]);
   return { record, notDone: [] } satisfies Edited;
 });
