@@ -1,9 +1,14 @@
-import { DateTime, Effect, Option, Schema } from 'effect';
+import { DateTime, Effect, Schema } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
-import { SpendingRecord, totalDollars } from '../../shared/spending.ts';
 import type { Standings } from '../../shared/standing.ts';
-import { readJson, type ShootFiles } from '../../shared/store.ts';
-import { claim, claimOn, readHandOvers, saveHandOver } from './handed.ts';
+import type { ShootFiles } from '../../shared/store.ts';
+import {
+  claim,
+  claimOn,
+  readHandOvers,
+  saveHandOver,
+  spentOn,
+} from './handed.ts';
 import { isOpen, isWaiting, readMarks } from './marks.ts';
 import type { HandOver, HandOverRecord, Mark } from './schemas.ts';
 
@@ -127,11 +132,6 @@ export const toLaunch = Effect.fn('toLaunch')(function* (
   );
   return found.flat();
 });
-
-const spentOn = (files: ShootFiles) =>
-  Effect.map(readJson(SpendingRecord, files.spending), (record) =>
-    Option.match(record, { onNone: () => 0, onSome: totalDollars }),
-  );
 
 /**
  * What is left of what the owner agreed to pay for what an agent still has to
