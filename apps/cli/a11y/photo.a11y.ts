@@ -48,7 +48,10 @@ test('compares a finished photo with what it was', async ({ page }) => {
   await expect(pressed(page, 'Camera')).toBeVisible();
   await scan(page);
   await page.keyboard.press('v');
-  await expect(pressed(page, 'Earlier 2')).toBeVisible();
+  await expect(pressed(page, 'Earlier 2')).toHaveAttribute(
+    'aria-keyshortcuts',
+    'V',
+  );
   await page.keyboard.press('w');
   const divide = page.getByRole('slider', {
     name: "How much of the camera's picture shows",
