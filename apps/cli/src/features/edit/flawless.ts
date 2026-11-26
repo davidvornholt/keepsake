@@ -104,6 +104,6 @@ export const flawless = Effect.fn('flawless')(function* (
   return {
     file: left === null ? checked.version : files.versionMended(checked.number),
     problems: wrong.map(({ what }) => what),
-    isWorse: wrong.some(({ rightInOriginal }) => rightInOriginal),
+    isWorse: wrong.some(({ inOriginal }) => !inOriginal),
   };
 });
