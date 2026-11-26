@@ -131,6 +131,8 @@ const changePlaces = Effect.fn('changePlaces')(function* (
   );
   const record: EditRecord = {
     ...former,
+    // Also where it was the camera's own picture before.
+    version: 'ai',
     model: image.model,
     review: [
       `Changed: ${sentence(wish)}`,
@@ -201,7 +203,10 @@ const change = Effect.fn('change')(function* (toChange: ToChange) {
     askReviewer(findPlaces(files.final, wish, areas)),
   );
   if (!everywhere && places.length === 0) {
-    const nothing = 'The photo shows nothing that the wish is about.';
+    const nothing =
+      areas.length === 0
+        ? 'The photo shows nothing that the wish is about.'
+        : 'Nothing that the wish is about can change inside the marked places alone.';
     return { record: toChange.former, notDone: [nothing] } satisfies Edited;
   }
   return everywhere
@@ -242,7 +247,10 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   if (!isResumed) {
     yield* keepEarlier(files);
   }
-  if (wish !== null && wish !== '' && !again && former?.version === 'ai') {
+  // Marked places change alone, also in the camera's own picture.
+  const isChange =
+    former !== null && (former.version === 'ai' || areas.length > 0);
+  if (wish !== null && wish !== '' && !again && isChange) {
     const { correction } = files;
     const changed = yield* change({
       job: jobFor(wish),

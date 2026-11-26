@@ -112,6 +112,32 @@ const withPlace = (
 export const apart = (places: ReadonlyArray<Place>): ReadonlyArray<Place> =>
   places.reduce<ReadonlyArray<Place>>(withPlace, []);
 
+/** The part of a box inside another, if there is one. */
+const insideOf = (box: Box, area: Box): ReadonlyArray<Box> => {
+  const part = {
+    left: Math.max(box.left, area.left),
+    top: Math.max(box.top, area.top),
+    right: Math.min(box.right, area.right),
+    bottom: Math.min(box.bottom, area.bottom),
+  };
+  return part.right > part.left && part.bottom > part.top ? [part] : [];
+};
+
+/**
+ * The places as far as they are inside what the user marked, with the little
+ * around it that the model saw, since the marks are rough. Nothing else may
+ * change then, however much the wish is about.
+ */
+const inMarks = (
+  places: ReadonlyArray<Place>,
+  marks: ReadonlyArray<Box>,
+): ReadonlyArray<Place> =>
+  places.flatMap((place) =>
+    marks.flatMap((mark) =>
+      insideOf(place.box, mark).map((box) => ({ ...place, box })),
+    ),
+  );
+
 /** Finds where a finished photo has to change for what the user wants. */
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
@@ -119,7 +145,8 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
   areas: ReadonlyArray<Box>,
 ) {
   const vision = yield* Vision;
-  const { parts, pieces } = yield* inParts(file, areas.map(withMargin));
+  const marks = areas.map(withMargin);
+  const { parts, pieces } = yield* inParts(file, marks);
   const answer = yield* vision.ask({
     role,
     name: 'places',
@@ -135,6 +162,9 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
+  if (marks.length > 0) {
+    return { everywhere: false, places: inMarks(places, marks) };
+  }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage
     ? { everywhere: true, places: [] }
