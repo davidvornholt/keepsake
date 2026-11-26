@@ -49,6 +49,11 @@ export const albumWithId = Effect.fn('albumWithId')(function* (id: string) {
 export const createAlbum = (name: string) =>
   photos(Named, ['albums', 'create', name]);
 
+/** What Immich didn't change of what it was asked to, and why. */
+const Unchanged = Schema.Array(
+  Schema.Struct({ id: Schema.String, reason: Schema.String }),
+);
+
 const Uploaded = Schema.Struct({
   files: Schema.Array(
     Schema.Struct({
@@ -58,19 +63,35 @@ const Uploaded = Schema.Struct({
       reason: Schema.optionalKey(Schema.String),
     }),
   ),
+  album: Schema.optionalKey(
+    Schema.Struct({ added: Schema.Array(Schema.String), unchanged: Unchanged }),
+  ),
 });
+
+/** Why Immich didn't put an asset into the album, if it didn't. */
+const notAdded = (asset: string, album: (typeof Uploaded.Type)['album']) => {
+  if (album?.added.includes(asset) === true) {
+    return;
+  }
+  const unchanged = album?.unchanged.find(({ id }) => id === asset);
+  if (unchanged === undefined) {
+    return 'it did not say whether it did';
+  }
+  // Immich's reason for a photo that was in the album already.
+  return unchanged.reason === 'duplicate' ? undefined : unchanged.reason;
+};
 
 /** Uploads a file and returns its asset's id, also when Immich had it. */
 export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
   file: string,
   album: string | null,
 ) {
-  const { files } = yield* photos(Uploaded, [
+  const answer = yield* photos(Uploaded, [
     'upload',
     file,
     ...(album === null ? [] : ['--album', album]),
   ]);
-  const [result] = files;
+  const [result] = answer.files;
   if (result?.assetId === undefined) {
     return yield* new ToolFailed({
       message: `Immich did not take ${file}: ${result?.reason ?? 'no reason given'}`,
@@ -79,6 +100,13 @@ export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
   if (result.trashed === true) {
     return yield* new ToolFailed({
       message: `${file} is in Immich's trash. Restore it with \`photos restore ${result.assetId}\`.`,
+    });
+  }
+  const refused =
+    album === null ? undefined : notAdded(result.assetId, answer.album);
+  if (refused !== undefined) {
+    return yield* new ToolFailed({
+      message: `Immich took ${file} as ${result.assetId} but did not put it into the album: ${refused}`,
     });
   }
   return result.assetId;
@@ -134,9 +162,25 @@ export const albumAssets = Effect.fn('albumAssets')(function* (id: string) {
   return assets;
 });
 
-/** Takes photos out of an album. They stay in the library. */
-export const removeFromAlbum = (album: string, assets: ReadonlyArray<string>) =>
-  photos(Schema.Unknown, ['albums', 'remove', album, ...assets]);
+const Removal = Schema.Struct({ unchanged: Unchanged });
+
+/**
+ * Takes photos out of an album and returns those Immich refused to take out,
+ * with its reason. They stay in the library.
+ */
+export const removeFromAlbum = Effect.fn('removeFromAlbum')(function* (
+  album: string,
+  assets: ReadonlyArray<string>,
+) {
+  const { unchanged } = yield* photos(Removal, [
+    'albums',
+    'remove',
+    album,
+    ...assets,
+  ]);
+  // Immich's reason for a photo that wasn't in the album.
+  return unchanged.filter(({ reason }) => reason !== 'not_found');
+});
 
 /** Gives a photo the favorite mark, or takes it away. */
 export const markFavorite = (asset: string, isFavorite: boolean) =>

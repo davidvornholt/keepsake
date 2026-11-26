@@ -7,6 +7,7 @@ import {
   runOk,
   setUp,
   shootFile,
+  shootJson,
   tearDown,
 } from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
@@ -98,5 +99,20 @@ describe('keepsake publish, to the album it published to', () => {
     });
     expect(fakeTools.albums).toHaveLength(1);
     expect(album?.assets.map(({ id }) => id)).toContain('asset-7');
+  });
+
+  it('calls nothing published that Immich kept out of the album', async () => {
+    await pickLisbon();
+    await editLisbon();
+    fakeTools.refused.add('asset-1');
+    const failure = await failureOf('publish', 'lisbon');
+    expect(failure.message).toContain('did not put it into the album');
+    fakeTools.refused.clear();
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({ published: 3 });
+    const { photos } = await shootJson('album.json');
+    expect(
+      photos.map(({ photo }: { readonly photo: string }) => photo),
+    ).toEqual(['A1', 'B', 'C']);
   });
 });

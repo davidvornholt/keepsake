@@ -200,3 +200,18 @@ describe('keepsake take-out', () => {
     expect(failure.message).toContain('B isn’t in the album');
   });
 });
+
+describe('keepsake take-out, with what Immich does', () => {
+  it('notes only what Immich took out', async () => {
+    await publishLisbon();
+    fakeTools.refused.add('asset-3');
+    const because = ['--because', 'It is blurred.'];
+    const failure = await failureOf('take-out', 'lisbon', 'B', 'C', ...because);
+    expect(failure.message).toContain('did not take B out');
+    expect(await inAlbum()).toEqual(['A1', 'B']);
+    const removed = await shootJson('removed.json');
+    expect(
+      removed.map(({ photo }: { readonly photo: string }) => photo),
+    ).toEqual(['C']);
+  });
+});
