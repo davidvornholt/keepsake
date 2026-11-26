@@ -27,34 +27,39 @@ let stdout: Spy | undefined;
 export const printed = () =>
   JSON.parse(String(stdout?.mock.calls.at(-1)?.[0] ?? 'null'));
 
-export const run = (...args: ReadonlyArray<string>) =>
-  Effect.runPromise(
-    Command.runWith(keepsake, { version: 'test' })(args).pipe(
-      Effect.provide(fakeToolsLayer),
-      Effect.provide(
-        Stdio.layerTest({
-          stdin: Stream.suspend(() =>
-            Stream.make(new TextEncoder().encode(fake.stdin)),
-          ),
-          stdinIsTerminal: Effect.succeed(false),
-        }),
-      ),
-      Effect.provide(BunServices.layer),
-      Effect.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromDotEnvContents(
-            [
-              `HOME=${fake.home}`,
-              `XDG_CONFIG_HOME=${join(fake.home, 'config')}`,
-              `XDG_DATA_HOME=${join(fake.home, 'data')}`,
-            ].join('\n'),
-          ),
+/** A command, with the fakes in place of what is outside. */
+const command = (args: ReadonlyArray<string>) =>
+  Command.runWith(keepsake, { version: 'test' })(args).pipe(
+    Effect.provide(fakeToolsLayer),
+    Effect.provide(
+      Stdio.layerTest({
+        stdin: Stream.suspend(() =>
+          Stream.make(new TextEncoder().encode(fake.stdin)),
+        ),
+        stdinIsTerminal: Effect.succeed(false),
+      }),
+    ),
+    Effect.provide(BunServices.layer),
+    Effect.provide(
+      ConfigProvider.layer(
+        ConfigProvider.fromDotEnvContents(
+          [
+            `HOME=${fake.home}`,
+            `XDG_CONFIG_HOME=${join(fake.home, 'config')}`,
+            `XDG_DATA_HOME=${join(fake.home, 'data')}`,
+          ].join('\n'),
         ),
       ),
-      Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
-      Effect.result,
     ),
+    Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
   );
+
+export const run = (...args: ReadonlyArray<string>) =>
+  Effect.runPromise(Effect.result(command(args)));
+
+/** Starts a command, which can be stopped while it runs. */
+export const start = (...args: ReadonlyArray<string>) =>
+  Effect.runFork(command(args));
 
 export const runOk = async (...args: ReadonlyArray<string>) => {
   const result = await run(...args);

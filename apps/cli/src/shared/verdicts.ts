@@ -2,7 +2,11 @@ import { Effect, Option } from 'effect';
 import { type Moment, Verdict } from './domain.ts';
 import { type OpenShoot, readJson } from './store.ts';
 
-const sameAs = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
+/** Whether two lists have the same photos in the same order. */
+export const sameAs = (
+  left: ReadonlyArray<string>,
+  right: ReadonlyArray<string>,
+) =>
   left.length === right.length &&
   left.every((value, index) => value === right[index]);
 
@@ -45,16 +49,16 @@ export const joined = (
 /**
  * The moment's verdict by this model, unless its photos have changed. When a
  * new scan put moments together, their verdicts are joined, so the moment
- * isn't judged again.
+ * isn't judged again. `file` is where its own verdict is kept.
  */
 export const verdictOn = Effect.fn('verdictOn')(function* (
   open: OpenShoot,
   model: string,
   moment: Moment,
+  file = open.files.verdict(model, moment.id),
 ) {
-  const own = Option.filter(
-    yield* readJson(Verdict, open.files.verdict(model, moment.id)),
-    ({ photos }) => sameAs(photos, moment.photos),
+  const own = Option.filter(yield* readJson(Verdict, file), ({ photos }) =>
+    sameAs(photos, moment.photos),
   );
   if (Option.isSome(own) || moment.photos.length < 2) {
     return own;
