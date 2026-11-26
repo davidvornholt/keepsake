@@ -178,4 +178,20 @@ describe('the lock of a shoot', () => {
     );
     expect(outcomes).toEqual(['StoreFailed', 'StoreFailed']);
   });
+
+  it('leaves a lock that replaced it after it was removed', async () => {
+    const lock = await inHome(
+      Effect.gen(function* () {
+        const files = yield* shootFiles('lisbon');
+        yield* exclusively(files)(
+          Effect.promise(async () => {
+            await rm(files.lock);
+            await writeFile(files.lock, '12345\n');
+          }),
+        );
+        return files.lock;
+      }),
+    );
+    expect(await Bun.file(lock).text()).toBe('12345\n');
+  });
 });

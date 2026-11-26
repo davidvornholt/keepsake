@@ -88,10 +88,15 @@ const tryToHold = (path: string): number | null => {
   return null;
 };
 
-/** Removes the lock and lets it go, so no file of it stays. */
+/**
+ * Removes the lock and lets it go, so no file of it stays. A file that
+ * replaced it after something else removed it stays, since it is another's.
+ */
 const letGo = (path: string, fd: number) => {
   try {
-    unlinkSync(path);
+    if (isStill(fd, path)) {
+      unlinkSync(path);
+    }
   } finally {
     closeSync(fd);
   }
