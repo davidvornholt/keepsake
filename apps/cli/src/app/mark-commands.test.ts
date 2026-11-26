@@ -211,6 +211,22 @@ describe('a hand-over', () => {
     expect(idsOf(await runOk('marks', 'lisbon'))).toEqual(['one', 'two']);
   });
 
+  it('lists all of a hand-over that was named, also when it is done', async () => {
+    await pickLisbon();
+    await mark('one', { ...notHandedOver, ...answered });
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    await handedOver('first', { marks: ['one'] });
+    await handedOver('second', { marks: ['two'] });
+    const named = await runOk(
+      'marks',
+      'lisbon',
+      '--all',
+      '--hand-over',
+      'first',
+    );
+    expect(idsOf(named)).toEqual(['one']);
+  });
+
   it('counts what was spent since against what was agreed', async () => {
     await pickLisbon();
     await handedOver('order', { dollars: 1.5, album: ['A1', 'B'] });

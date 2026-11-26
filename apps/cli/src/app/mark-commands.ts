@@ -7,6 +7,7 @@ import {
   orderAmong,
   unsettledOf,
 } from '../features/light-table/hand-over.ts';
+import { readHandOvers } from '../features/light-table/handed.ts';
 import {
   answerMark,
   isWaiting,
@@ -93,7 +94,12 @@ const listed = Effect.fn('listed')(function* (
 ) {
   const known = yield* standings(yield* openShoot(open.shoot.name), model);
   const unsettled = yield* unsettledOf(open.files, known, only);
-  const named = new Set(unsettled.flatMap(({ marks: ids }) => ids));
+  // The marks of the hand-overs named, also of those that are done.
+  const named = new Set(
+    (yield* readHandOvers(open.files)).flatMap(({ id, marks: ids }) =>
+      only?.has(id) === true ? ids : [],
+    ),
+  );
   const every = yield* readMarks(open.files);
   return {
     known,
