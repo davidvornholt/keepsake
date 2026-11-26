@@ -160,7 +160,7 @@ export const useComposing = (photo: PhotoView) => {
     },
     save: () => {
       if (draft !== null) {
-        store.make({
+        const mark = store.make({
           photo: photo.id,
           kind: 'change',
           note: draft.note.trim(),
@@ -168,6 +168,15 @@ export const useComposing = (photo: PhotoView) => {
           other: null,
         });
         end();
+        // What was written comes back when keepsake didn't get it.
+        store
+          .isSaved(mark?.id ?? '')
+          .then((isSaved) => {
+            if (!isSaved) {
+              setDraft((now) => now ?? draft);
+            }
+          })
+          .catch(() => undefined);
       }
     },
     remove: () => {

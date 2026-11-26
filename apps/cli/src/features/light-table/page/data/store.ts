@@ -232,7 +232,10 @@ export const makeShootStore = (name: string) => {
     subscribe: core.subscribe,
     get: core.get,
     reload: core.load,
-    dismissProblem: () => core.set({ problem: null }),
+    dismissProblem: core.dismissProblem,
+    /** Whether keepsake saved a mark, once it answered. */
+    isSaved: async (id: string): Promise<boolean> =>
+      (await core.idOf(id)) !== null,
     ...hinting(core),
     ...marking(core),
     ...answering(core),

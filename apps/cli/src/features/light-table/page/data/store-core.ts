@@ -39,6 +39,8 @@ export const makeCore = (name: string) => {
   let again: ReturnType<typeof setTimeout> | undefined;
   /** Whether nobody looks at the shoot any more. */
   let isResting = false;
+  /** Why the last change didn't reach keepsake, until that is dismissed. */
+  let lost: string | null = null;
 
   /** Whether loading failed because there is no such shoot. */
   const isGone = async (error: unknown): Promise<boolean> =>
@@ -68,8 +70,9 @@ export const makeCore = (name: string) => {
       activity,
       preparation,
       agent,
-      // It answers again, so the notice that it doesn't has had its day.
-      problem: problem === unreachable ? null : problem,
+      // It answers again, so the notice that it doesn't has had its day,
+      // unless a change was lost meanwhile.
+      problem: problem === unreachable ? lost : problem,
     });
   };
 
@@ -107,6 +110,10 @@ export const makeCore = (name: string) => {
       clearTimeout(again);
     },
     isBusy: () => inFlight > 0,
+    dismissProblem: () => {
+      lost = null;
+      set({ problem: null });
+    },
     /** Sends a change, and puts things right when it fails. */
     send: async <Answer>(
       work: () => Promise<Answer>,
@@ -116,8 +123,9 @@ export const makeCore = (name: string) => {
         return await work();
       } catch (error) {
         isAhead = true;
+        lost = messageOf(error);
         held.setUndos([]);
-        set({ problem: messageOf(error) });
+        set({ problem: lost });
         return null;
       } finally {
         inFlight -= 1;
