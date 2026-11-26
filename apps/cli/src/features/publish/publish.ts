@@ -14,7 +14,11 @@ import {
 } from '../../shared/immich.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
-import { albumsOf, assetsInUse } from '../../shared/publication.ts';
+import {
+  albumsOf,
+  assetsInUse,
+  readPublication,
+} from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
   exists,
@@ -217,6 +221,25 @@ const albumNow = Effect.fn('albumNow')(function* (
   };
 });
 
+/**
+ * Forgets the replaced uploads that the output of a command named, which
+ * happens only once it was printed.
+ */
+export const forgetOutdated = Effect.fn('forgetOutdated')(function* (
+  open: OpenShoot,
+  named: ReadonlyArray<string>,
+) {
+  const publication = yield* readPublication(open);
+  if (publication !== null && named.length > 0) {
+    yield* writeJson(Publication, open.files.publication, {
+      ...publication,
+      outdated: (publication.outdated ?? []).filter(
+        (asset) => !named.includes(asset),
+      ),
+    });
+  }
+});
+
 /** Uploads the picked photos, or those named, to an album in Immich. */
 export const publish = Effect.fn('publish')(function* (
   open: OpenShoot,
@@ -243,8 +266,8 @@ export const publish = Effect.fn('publish')(function* (
       ? yield* createAlbum(target.name)
       : { id: target.id, name: target.name };
   yield* ensureTag(tag);
-  // Replaced uploads stay noted until a publish has named them, also one that
-  // fails half-way, so none is left in the album untold.
+  // Replaced uploads stay noted until a command has named them, also after
+  // one that fails half-way, so none is left in the album untold.
   let publication = publicationFor(before, album);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
@@ -255,19 +278,18 @@ export const publish = Effect.fn('publish')(function* (
       return done;
     }),
   );
+  publication = { ...publication, outdated: outdatedOf(publication) };
+  yield* writeJson(Publication, open.files.publication, publication);
   yield* readAlbum(open);
-  const outdated = outdatedOf(publication);
-  // Named now, so the next publish doesn't name them again.
-  yield* writeJson(Publication, open.files.publication, {
-    ...publication,
-    outdated: [],
-  });
   return {
     shoot: name,
     album: { id: album.id, name: album.name },
     published: sent.length,
     alreadyThere: ready.length - todo.length,
-    /** Earlier versions, which keepsake leaves in the library. */
-    outdated,
+    /**
+     * Earlier versions, which keepsake leaves in the library. The command
+     * forgets them with `forgetOutdated` once it has printed them.
+     */
+    outdated: publication.outdated ?? [],
   };
 });

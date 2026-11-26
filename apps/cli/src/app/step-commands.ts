@@ -6,7 +6,10 @@ import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
-import { publish as publishShoot } from '../features/publish/publish.ts';
+import {
+  forgetOutdated,
+  publish as publishShoot,
+} from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
 import { InvalidInput, ModelFailed } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
@@ -259,10 +262,13 @@ export const publish = Command.make(
     album: albumFlag,
   },
   ({ shoot, photos, album }) =>
-    workOn(shoot, (open) => publishShoot(open, photos, album)).pipe(
-      Effect.flatMap(emit),
-      Effect.provide(Spending.layer),
-    ),
+    workOn(shoot, (open) =>
+      publishShoot(open, photos, album).pipe(
+        Effect.tap(emit),
+        // Only what was printed is told, so only that is forgotten.
+        Effect.flatMap(({ outdated }) => forgetOutdated(open, outdated)),
+      ),
+    ).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(
     'Upload the finished photos to an album in Immich with the photos command, each stacked on top of the camera’s own picture. Photos published before are not sent again.',
@@ -364,6 +370,11 @@ export const run = Command.make(
           published,
           explained,
         });
+        if (published !== null) {
+          yield* workOn(shoot, (open) =>
+            forgetOutdated(open, published.outdated),
+          );
+        }
       }).pipe(Effect.provide(editLayer(flags)), withVision(shoot, flags.model));
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(

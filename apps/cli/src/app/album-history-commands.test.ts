@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import {
   editLisbon,
   failureOf,
+  judge,
+  photosFolder,
   pickLisbon,
   runOk,
+  scanLisbon,
   setUp,
   shootFile,
   shootJson,
@@ -153,5 +156,33 @@ describe('keepsake publish, after the album changed in Immich', () => {
     const result = await runOk('publish', 'lisbon', '--album', 'Second');
     expect(result).toMatchObject({ album: { id: 'album-2' }, published: 2 });
     expect(assetsOf('album-2')).toEqual(['asset-1', 'asset-3']);
+  });
+});
+
+describe('keepsake run --publish', () => {
+  const runLisbon = () => [
+    'run',
+    photosFolder(),
+    '--name',
+    'lisbon',
+    '--review-model',
+    judge,
+    '--publish',
+  ];
+
+  it('names a replaced upload again when a later step failed', async () => {
+    await scanLisbon();
+    await runOk(...runLisbon());
+    await editAgain('B');
+    // The reasons can't be saved, so explaining fails after publishing.
+    await rm(shootFile('reasons.json'), { force: true });
+    await mkdir(shootFile('reasons.json', 'in-the-way'), { recursive: true });
+    const uploads = fakeTools.uploads.length;
+    const failure = await failureOf(...runLisbon());
+    expect(failure._tag).toBe('StoreFailed');
+    expect(fakeTools.uploads.length).toBeGreaterThan(uploads);
+    await rm(shootFile('reasons.json'), { recursive: true });
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({ outdated: ['asset-3'] });
   });
 });
