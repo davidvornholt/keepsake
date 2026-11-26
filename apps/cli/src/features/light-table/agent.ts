@@ -31,12 +31,14 @@ const patience = '2 minutes';
 
 /**
  * Has a program start an agent that acts on what was handed over. Goes on
- * as soon as the program runs; what comes of it is written down.
+ * as soon as the program runs; what comes of it is written down. When it
+ * can't be started, `giveBack` runs first, so that another may take it.
  */
-export const startAgent = Effect.fn('startAgent')(function* (
+export const startAgent = Effect.fn('startAgent')(function* <R>(
   files: ShootFiles,
   name: string,
   program: string,
+  giveBack: Effect.Effect<void, unknown, R>,
 ) {
   const at = DateTime.formatIso(yield* DateTime.now);
   const note = (link: string | null, failed: string | null) =>
@@ -45,7 +47,8 @@ export const startAgent = Effect.fn('startAgent')(function* (
   yield* toolText(program, [name]).pipe(
     Effect.timeout(patience),
     Effect.matchEffect({
-      onFailure: ({ message }) => note(null, message),
+      onFailure: ({ message }) =>
+        giveBack.pipe(Effect.ignore, Effect.andThen(note(null, message))),
       onSuccess: (text) =>
         note(
           Option.match(Schema.decodeUnknownOption(Said)(text), {

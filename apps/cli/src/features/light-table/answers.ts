@@ -3,16 +3,13 @@ import { InvalidInput } from '../../shared/errors/errors.ts';
 import { judgeOf } from '../../shared/judge.ts';
 import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
 import { standings } from '../../shared/standing.ts';
-import {
-  type OpenShoot,
-  openShoot,
-  type ShootFiles,
-} from '../../shared/store.ts';
+import { type OpenShoot, openShoot } from '../../shared/store.ts';
 import { startAgent } from './agent.ts';
 import { pictureWidths } from './contract.ts';
 import { setFavorite } from './favorites.ts';
 import { type Folders, lookAtFolder } from './folders.ts';
-import { handOver } from './hand-over.ts';
+import { claimUnsettled, handOver } from './hand-over.ts';
+import { release } from './handed.ts';
 import { saveLabels } from './labels.ts';
 import { makeMark, seeMark, takeBack } from './marks.ts';
 import { forgetShoot, makeShoot } from './new-shoot.ts';
@@ -108,14 +105,24 @@ const standingsOf = (open: OpenShoot) =>
     standings(open, model),
   );
 
-/** Starts an agent when none waits for what is handed over. */
+/**
+ * Starts an agent for what is handed over, unless one waits for it or took it
+ * already.
+ */
 const callAgent = Effect.fn('callAgent')(function* (
-  files: ShootFiles,
-  name: string,
+  open: OpenShoot,
   program: string,
 ) {
-  if ((yield* agentWaitsSince(files)) === null) {
-    yield* startAgent(files, name, program);
+  const { files, shoot } = open;
+  if ((yield* agentWaitsSince(files)) !== null) {
+    return;
+  }
+  const taken = yield* claimUnsettled(files, yield* standingsOf(open), 'page');
+  if (taken.length > 0) {
+    const giveBack = Effect.forEach(taken, (id) => release(files, id), {
+      discard: true,
+    });
+    yield* startAgent(files, shoot.name, program, giveBack);
   }
 });
 
@@ -130,7 +137,7 @@ const handOverAnswer = Effect.fn('handOverAnswer')(function* (
   const wanted = yield* sent(HandOver, request);
   const handed = yield* handOver(files, yield* standingsOf(open), wanted);
   if (agent !== undefined) {
-    yield* callAgent(files, name, agent);
+    yield* callAgent(open, agent);
   }
   return Response.json(handed);
 });
@@ -140,13 +147,13 @@ const agentAnswer = Effect.fn('agentAnswer')(function* (
   { agent }: Has,
   name: string,
 ) {
-  const { files } = yield* openShoot(name);
+  const open = yield* openShoot(name);
   if (agent === undefined) {
     return yield* new InvalidInput({
       message: 'No agent can be started from here.',
     });
   }
-  yield* callAgent(files, name, agent);
+  yield* callAgent(open, agent);
   return nothing();
 });
 

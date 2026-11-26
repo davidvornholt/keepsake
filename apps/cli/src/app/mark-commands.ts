@@ -1,6 +1,11 @@
+import process from 'node:process';
 import { Effect, Option } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
-import { agreedDollars, orderOf } from '../features/light-table/hand-over.ts';
+import {
+  agreedDollars,
+  claimUnsettled,
+  orderOf,
+} from '../features/light-table/hand-over.ts';
 import {
   answerMark,
   isWaiting,
@@ -107,13 +112,15 @@ export const marks = Command.make(
           album: yield* ordered(open, known),
         };
       });
-      const { known, found, album } = wait
-        ? yield* waitForHandOver(
-            open.files,
-            current,
-            (now) => now.found.length > 0 || now.album !== null,
-          )
-        : yield* current;
+      if (wait) {
+        const take = Effect.gen(function* () {
+          const known = yield* standings(yield* openShoot(shoot), model);
+          const by = `marks --wait ${process.pid}`;
+          return yield* claimUnsettled(open.files, known, by);
+        });
+        yield* waitForHandOver(open.files, take, (taken) => taken.length > 0);
+      }
+      const { known, found, album } = yield* current;
       yield* emit({
         shoot,
         link: yield* shootLink(shoot),

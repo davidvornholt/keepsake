@@ -3,7 +3,7 @@ import { InvalidInput } from '../../shared/errors/errors.ts';
 import { SpendingRecord, totalDollars } from '../../shared/spending.ts';
 import type { Standings } from '../../shared/standing.ts';
 import { readJson, type ShootFiles } from '../../shared/store.ts';
-import { readHandOvers, saveHandOver } from './handed.ts';
+import { claim, readHandOvers, saveHandOver } from './handed.ts';
 import { isOpen, isWaiting, readMarks } from './marks.ts';
 import type { HandOver, HandOverRecord, Mark } from './schemas.ts';
 
@@ -68,6 +68,22 @@ export const unsettledOf = Effect.fn('unsettledOf')(function* (
   return (yield* handOversOf(files, known)).filter(
     (record) => isOrder(record) || record.marks.some((id) => waiting.has(id)),
   );
+});
+
+/**
+ * Takes for one agent what is still to be done and no agent took yet, so
+ * that nothing handed over is acted on twice. Says what it took.
+ */
+export const claimUnsettled = Effect.fn('claimUnsettled')(function* (
+  files: ShootFiles,
+  known: Standings,
+  by: string,
+) {
+  const unsettled = yield* unsettledOf(files, known);
+  const taken = yield* Effect.forEach(unsettled, ({ id }) =>
+    Effect.map(claim(files, id, by), (isTaken) => (isTaken ? [id] : [])),
+  );
+  return taken.flat();
 });
 
 const spentOn = (files: ShootFiles) =>

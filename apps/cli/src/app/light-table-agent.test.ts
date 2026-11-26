@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import process from 'node:process';
+import { existsSync } from 'node:fs';
 import {
   editLisbon,
   pickLisbon,
@@ -25,6 +25,8 @@ afterEach(tearDown);
 
 const serving = <A>(visit: (address: string) => Promise<A>) =>
   whileServing(visit, { agent: 'start-agent' });
+
+const agentPath = (address: string) => `${address}/api/shoots/lisbon/agent`;
 
 const runsOfAgent = () =>
   fakeTools.runs.filter(({ command }) => command === 'start-agent');
@@ -123,19 +125,75 @@ describe('the agent', () => {
     );
     expect(status).toBe(400);
   });
+});
 
-  it('isn’t started while one waits', async () => {
-    const since = '2026-05-02T10:00:00.000Z';
-    await Bun.write(
-      shootFile('waiting.json'),
-      JSON.stringify({ process: process.pid, since }),
+/** Gives a program that was started a moment to show that it ran. */
+const settle = () => Bun.sleep(100);
+
+describe('the agent for a hand-over', () => {
+  beforeEach(pickLisbon);
+
+  it('isn’t started for what a waiting agent took', async () => {
+    const waiting = runOk('marks', 'lisbon', '--wait');
+    await eventually(
+      () => Promise.resolve(existsSync(shootFile('waiting.json'))),
+      Boolean,
     );
-    const { agent } = await serving(async (address) => {
+    const { agent, listed } = await serving(async (address) => {
       await handOverChange(address);
-      return shootOf(address);
+      const { agent: shown } = await shootOf(address);
+      // The waiter wakes and goes before the page asks for an agent again.
+      const marks = await waiting;
+      await statusOf(send('POST', agentPath(address)));
+      await settle();
+      return { agent: shown, listed: marks };
     });
-    expect(agent).toEqual({ waitsSince: since, canStart: true, started: null });
+    expect(agent).toMatchObject({ canStart: true, started: null });
+    expect(agent.waitsSince).not.toBeNull();
+    expect(listed.marks).toMatchObject([{ photo: 'B' }]);
     expect(runsOfAgent()).toEqual([]);
+  });
+
+  it('is started once when it is asked for twice at once', async () => {
+    let tries = 0;
+    fakeTools.programs = {
+      'start-agent': () => {
+        tries += 1;
+        if (tries === 1) {
+          throw new Error('not signed in');
+        }
+        return '{"link":"https://example.com/threads/3"}';
+      },
+    };
+    const statuses = await serving(async (address) => {
+      await started(address);
+      const again = () => statusOf(send('POST', agentPath(address)));
+      const both = await Promise.all([again(), again()]);
+      await eventually(
+        () => shootOf(address),
+        ({ agent }) => (agent.started?.link ?? null) !== null,
+      );
+      await settle();
+      return both;
+    });
+    expect(statuses).toEqual([204, 204]);
+    expect(runsOfAgent()).toHaveLength(2);
+  });
+
+  it('isn’t started again for what was acted on', async () => {
+    fakeTools.programs = {
+      'start-agent': () => {
+        throw new Error('not signed in');
+      },
+    };
+    await serving(async (address) => {
+      await started(address);
+      const [mark] = (await runOk('marks', 'lisbon')).marks;
+      await runOk('answer', 'lisbon', mark.id, '--done', 'It is gone.');
+      await statusOf(send('POST', agentPath(address)));
+      await settle();
+    });
+    expect(runsOfAgent()).toHaveLength(1);
   });
 });
 

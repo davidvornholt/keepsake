@@ -40,7 +40,7 @@ When you write to the user about photos, link to them on the page with the `link
 
 When the user handed something over, or asks you to go through it:
 
-1. `marks <shoot>` lists it: the marks with their `note`, `boxes` and the photo's files, and `album` with the `photos` still to be put in when they ordered the edits of the chosen photos. When the user wants to go through photos while you act on them, run `marks <shoot> --wait` in the background: it ends as soon as they hand something over, and the page shows them that you are waiting. Start it again when you are done with that.
+1. `marks <shoot>` lists it: the marks with their `note`, `boxes` and the photo's files, and `album` with the `photos` still to be put in when they ordered the edits of the chosen photos. When the user wants to go through photos while you act on them, run `marks <shoot> --wait` in the background: it ends as soon as they hand something over that no other agent took, and the page shows them that you are waiting. Start it again when you are done with that.
 2. `agreedDollars` is what is left of what they agreed to pay for all of it on the page, after what was spent on the shoot since, so start without asking and stay within it. A `change` costs about $0.45, twice that when a place needs a second attempt, and a photo without a `final` about $0.75. Ask before you pay for more than they agreed to, such as for another attempt.
 3. Act on each mark, and look at what came of it as you would without one:
    - `change`: `edit <shoot> --mark <id>`, which takes the note as the wish and changes only what is in the boxes, if there are any. Give `--wish` when the note needs to be clearer. Then `publish <shoot> <photo>`.
