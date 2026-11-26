@@ -105,12 +105,16 @@ describe('keepsake take-out, of an upload another photo is too', () => {
 describe('keepsake publish, after the album changed in Immich', () => {
   it('makes a new album when its own is gone', async () => {
     await publishLisbon();
+    const [, b] = assetsOf('album-1');
     fakeTools.albums = [];
     shareAlbum(first);
     const result = await runOk('publish', 'lisbon');
     expect(result).toMatchObject({ album: { name: first }, published: 3 });
     expect(result.album.id).not.toBe('shared');
     expect(assetsOf('shared')).toEqual([]);
+    await editAgain('B');
+    const again = await runOk('publish', 'lisbon');
+    expect(again).toMatchObject({ published: 1, outdated: [b] });
   });
 
   it('stops when an album shared with the owner is gone', async () => {

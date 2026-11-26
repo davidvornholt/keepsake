@@ -9,6 +9,7 @@ import {
   isOwnAlbum,
   listAlbums,
   markFavorite,
+  type NamedAlbum,
   signedInUser,
   stackPhotos,
   tagPhoto,
@@ -189,12 +190,19 @@ type Destination = {
   readonly owned: boolean | undefined;
 };
 
-/** The publication keepsake goes on with for the album it publishes to. */
+/**
+ * The publication keepsake goes on with for the album it publishes to. It
+ * forgets the albums of the account's own that are gone, which were deleted,
+ * so what they showed is not in use anymore.
+ */
 const publicationFor = (
   before: Publication | null,
   album: Destination,
+  albums: ReadonlyArray<NamedAlbum>,
 ): Publication => {
   const records = albumsOf(before);
+  const isDeleted = (albumId: string, owned: boolean | undefined) =>
+    owned === true && !albums.some(({ id }) => id === albumId);
   return {
     album: album.name,
     albumId: album.id,
@@ -202,7 +210,7 @@ const publicationFor = (
     photos: records.find(({ albumId }) => albumId === album.id)?.photos ?? [],
     outdated: before?.outdated ?? [],
     elsewhere: records.flatMap(({ album: name, albumId, owned, photos }) =>
-      albumId === undefined || albumId === album.id
+      albumId === undefined || albumId === album.id || isDeleted(albumId, owned)
         ? []
         : [
             {
@@ -292,7 +300,7 @@ export const publish = Effect.fn('publish')(function* (
   yield* ensureTag(tag);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
-  let publication = publicationFor(before, album);
+  let publication = publicationFor(before, album, albums);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
