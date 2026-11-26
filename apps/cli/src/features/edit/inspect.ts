@@ -30,7 +30,11 @@ const Faults = Schema.Struct({
       }),
       rightInOriginal: Schema.Boolean.annotate({
         description:
-          'True when the same place looks right in the original and could be put back from it. False for what is left of something half removed, since the original shows all of it.',
+          'True when the same place looks right in the original and could be put back from it. False for what is left of something half removed, since the original shows all of it, and for what the original shows wrongly too.',
+      }),
+      inOriginal: Schema.Boolean.annotate({
+        description:
+          'True when the original shows the same fault at the same place, such as a face that is as dark there. False for what the edit made, such as what is left of something half removed.',
       }),
     }),
   ),
@@ -45,7 +49,15 @@ export const Fault = Schema.Struct({
   what: Schema.String,
   kind: Schema.Literals(['people', 'texture', 'other']),
   serious: Schema.Boolean,
+  /** Whether putting the original's pixels back would mend it. */
   rightInOriginal: Schema.Boolean,
+  /**
+   * Whether the original has it as well. Inspections noted before it was asked
+   * count it as the edit's.
+   */
+  inOriginal: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
+  ),
 });
 export type Fault = typeof Fault.Type;
 

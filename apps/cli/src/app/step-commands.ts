@@ -4,11 +4,10 @@ import { cull as cullShoot, judgedTooFew } from '../features/cull/cull.ts';
 import { checkPrices, edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel, imageModelAccess } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
-import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
-import { InvalidInput, ModelFailed } from '../shared/errors/errors.ts';
+import { ModelFailed } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
@@ -28,6 +27,7 @@ import {
 } from './command-inputs.ts';
 import { emit, emitWithCost } from './output.ts';
 import { folderArgument, scanFlags } from './shoot-commands.ts';
+import { whatToEdit } from './what-to-edit.ts';
 
 const lowestScore = 1;
 const highestScore = 10;
@@ -119,49 +119,6 @@ const editInput = (flags: {
     };
   });
 
-/** The photos to edit, and what is wanted of them and where. */
-const whatToEdit = Effect.fn('whatToEdit')(function* (
-  shoot: string,
-  asked: {
-    readonly photos: ReadonlyArray<string>;
-    readonly wish: Option.Option<string>;
-    readonly mark: Option.Option<string>;
-    readonly budget: Option.Option<number>;
-  },
-) {
-  const { photos, mark } = asked;
-  const own = Option.getOrNull(asked.wish);
-  if (Option.isNone(mark)) {
-    if (own !== null && photos.length === 0) {
-      return yield* new InvalidInput({
-        message: 'Name the photos the wish is for.',
-      });
-    }
-    return { photos, wish: own, areas: [] };
-  }
-  if (photos.length > 0) {
-    return yield* new InvalidInput({
-      message: 'Name no photos with --mark, which is about one already.',
-    });
-  }
-  // A mark is answered without the owner there to agree to the default.
-  if (Option.isNone(asked.budget)) {
-    return yield* new InvalidInput({
-      message:
-        'Give --budget with --mark: what is left of what the owner agreed to spend.',
-    });
-  }
-  const { files } = yield* openShoot(shoot);
-  const { photo, note, boxes } = yield* markWith(files, mark.value);
-  const wish = own ?? (note === '' ? null : note);
-  if (wish === null && boxes.length > 0) {
-    return yield* new InvalidInput({
-      message: `The mark ${mark.value} has no note. Say with --wish what to do at the places it marks.`,
-    });
-  }
-  return { photos: [photo], wish, areas: boxes };
-});
-
 const imageModelOf = (asked: Option.Option<string>) =>
   Option.getOrElse(asked, () => defaultImageModel);
 
@@ -239,6 +196,7 @@ export const edit = Command.make(
         photos,
         wish,
         mark,
+        again: startOver,
         budget: flags.budget,
       });
       yield* workOn(shoot, (open) =>

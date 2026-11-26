@@ -1,10 +1,12 @@
-import { Effect, Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { type Box, Sign } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import {
   atomically,
-  type EditFiles,
   exists,
+  readJson,
   writeBytes,
+  writeJson,
 } from '../../shared/store.ts';
 import { keepOriginals, type Originals } from './keep-originals.ts';
 import { remembered } from './prepare.ts';
@@ -19,29 +21,58 @@ type Attempt = {
   readonly versions: number;
 };
 
-/** The numbers of an attempt's versions, which are made unless they are there. */
+const Batch = Schema.Array(Schema.Int);
+
+/** The number of the first version an attempt makes. */
+const firstOf = (files: EditFiles, number: number) =>
+  Effect.gen(function* () {
+    if (number === 1) {
+      return 1;
+    }
+    const before = yield* readJson(Batch, files.batch(number - 1));
+    const last = Option.match(before, {
+      onNone: () => 0,
+      onSome: (numbers) => Math.max(0, ...numbers),
+    });
+    return last + 1;
+  });
+
+/**
+ * The numbers of an attempt's versions, which are made unless they are there.
+ * Each attempt keeps the versions it has, even when a command that goes on
+ * with it asks for another number, and makes those that weren't saved.
+ */
 export const versionsOf = <E, R>(
   files: EditFiles,
   { number, versions }: Attempt,
-  make: Effect.Effect<ReadonlyArray<Uint8Array>, E, R>,
+  make: (count: number) => Effect.Effect<ReadonlyArray<Uint8Array>, E, R>,
 ) =>
   Effect.gen(function* () {
+    const isMade = (version: number) => exists(files.version(version));
+    const recorded = yield* readJson(Batch, files.batch(number));
+    if (Option.isSome(recorded)) {
+      return yield* Effect.filter(recorded.value, isMade);
+    }
+    const first = yield* firstOf(files, number);
     const numbers = Array.from(
       { length: versions },
-      (_, index) => (number - 1) * versions + index + 1,
+      (_, index) => first + index,
     );
-    const isMade = (version: number) => exists(files.version(version));
-    const isThere = yield* Effect.forEach(numbers, isMade);
-    if (!isThere.includes(true)) {
-      const made = yield* make;
-      yield* Effect.forEach(numbers, (version, index) => {
+    const missing = yield* Effect.filter(numbers, (version) =>
+      Effect.map(isMade(version), (isThere) => !isThere),
+    );
+    if (missing.length > 0) {
+      const made = yield* make(missing.length);
+      yield* Effect.forEach(missing, (version, index) => {
         const bytes = made[index];
         return bytes === undefined
           ? Effect.void
           : writeBytes(files.version(version), bytes);
       });
     }
-    return yield* Effect.filter(numbers, isMade);
+    const there = yield* Effect.filter(numbers, isMade);
+    yield* writeJson(Batch, files.batch(number), there);
+    return there;
   });
 
 /** What an image model got wrong in a version, or may not redraw at all. */

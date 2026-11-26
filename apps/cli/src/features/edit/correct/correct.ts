@@ -1,5 +1,6 @@
 import { Effect, Schema } from 'effect';
 import { wholePicture } from '../../../shared/boxes.ts';
+import type { Box } from '../../../shared/domain.ts';
 import { renderExactly, type Size, sizeOf } from '../../../shared/pictures.ts';
 import {
   atomically,
@@ -11,6 +12,7 @@ import type { Job } from '../best-edit.ts';
 import { descriptionOf } from '../describe.ts';
 import { editableSize } from '../geometry.ts';
 import { ImageModel } from '../image-model.ts';
+import { isOnFace, keptOnFace } from '../keep-originals.ts';
 import { peopleAndSigns, remembered } from '../prepare.ts';
 import { mostAttempts, versionsOf, withOriginals } from '../versions.ts';
 import { candidatesOf, type Taken, writeWith } from './candidates.ts';
@@ -26,6 +28,8 @@ export type CorrectionFiles = ReturnType<ShootFiles['edit']>['correction'];
 export type Correction = Pick<Job, 'open' | 'versions'> & {
   readonly files: CorrectionFiles;
   readonly places: ReadonlyArray<Place>;
+  /** What the user marked, if they did; a little around it may change too. */
+  readonly areas: ReadonlyArray<Box> | null;
 };
 
 /** What an attempt starts from. */
@@ -75,7 +79,7 @@ type Known = Effect.Success<ReturnType<typeof known>>;
 
 /** Makes versions of a picture and takes the best of them at each place. */
 const attempt = Effect.fn('attempt')(function* (
-  { open, versions }: Correction,
+  { open, versions, areas }: Correction,
   files: CorrectionFiles,
   { number, base, changes }: Start,
   { size, about }: { readonly size: Size; readonly about: Known },
@@ -83,13 +87,13 @@ const attempt = Effect.fn('attempt')(function* (
   const numbers = yield* versionsOf(
     files,
     { number, versions },
-    Effect.gen(function* () {
+    Effect.fn('makeVersions')(function* (count: number) {
       const image = yield* ImageModel;
       return yield* image.edit({
         picture: new Uint8Array(yield* readBytes(files.input)),
         prompt: correctionPrompt(open.shoot, about.description, changes),
         size,
-        versions,
+        versions: count,
       });
     }),
   );
@@ -106,6 +110,7 @@ const attempt = Effect.fn('attempt')(function* (
           base,
           boxes.map((box) => ({ box, from })),
           file,
+          areas,
         ),
         { from, file },
       );
@@ -133,11 +138,14 @@ const attempt = Effect.fn('attempt')(function* (
   if (taken.length === 0) {
     return { base, left, isRefused: false };
   }
-  yield* writeWith(base, taken, files.result(number));
+  yield* writeWith(base, taken, files.result(number), areas);
   return { base: files.result(number), left, isRefused: false };
 });
 
-/** Prepares an attempt and makes it, with what the picture shows. */
+/**
+ * Prepares an attempt and makes it, with what the picture shows. Nothing is
+ * paid for what would come back with a face; that is left on its own.
+ */
 const tryOnce = Effect.fn('tryOnce')(function* (
   job: Correction,
   files: CorrectionFiles,
@@ -145,8 +153,18 @@ const tryOnce = Effect.fn('tryOnce')(function* (
 ) {
   const size = yield* inputFor(start.base, files.input);
   const about = yield* known(job, files);
-  const made = yield* attempt(job, files, start, { size, about });
-  return { ...made, description: about.description };
+  const { people } = about.originals;
+  const isKept = ({ place }: ToChange) =>
+    place.isRemoval && isOnFace(people, place.box);
+  const onFaces = start.changes
+    .filter(isKept)
+    .map(({ place }): ToChange => ({ place, problem: keptOnFace }));
+  const changes = start.changes.filter((change) => !isKept(change));
+  const made =
+    changes.length === 0
+      ? { base: start.base, left: [], isRefused: false }
+      : yield* attempt(job, files, { ...start, changes }, { size, about });
+  return { ...made, onFaces, description: about.description };
 });
 
 /**
@@ -163,6 +181,7 @@ export const correct = Effect.fn('correct')(function* (job: Correction) {
   let description: string | null = null;
   let attempts = 0;
   let isRefused = false;
+  const onFaces: Array<ToChange> = [];
   while (left.length > 0 && attempts < mostAttempts && !isRefused) {
     attempts += 1;
     const files = { ...job.files, input: job.files.inputOf(attempts) };
@@ -177,12 +196,19 @@ export const correct = Effect.fn('correct')(function* (job: Correction) {
             ({ place }): ToChange => ({ place, problem: message }),
           ),
           isRefused: true,
+          onFaces: [],
           description: null,
         }),
       ),
     );
     description = result.description ?? description;
+    onFaces.push(...result.onFaces);
     ({ base, left, isRefused } = result);
   }
-  return { file: base === final ? null : base, description, attempts, left };
+  return {
+    file: base === final ? null : base,
+    description,
+    attempts,
+    left: [...left, ...onFaces],
+  };
 });

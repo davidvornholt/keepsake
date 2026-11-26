@@ -1,6 +1,8 @@
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, PickList, Shoot } from './domain.ts';
+import { editFiles, editFolderName } from './edit-files.ts';
 import { InvalidInput, StepMissing, StoreFailed } from './errors/errors.ts';
+import { exclusively } from './lock.ts';
 import { xdgDirectory } from './xdg.ts';
 
 const storeFailed = (path: string) => (error: { readonly message: string }) =>
@@ -102,49 +104,6 @@ export const shootsDirectory = Effect.gen(function* () {
   return path.join(data, 'keepsake', 'shoots');
 });
 
-/** The files of an edit of a photo. */
-const editFiles = (path: Path.Path, directory: string, base: string) => ({
-  directory,
-  /** The camera's own full-size JPEG. */
-  camera: path.join(directory, `${base}.jpg`),
-  /** What the photo shows, if another model judged it. */
-  description: path.join(directory, 'description.json'),
-  crop: path.join(directory, 'crop.json'),
-  /** The cropped photo the image model gets. */
-  input: path.join(directory, 'input.jpg'),
-  /** What the user wants to be done with the photo. */
-  wish: path.join(directory, 'wish.json'),
-  /** What is removed from the photo. */
-  removals: path.join(directory, 'removals.json'),
-  /** The people who can be recognised, and everyone else. */
-  people: path.join(directory, 'people.json'),
-  bystanders: path.join(directory, 'bystanders.json'),
-  /** The animals too small for the image model to draw. */
-  animals: path.join(directory, 'animals.json'),
-  signs: path.join(directory, 'signs.json'),
-  /** The areas that keep the photo's own texture. */
-  textures: path.join(directory, 'textures.json'),
-  /** What the image model made. */
-  version: (number: number) => path.join(directory, `version-${number}.png`),
-  /** The signs it got wrong. */
-  changedSigns: (number: number) =>
-    path.join(directory, `version-${number}-signs.json`),
-  /** The same with the original's people, textures and signs in it. */
-  versionWithOriginals: (number: number) =>
-    path.join(directory, `version-${number}-kept.png`),
-  /** What is wrong with it when looking closely. */
-  faults: (number: number) =>
-    path.join(directory, `version-${number}-faults.json`),
-  /** The same without what could be mended. */
-  versionMended: (number: number) =>
-    path.join(directory, `version-${number}-mended.png`),
-  final: path.join(directory, `${base}-keepsake.jpg`),
-  /** The finished photos that newer ones replaced. */
-  earlier: path.join(directory, 'earlier'),
-  record: path.join(directory, 'edit.json'),
-});
-export type EditFiles = ReturnType<typeof editFiles>;
-
 const shootNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
 /** Where keepsake keeps everything about one shoot. */
@@ -213,8 +172,15 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         model.replaceAll('/', '--'),
         `${moment}.json`,
       ),
+    /** The edit command that starts photos over, until it has done all. */
+    anew: path.join(root, 'anew.json'),
+    edits: path.join(root, 'edits'),
+    /** That the edits of photos in folders are no longer nested. */
+    flatEdits: path.join(root, 'flat-edits'),
+    /** Where they are while they move. */
+    unnesting: path.join(root, 'unnesting'),
     edit: (photo: string) => {
-      const directory = path.join(root, 'edits', photo);
+      const directory = path.join(root, 'edits', editFolderName(photo));
       const base = path.basename(photo);
       const files = editFiles(path, directory, base);
       const changes = path.join(directory, 'correction');
@@ -272,6 +238,94 @@ const needed = <A>(
     onSome: Effect.succeed,
   });
 
+const depth = (photo: string) => photo.split('/').length;
+
+/**
+ * Moves the edits of photos in folders out of the edit folder of the photo
+ * named like the folder, where they used to be.
+ */
+const unnestEdits = Effect.fn('unnestEdits')(function* (
+  files: ShootFiles,
+  photos: ReadonlyArray<string>,
+) {
+  const nested = photos.filter((photo) => editFolderName(photo) !== photo);
+  if (nested.length === 0 || (yield* exists(files.flatEdits))) {
+    return;
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const staged = (photo: string) =>
+    path.join(files.unnesting, editFolderName(photo));
+  // First all out of the way, so that none is moved onto one that hasn't
+  // moved yet, and the deepest first, so that each is out of its parent.
+  const outOfTheWay = Effect.gen(function* () {
+    yield* fs.makeDirectory(files.unnesting, { recursive: true });
+    for (const photo of nested.toSorted((a, b) => depth(b) - depth(a))) {
+      const before = path.join(files.edits, photo);
+      const camera = path.join(before, `${path.basename(photo)}.jpg`);
+      if ((yield* fs.exists(camera)) && !(yield* fs.exists(staged(photo)))) {
+        yield* fs.rename(before, staged(photo));
+      }
+    }
+  });
+  /** The folders they were kept in, once nothing is left in them. */
+  const emptiedFolders = Effect.gen(function* () {
+    for (const photo of nested) {
+      let folder = path.dirname(path.join(files.edits, photo));
+      while (
+        folder !== files.edits &&
+        (yield* fs.exists(folder)) &&
+        (yield* fs.readDirectory(folder)).length === 0
+      ) {
+        // Empty, as just seen, and under the shoot's lock.
+        yield* fs.remove(folder, { recursive: true });
+        folder = path.dirname(folder);
+      }
+    }
+  });
+  /** Moves each where it belongs, and tells where other files are in the way. */
+  const inPlace = Effect.gen(function* () {
+    const blocked: Array<{ photo: string; others: ReadonlyArray<string> }> = [];
+    for (const photo of nested) {
+      const { directory } = files.edit(photo);
+      const isStaged = yield* fs.exists(staged(photo));
+      if (isStaged && (yield* fs.exists(directory))) {
+        const others = yield* fs.readDirectory(directory, { recursive: true });
+        blocked.push({ photo, others: others.toSorted() });
+      } else if (isStaged) {
+        yield* fs.rename(staged(photo), directory);
+      }
+    }
+    return blocked;
+  });
+  const moved = Effect.gen(function* () {
+    yield* outOfTheWay;
+    yield* emptiedFolders;
+    const blocked = yield* inPlace;
+    // Otherwise the next command goes on with it.
+    if (blocked.length === 0) {
+      yield* fs.remove(files.unnesting, { recursive: true });
+      yield* fs.writeFileString(files.flatEdits, '');
+    }
+    return blocked;
+  }).pipe(Effect.mapError(storeFailed(files.edits)));
+  // While another command works on the shoot, they move the next time.
+  const blocked = yield* exclusively(files)(moved).pipe(
+    Effect.catchTag('ShootBusy', () => Effect.succeed([])),
+  );
+  if (blocked.length > 0) {
+    const where = blocked
+      .map(
+        ({ photo, others }) =>
+          `${files.edit(photo).directory} (${others.join(', ')})`,
+      )
+      .join('; ');
+    return yield* new StoreFailed({
+      message: `keepsake keeps the edits of photos in folders apart now, but other files are where they go: ${where}. Move those files elsewhere and run keepsake again; until then the edits wait in ${files.unnesting}.`,
+    });
+  }
+});
+
 /** A scanned shoot with its photos and moments. */
 export const openShoot = Effect.fn('openShoot')(function* (name: string) {
   const files = yield* shootFiles(name);
@@ -280,6 +334,10 @@ export const openShoot = Effect.fn('openShoot')(function* (name: string) {
   const photos = yield* needed(
     yield* readJson(Schema.Array(Photo), files.photos),
     message,
+  );
+  yield* unnestEdits(
+    files,
+    photos.map(({ id }) => id),
   );
   const moments = yield* needed(
     yield* readJson(Schema.Array(Moment), files.moments),
