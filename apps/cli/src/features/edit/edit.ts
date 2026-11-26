@@ -46,8 +46,10 @@ const jobs = Effect.fn('jobs')(function* (
   const judged = yield* verdicts(open, model);
   const named = yield* Effect.forEach(names, (name) => photoNamed(open, name));
   // A photo named twice, such as by its path and by its name, is edited once.
-  const photos = [...new Map(named.map((photo) => [photo.id, photo])).values()];
-  return yield* Effect.forEach(photos, (photo) =>
+  const distinct = [
+    ...new Map(named.map((photo) => [photo.id, photo])).values(),
+  ];
+  return yield* Effect.forEach(distinct, (photo) =>
     Effect.gen(function* () {
       const verdict = judged.find(({ photos }) => photos.includes(photo.id));
       if (verdict === undefined) {
