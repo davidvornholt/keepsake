@@ -1,7 +1,7 @@
 import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
-import { edit as editShoot } from '../features/edit/edit.ts';
+import { checkPrices, edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { markWith } from '../features/light-table/marks.ts';
@@ -80,7 +80,7 @@ const pickInput = (flags: {
 const editFlags = {
   budget: optionalNumber(
     'budget',
-    `Start no more photos when the edits have cost this many dollars (default ${defaultBudget})`,
+    `Spend at most this many dollars on the edits: a paid request is sent only when what is left covers the most it can cost (default ${defaultBudget})`,
   ),
   versions: optionalInt(
     'versions',
@@ -335,6 +335,9 @@ export const run = Command.make(
       const scanned = yield* scan(flags);
       const { shoot } = scanned;
       yield* Effect.gen(function* () {
+        if (!flags.unedited) {
+          yield* checkPrices;
+        }
         const culled = yield* workOn(shoot, (open) => cullShoot(open, false));
         yield* checkCulled(culled);
         const picked = yield* workOn(shoot, (open) =>

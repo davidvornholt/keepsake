@@ -3,10 +3,11 @@ import { during } from '../../shared/activity.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
+import { ReviewVision } from '../../shared/review-vision.ts';
 import {
   dollarsForOneEdit,
+  isPriced,
   Spending,
-  totalDollars,
 } from '../../shared/spending.ts';
 import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
@@ -19,6 +20,7 @@ import {
   editPhoto,
   type ToEdit,
 } from './edit-photo.ts';
+import { ImageModel } from './image-model.ts';
 
 /** More photos than image requests at once, so reviews don't hold those up. */
 const concurrency = 5;
@@ -74,16 +76,15 @@ type Outcome =
     };
 
 /**
- * Keeps what is spent within a budget, counting the photos that are being
- * edited right now at what they usually cost.
+ * Starts photos while the budget lasts, counting those that are being edited
+ * right now at what they usually cost. Each paid request is checked again.
  */
-const makeBudget = Effect.fn('makeBudget')(function* (dollars: number) {
+const makeBudget = Effect.fn('makeBudget')(function* () {
   const spending = yield* Spending;
-  const before = totalDollars(yield* spending.soFar);
   const running = yield* Ref.make(0);
   const isLeft = Effect.gen(function* () {
-    const spent = totalDollars(yield* spending.soFar) - before;
-    return spent + (yield* Ref.get(running)) * dollarsForOneEdit < dollars;
+    const left = yield* spending.left;
+    return (yield* Ref.get(running)) * dollarsForOneEdit < left;
   });
   return <A, E, R>(work: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
@@ -98,15 +99,32 @@ const makeBudget = Effect.fn('makeBudget')(function* (dollars: number) {
     });
 });
 
+/** Stops before anything is sent to a model whose cost a budget can't know. */
+export const checkPrices = Effect.gen(function* () {
+  const models = [
+    (yield* ImageModel).model,
+    (yield* Vision).model,
+    (yield* ReviewVision).model,
+  ];
+  const unknown = models.find((model) => !isPriced(model));
+  if (unknown !== undefined) {
+    return yield* new InvalidInput({
+      message: `keepsake doesn't know what ${unknown} costs, so it can't keep to the budget with it. Use a subscription's model or one whose price is in shared/spending.ts.`,
+    });
+  }
+});
+
 /** Edits the picked photos until the budget is used up. */
 export const edit = Effect.fn('edit')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   options: EditOptions & { readonly budget: number },
 ) {
+  yield* checkPrices;
   const todo = yield* jobs(open, names);
   const isAnew = options.again || options.wish !== null;
-  const withinBudget = yield* makeBudget(options.budget);
+  const spending = yield* Spending;
+  const withinBudget = yield* makeBudget();
   const outcomes = yield* inSteps('edit', todo, concurrency, (toEdit) =>
     Effect.gen(function* () {
       const before = yield* editOf(open, toEdit.photo.id);
@@ -136,8 +154,12 @@ export const edit = Effect.fn('edit')(function* (
           reason: message,
         }),
       ),
+      // What is left of the budget doesn't cover its next request.
+      Effect.catchTag('OverBudget', () =>
+        Effect.succeed<Outcome>({ kind: 'overBudget', photo: toEdit.photo.id }),
+      ),
     ),
-  );
+  ).pipe(spending.within(options.budget));
   const done = outcomes.flatMap((outcome) =>
     outcome.kind === 'done' ? [outcome] : [],
   );

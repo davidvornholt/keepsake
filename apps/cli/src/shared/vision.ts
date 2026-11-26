@@ -1,8 +1,12 @@
 import { Context, Effect, Layer, Schedule, type Schema } from 'effect';
-import { type AiError, LanguageModel, Prompt } from 'effect/ai';
-import { ModelFailed } from './errors/errors.ts';
+import { type AiError, LanguageModel, Prompt, type Response } from 'effect/ai';
+import {
+  ModelFailed,
+  type OverBudget,
+  type StoreFailed,
+} from './errors/errors.ts';
 import { modelName, visionLayer } from './models.ts';
-import { Spending } from './spending.ts';
+import { Spending, type Usage } from './spending.ts';
 
 /** One piece of a question: text, or a photo as JPEG bytes. */
 export type Piece = string | Uint8Array;
@@ -35,13 +39,22 @@ const backoff = Schedule.exponential('4 seconds').pipe(Schedule.jittered);
 const modelFailed = (model: string) => (error: AiError.AiError) =>
   new ModelFailed({ message: `${model}: ${error.message}` });
 
+/** What an answer used, unless it doesn't say. */
+const usageOf = ({
+  inputTokens,
+  outputTokens,
+}: Response.Usage): Usage | undefined =>
+  inputTokens.total === undefined || outputTokens.total === undefined
+    ? undefined
+    : { inputTokens: inputTokens.total, outputTokens: outputTokens.total };
+
 export type VisionModel = {
   /** The model's name with its provider. */
   readonly model: string;
   /** Asks about photos and answers in the question's shape. */
   readonly ask: <S extends AnswerSchema>(
     question: Question<S>,
-  ) => Effect.Effect<S['Type'], ModelFailed>;
+  ) => Effect.Effect<S['Type'], ModelFailed | OverBudget | StoreFailed>;
 };
 
 /** The model that looks at photos in this command. */
@@ -73,13 +86,9 @@ export class Vision extends Context.Service<Vision, VisionModel>()(
                 times: retries,
               }),
               Effect.mapError(modelFailed(model)),
+              Effect.tap(({ usage }) => spending.add(model, usageOf(usage))),
+              (request) => spending.paying(model, 1, request),
             );
-          const { inputTokens, outputTokens } = response.usage;
-          yield* spending.add(
-            model,
-            inputTokens.total ?? 0,
-            outputTokens.total ?? 0,
-          );
           return response.value;
         });
         return Vision.of({ model, ask });

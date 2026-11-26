@@ -9,12 +9,14 @@ import {
 import {
   InvalidInput,
   ModelFailed,
+  type OverBudget,
   PhotoRefused,
+  type StoreFailed,
   TryLater,
 } from '../../shared/errors/errors.ts';
 import { accessTo, modelName, openAiUrl } from '../../shared/models.ts';
 import type { Size } from '../../shared/pictures.ts';
-import { Spending } from '../../shared/spending.ts';
+import { Spending, type Usage } from '../../shared/spending.ts';
 
 /** How many requests run at once; image models allow only a few. */
 const concurrency = 3;
@@ -60,27 +62,41 @@ const refusalCodes = new Set([
   'content_filter',
 ]);
 
-/** Turns an answer into the images in it, or says what went wrong. */
-const readAnswer = (
+type Images = typeof Images.Type;
+
+/** Reads the images of a successful answer. */
+const readImages = (
   model: string,
   response: HttpClientResponse.HttpClientResponse,
 ) =>
-  Effect.gen(function* () {
-    const body = yield* response.json.pipe(
-      Effect.mapError(
-        (error) => new TryLater({ message: `${model}: ${error.message}` }),
-      ),
-    );
-    if (response.status === okStatus) {
-      return yield* Schema.decodeUnknownEffect(Images)(body).pipe(
+  response.json.pipe(
+    Effect.mapError(
+      (error) => new TryLater({ message: `${model}: ${error.message}` }),
+    ),
+    Effect.flatMap((body) =>
+      Schema.decodeUnknownEffect(Images)(body).pipe(
         Effect.mapError(
           () =>
             new ModelFailed({
               message: `${model} answered without an image.`,
             }),
         ),
-      );
-    }
+      ),
+    ),
+  );
+
+const usageOf = ({ usage }: Images): Usage | undefined =>
+  usage === undefined
+    ? undefined
+    : { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens };
+
+/** Says what went wrong with an answer that isn't a success. */
+const readProblem = (
+  model: string,
+  response: HttpClientResponse.HttpClientResponse,
+) =>
+  Effect.gen(function* () {
+    const body = yield* response.json.pipe(Effect.orElseSucceed(() => null));
     const problem = yield* Schema.decodeUnknownEffect(Problem)(body).pipe(
       Effect.map(({ error }) => error),
       Effect.orElseSucceed(() => ({ code: null, message: null })),
@@ -107,7 +123,10 @@ export class ImageModel extends Context.Service<
     /** Edits a photo and returns the versions as PNG files. */
     readonly edit: (
       edit: ImageEdit,
-    ) => Effect.Effect<ReadonlyArray<Uint8Array>, ModelFailed | PhotoRefused>;
+    ) => Effect.Effect<
+      ReadonlyArray<Uint8Array>,
+      ModelFailed | PhotoRefused | OverBudget | StoreFailed
+    >;
   }
 >()('@keepsake/cli/features/edit/ImageModel') {
   static readonly layer = (model: string) =>
@@ -148,12 +167,28 @@ export class ImageModel extends Context.Service<
         const edit = Effect.fn('ImageModel.edit')(function* (
           wanted: ImageEdit,
         ) {
+          const { versions } = wanted;
           const answer = yield* client.execute(request(wanted)).pipe(
             Effect.mapError(
               (error) =>
                 new TryLater({ message: `${model}: ${error.message}` }),
             ),
-            Effect.flatMap((response) => readAnswer(model, response)),
+            Effect.flatMap(
+              (
+                response,
+              ): Effect.Effect<
+                Images,
+                ModelFailed | PhotoRefused | TryLater | StoreFailed
+              > =>
+                response.status === okStatus
+                  ? readImages(model, response)
+                  : readProblem(model, response),
+            ),
+            Effect.tap((images) =>
+              spending.add(model, usageOf(images), versions),
+            ),
+            // Each try is paid for, so each has to fit into the budget.
+            (once) => spending.paying(model, versions, once),
             // Only the request takes a turn, not the wait before another try.
             turns.withPermits(1),
             Effect.retry({
@@ -164,11 +199,6 @@ export class ImageModel extends Context.Service<
             Effect.catchTag('TryLater', ({ message }) =>
               Effect.fail(new ModelFailed({ message })),
             ),
-          );
-          yield* spending.add(
-            model,
-            answer.usage?.input_tokens ?? 0,
-            answer.usage?.output_tokens ?? 0,
           );
           return answer.data.map(({ b64_json: image }) => image);
         });

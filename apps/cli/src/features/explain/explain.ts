@@ -2,7 +2,9 @@ import { Effect, Option, Ref, Schema, Semaphore } from 'effect';
 import { Reason } from '../../shared/domain.ts';
 import {
   type ModelFailed,
+  type OverBudget,
   StepMissing,
+  type StoreFailed,
   type ToolFailed,
 } from '../../shared/errors/errors.ts';
 import { judgeOf } from '../../shared/judge.ts';
@@ -41,7 +43,11 @@ const asking = Effect.fn('asking')(function* <A, R>(
   asked: ReadonlyArray<A>,
   ask: (
     one: A,
-  ) => Effect.Effect<ReadonlyArray<Reason>, ModelFailed | ToolFailed, R>,
+  ) => Effect.Effect<
+    ReadonlyArray<Reason>,
+    ModelFailed | OverBudget | StoreFailed | ToolFailed,
+    R
+  >,
 ) {
   return yield* inSteps('explain', asked, concurrency, (one) =>
     ask(one).pipe(
