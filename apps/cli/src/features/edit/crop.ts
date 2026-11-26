@@ -16,7 +16,7 @@ import {
 } from '../../shared/domain.ts';
 import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
-import { frameBox, isMostlyPhoto } from './beyond.ts';
+import { edgesBeyond, frameBox, isMostlyPhoto } from './beyond.ts';
 import { closestAspect, fitAspect, within } from './geometry.ts';
 import { withOwnRoomFirst } from './own-room.ts';
 import { sides, withRoomAhead } from './room-ahead.ts';
@@ -84,7 +84,8 @@ const wholePhoto = (size: Size): Candidate => {
 };
 
 /** Whether a frame shows almost all of the photo and nothing beyond it. */
-const isWhole = (box: Box): boolean =>
+export const isWhole = (box: Box): boolean =>
+  edgesBeyond(box) === null &&
   coverage(tidyBox(box)) >= almostEverything &&
   coverage(box) <= 1 / almostEverything;
 

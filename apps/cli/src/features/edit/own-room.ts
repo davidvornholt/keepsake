@@ -20,8 +20,8 @@ const cutOff = (position: number, edge: 0 | 1): boolean =>
 
 /**
  * A frame that uses the room its photo has. It reaches beyond an edge only
- * where that cuts off the subject or something that belongs to the photo, such
- * as the flower a bee flies to, or leaves too little room beside the subject.
+ * where that cuts off the subject or something that belongs to the photo, or
+ * leaves too little room beside the subject.
  */
 export const withOwnRoomFirst = (
   frame: Box,
