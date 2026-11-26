@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdir, symlink } from 'node:fs/promises';
+import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   fake,
@@ -32,6 +32,13 @@ const withLinkOutside = async () => {
   return { trip, outside };
 };
 
+const lookAt = (folder: string) => async (address: string) =>
+  (
+    await fetch(
+      `${address}/api/folders/look?path=${encodeURIComponent(folder)}`,
+    )
+  ).json();
+
 const readOf = (file: string) =>
   fakeTools.runs.filter(({ args }) => args.some((arg) => arg.endsWith(file)));
 
@@ -62,6 +69,32 @@ describe('the folders of photos on the page', () => {
     ]);
     expect(folders).toMatchObject([{ name: 'trip', photos: 1 }]);
     expect(look).toMatchObject({ photos: 1 });
+    expect(look.samples).toHaveLength(1);
+    expect(readOf('B.jpg')).toEqual([]);
+  });
+
+  it('show none of another folder that a link takes into one', async () => {
+    const trip = join(photosFolder(), 'trip');
+    await Bun.write(join(trip, 'A.jpg'), 'a photo');
+    await Bun.write(join(photosFolder(), 'sibling', 'S.jpg'), 'a photo');
+    await symlink(join(photosFolder(), 'sibling'), join(trip, 'other'));
+    const look = await serving(lookAt(trip));
+    expect(look.samples).toHaveLength(1);
+    expect(readOf('S.jpg')).toEqual([]);
+  });
+
+  it('show no photo that became a link outside them since they were listed', async () => {
+    const trip = join(photosFolder(), 'trip');
+    const outside = join(fake.home, 'private', 'secret.jpg');
+    await Bun.write(join(trip, 'A.jpg'), 'a photo');
+    await Bun.write(join(trip, 'B.jpg'), 'a photo');
+    await Bun.write(outside, 'a photo from elsewhere');
+    const look = await serving(async (address) => {
+      await foldersOf(address);
+      await rm(join(trip, 'B.jpg'));
+      await symlink(outside, join(trip, 'B.jpg'));
+      return lookAt(trip)(address);
+    });
     expect(look.samples).toHaveLength(1);
     expect(readOf('B.jpg')).toEqual([]);
   });

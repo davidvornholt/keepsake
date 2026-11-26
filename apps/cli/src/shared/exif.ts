@@ -319,14 +319,31 @@ export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
   );
 });
 
-/** Some photos of a folder, by their paths below it. */
+/**
+ * Some photos of a folder, by their paths below it. Only those that are still
+ * photos in it are read, since what was found of it may be old by now.
+ */
 export const readPhotos = Effect.fn('readPhotos')(function* (
   source: string,
   files: ReadonlyArray<string>,
 ) {
+  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const real = yield* fs
+    .realPath(source)
+    .pipe(
+      Effect.mapError(
+        ({ message }) =>
+          new StoreFailed({ message: `Could not read ${source}: ${message}` }),
+      ),
+    );
+  const kept = yield* Effect.forEach(
+    files,
+    (file) => photoFileAt(real, path.join(source, file)),
+    { concurrency },
+  );
   return yield* readExif(
     source,
-    files.map((file) => path.join(source, file)),
+    kept.flat().map(({ file }) => file),
   );
 });
