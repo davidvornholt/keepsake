@@ -91,6 +91,30 @@ describe('keepsake edit, with a budget', () => {
   });
 });
 
+describe('keepsake edit, when an answer breaks off', () => {
+  it('counts it as spent and doesn’t ask again', async () => {
+    await pickLisbon();
+    fakeModels.editAnswer = () => {
+      const start = new TextEncoder().encode('{"data":[{"b64_json":"YS');
+      const body = new ReadableStream({
+        start: (controller) => {
+          controller.enqueue(start);
+          controller.error(new Error('connection reset'));
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    const result = await editLisbon('B');
+    expect(fakeModels.edits).toHaveLength(1);
+    expect(result.failed[0].reason).toContain('counted as spent');
+    expect(result.models[imageModel].dollars).toBeCloseTo(mostForTwo);
+    expect(spentOn(imageModel)).toBeCloseTo(mostForTwo);
+  });
+});
+
 describe('what an edit spends', () => {
   it('is on disk as soon as a request has been answered', async () => {
     await pickLisbon();

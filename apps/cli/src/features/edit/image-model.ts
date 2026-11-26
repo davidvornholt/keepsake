@@ -16,7 +16,7 @@ import {
 } from '../../shared/errors/errors.ts';
 import { accessTo, modelName, openAiUrl } from '../../shared/models.ts';
 import type { Size } from '../../shared/pictures.ts';
-import { Spending, type Usage } from '../../shared/spending.ts';
+import { mostCostOf, Spending, type Usage } from '../../shared/spending.ts';
 
 /** How many requests run at once; image models allow only a few. */
 const concurrency = 3;
@@ -64,22 +64,24 @@ const refusalCodes = new Set([
 
 type Images = typeof Images.Type;
 
-/** Reads the images of a successful answer. */
+/**
+ * Reads the images of a successful answer. One that breaks off or can't be
+ * read may have been paid for all the same, so `lost` counts it at the most
+ * it can cost, and it isn't asked for again.
+ */
 const readImages = (
   model: string,
   response: HttpClientResponse.HttpClientResponse,
+  lost: Effect.Effect<number, StoreFailed>,
 ) =>
   response.json.pipe(
-    Effect.mapError(
-      (error) => new TryLater({ message: `${model}: ${error.message}` }),
-    ),
-    Effect.flatMap((body) =>
-      Schema.decodeUnknownEffect(Images)(body).pipe(
-        Effect.mapError(
-          () =>
-            new ModelFailed({
-              message: `${model} answered without an image.`,
-            }),
+    Effect.flatMap(Schema.decodeUnknownEffect(Images)),
+    Effect.catch((error) =>
+      Effect.flatMap(lost, (dollars) =>
+        Effect.fail(
+          new ModelFailed({
+            message: `${model} answered, but its answer couldn't be read (${error.message}). It may have cost up to $${dollars.toFixed(2)}, which is counted as spent, so keepsake didn't ask again.`,
+          }),
         ),
       ),
     ),
@@ -168,6 +170,10 @@ export class ImageModel extends Context.Service<
           wanted: ImageEdit,
         ) {
           const { versions } = wanted;
+          const lost = Effect.as(
+            spending.add(model, undefined, versions),
+            mostCostOf(model, versions) ?? 0,
+          );
           const answer = yield* client.execute(request(wanted)).pipe(
             Effect.mapError(
               (error) =>
@@ -181,7 +187,7 @@ export class ImageModel extends Context.Service<
                 ModelFailed | PhotoRefused | TryLater | StoreFailed
               > =>
                 response.status === okStatus
-                  ? readImages(model, response)
+                  ? readImages(model, response, lost)
                   : readProblem(model, response),
             ),
             Effect.tap((images) =>
