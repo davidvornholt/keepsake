@@ -237,10 +237,15 @@ test('gives back a wish that keepsake didn’t get with its put-in', async ({
   await expect(note).toHaveValue('Warmer light.');
   await expect(large(page).locator('[data-boxes]')).toHaveCount(0);
   isFailing = false;
+  const saved = page.waitForResponse(
+    (response) => portoMarks.test(response.url()) && response.ok(),
+  );
   await note.press('Enter');
   const said = large(page).getByText('To be put in: Warmer light.').first();
   await expect(said).toBeVisible();
   await expect(pressed(page, putIn)).toBeVisible();
+  // Only what keepsake got is there after a reload.
+  await saved;
   await page.reload();
   await expect(said).toBeVisible();
 });

@@ -3,8 +3,6 @@ import { makeControl } from './control.ts';
 import { makeMotion } from './motion.ts';
 import { restOf, type Setting } from './setting.ts';
 
-// What a finger does to a photo that is looked at.
-
 const realFrame = globalThis.requestAnimationFrame;
 
 // Frames never come, so the photo stays where a gesture leaves it.
