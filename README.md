@@ -58,7 +58,12 @@ It can take hours. When it stops, run it again and it goes on where it stopped. 
 `keepsake serve` serves the page on this machine, and only to it. To reach it from others, let a reverse proxy with TLS in a private network pass it on, and tell keepsake with `--address` where it is reached then; it has no login of its own. Run it as a service with a fixed `--port`, so it is always there.
 
 - `--photos <folder>` names a folder whose folders the page offers for new albums. It can be given several times.
-- `--agent <program>` is started when you hand something over, with the name of the shoot and the ids of the hand-overs it is for, unless an agent waits for that already with `keepsake marks <shoot> --wait`. The program starts your agent with both, so that it runs `keepsake marks <shoot> --hand-over <id>` for each id, and prints `{"link":"…"}` where you can read along. Until it has done that, the page starts it again with the same ids when you ask, so it should start nothing new for an id it started an agent for already. Without it, the page gives you a message to paste into your agent's chat.
+- `--agent <program>` names a program that the page runs to start your agent when you hand something over, or when you ask it to start one, unless an agent waits already with `keepsake marks <shoot> --wait`. It runs as `<program> <shoot> <id>…`: the name of the shoot, then the ids of one or more hand-overs. The program must:
+  - start one agent that runs `keepsake marks <shoot> --hand-over <id>`, with `--hand-over` once for each of those ids, and acts only on what that lists;
+  - once that agent runs, print `{"link":"…"}` on standard output with a non-empty address where you can read along, and exit with 0, all within two minutes;
+  - start nothing new for an id it started an agent for already, and print that agent's link instead. The page runs it again with the same ids, maybe together with new ones, whenever a run failed, took longer than two minutes, exited with an error, or printed no link, since keepsake can't tell whether an agent was started then.
+
+  Until the program printed a link for a hand-over, that hand-over counts as not started, and the page says so. Without `--agent`, the page gives you a message to paste into your agent's chat.
 
 `keepsake rate` and `keepsake bench` measure which vision model agrees best with your own taste: you rate some moments on the page, and each model is compared with your ratings.
 

@@ -81,20 +81,39 @@ describe('the agent', () => {
     expect(listed).toMatchObject({ handOvers: [given], agreedDollars: 0.75 });
   });
 
-  it('doesn’t have to say where to read along', async () => {
-    fakeTools.programs = { 'start-agent': () => 'on it' };
-    await serving(async (address) => {
-      await handOverChange(address);
-      return eventually(
-        () => Promise.resolve(runsOfAgent()),
-        (runs) => runs.length > 0,
-      );
-    });
-    expect(await shootJson('agent.json')).toMatchObject({
-      link: null,
-      failed: null,
-    });
-  });
+  it.each(['', 'on it', '{}', '{"link":""}'])(
+    'counts as started only once it says where to read along: %p',
+    async (said) => {
+      const link = 'https://example.com/threads/5';
+      let tries = 0;
+      fakeTools.programs = {
+        'start-agent': () => {
+          tries += 1;
+          return tries === 1 ? said : JSON.stringify({ link });
+        },
+      };
+      const [unsaid, afterwards] = await serving(async (address) => {
+        const first = await started(address);
+        const claim = await claimOf();
+        await statusOf(send('POST', agentPath(address)));
+        await eventually(
+          () => shootOf(address),
+          ({ agent }) => (agent.started?.link ?? null) !== null,
+        );
+        return [{ first, claim }, await claimOf()];
+      });
+      expect(unsaid.first?.link).toBeNull();
+      expect(unsaid.first?.failed).not.toBeNull();
+      expect(unsaid.claim).toMatchObject({ by: 'page', isAcknowledged: false });
+      expect(afterwards).toMatchObject({ by: 'page', isAcknowledged: true });
+      expect(await shootJson('agent.json')).toMatchObject({
+        link,
+        failed: null,
+      });
+      const [first, second] = runsOfAgent().map(({ args }) => args);
+      expect(second).toEqual(first);
+    },
+  );
 
   it('may not be there', async () => {
     fakeTools.programs = {
@@ -214,7 +233,9 @@ describe('the agent for a hand-over', () => {
   });
 
   it('is started for what the page took and never started one for', async () => {
-    fakeTools.programs = { 'start-agent': () => 'on it' };
+    fakeTools.programs = {
+      'start-agent': () => '{"link":"https://example.com/threads/6"}',
+    };
     // As a page that stopped after it took the hand-over.
     await whileServing(handOverChange);
     const [id = ''] = handOverIds();
