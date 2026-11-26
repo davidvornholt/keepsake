@@ -14,6 +14,9 @@ import {
  * once it is done, the same command starts them over once more.
  */
 const Command = Schema.Struct({
+  /** The models that edit and review, as what they make differs. */
+  imageModel: Schema.String,
+  reviewModel: Schema.String,
   again: Schema.Boolean,
   wish: Schema.NullOr(Schema.String),
   areas: Schema.Array(Box),

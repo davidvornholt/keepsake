@@ -3,6 +3,7 @@ import { during } from '../../shared/activity.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
+import { ReviewVision } from '../../shared/review-vision.ts';
 import {
   dollarsForOneEdit,
   Spending,
@@ -20,6 +21,7 @@ import {
   editPhoto,
   type ToEdit,
 } from './edit-photo.ts';
+import { ImageModel } from './image-model.ts';
 
 /** More photos than image requests at once, so reviews don't hold those up. */
 const concurrency = 5;
@@ -112,9 +114,18 @@ export const edit = Effect.fn('edit')(function* (
   const todo = yield* jobs(open, names);
   const { again, wish, areas } = options;
   const photos = todo.map(({ photo }) => photo.id);
+  const imageModel = (yield* ImageModel).model;
+  const reviewModel = (yield* ReviewVision).model;
   const anew =
     again || wish !== null
-      ? yield* anewFor(open, { again, wish, areas, photos })
+      ? yield* anewFor(open, {
+          imageModel,
+          reviewModel,
+          again,
+          wish,
+          areas,
+          photos,
+        })
       : null;
   const withinBudget = yield* makeBudget(options.budget);
   const outcomes = yield* inSteps('edit', todo, concurrency, (toEdit) =>
