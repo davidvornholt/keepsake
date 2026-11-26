@@ -333,6 +333,7 @@ export const Body = ({
         handleRef={stageRef}
         ink={ink}
         isDrawing={composing.canDraw}
+        isWriting={isComposing}
         look={lookOf(shown.version, shown.isWiping)}
         onClose={setIsClose}
         onOffset={following.onOffset}

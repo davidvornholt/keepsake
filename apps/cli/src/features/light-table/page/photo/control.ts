@@ -73,7 +73,7 @@ const dragging = (motion: Motion, setting: Setting, wanted: Wanted) => {
     if (from.s > restOf(setting).s * zoomedFrom) {
       return 'pan';
     }
-    if (!isTouch) {
+    if (!isTouch || setting.isWriting) {
       return 'nothing';
     }
     return across > Math.abs(down) || down < 0 ? 'swipe' : 'dismiss';

@@ -74,6 +74,7 @@ type Props = {
   readonly entry: Entry | null;
   readonly ink: Omit<Ink, 'draft'>;
   readonly isDrawing: boolean;
+  readonly isWriting: boolean;
   readonly wanted: Omit<Wanted, 'onDraft' | 'onWipe'>;
   readonly handleRef: RefObject<StageHandle | null>;
   /** Called when the photo comes close, and when it shows whole again. */
@@ -216,8 +217,18 @@ const useFollowing = (
   live: Live,
   props: Props,
 ) => {
-  const { photo, room, wide, look, from, entry, ink, isDrawing, handleRef } =
-    props;
+  const {
+    photo,
+    room,
+    wide,
+    look,
+    from,
+    entry,
+    ink,
+    isDrawing,
+    isWriting,
+    handleRef,
+  } = props;
   const shownRef = useRef<string | null>(null);
   // On its way back to the table nothing may call the photo back, such as
   // an answer of the server that arrives meanwhile.
@@ -251,8 +262,9 @@ const useFollowing = (
   useEffect(() => {
     live.ink = { ...ink, draft: live.ink.draft };
     live.setting.isDrawing = isDrawing;
+    live.setting.isWriting = isWriting;
     machine?.motion.request();
-  }, [machine, live, ink, isDrawing]);
+  }, [machine, live, ink, isDrawing, isWriting]);
 
   useImperativeHandle(handleRef, () => ({
     leave: (to, then) => {
@@ -310,6 +322,7 @@ export const Stage = (props: Props) => {
       look,
       full: 1,
       isDrawing: false,
+      isWriting: false,
       wipe: 0.5,
     },
     ink: { ...props.ink, draft: null },

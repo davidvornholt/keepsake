@@ -88,6 +88,7 @@ const Photos = ({ flow, view }: Parts) => {
           handleRef={view.stageRef}
           ink={view.ink}
           isDrawing={false}
+          isWriting={false}
           clip={null}
           key={`one:${shown.id}`}
           look="edit"
