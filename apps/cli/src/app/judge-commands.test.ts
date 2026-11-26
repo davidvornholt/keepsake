@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import {
+  failureOf,
   judge,
   runOk,
   scanLisbon,
@@ -8,7 +9,7 @@ import {
   shootFile,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeModels } from './fake-models.ts';
+import { fakeModels, verdictAnswer } from './fake-models.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -37,6 +38,29 @@ describe('the model that judged a shoot', () => {
     expect(judgedBy).toEqual({ model: judge, moments: 0 });
     await runOk('cull', 'lisbon', '--model', judge);
     expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(judge);
+  });
+
+  it('stays when another one couldn’t judge enough of the shoot', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    const limit = () =>
+      Response.json({ error: { message: 'limit' } }, { status: 400 });
+    fakeModels.answers.judgement = limit;
+    const failure = await failureOf('cull', 'lisbon', '--model', other);
+    expect(failure._tag).toBe('ModelFailed');
+    expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(judge);
+    let answered = 0;
+    fakeModels.answers.judgement = () => {
+      answered += 1;
+      return answered === 1 ? verdictAnswer : limit();
+    };
+    const { failed } = await runOk('cull', 'lisbon', '--model', other);
+    expect(failed).toHaveLength(2);
+    expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(judge);
+    expect(await runOk('pick', 'lisbon')).toMatchObject({ picked: 3 });
+    fakeModels.answers.judgement = verdictAnswer;
+    await runOk('cull', 'lisbon', '--model', other);
+    expect((await runOk('show', 'lisbon')).judgedBy.model).toBe(other);
   });
 
   it('is not changed by a benchmark', async () => {

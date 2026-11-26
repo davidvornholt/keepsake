@@ -8,7 +8,7 @@ import { Spending } from './spending.ts';
 export type Piece = string | Uint8Array;
 
 /** The shape of an answer: a struct without services. */
-type AnswerSchema = Schema.Codec<unknown, Record<string, unknown>>;
+export type AnswerSchema = Schema.Codec<unknown, Record<string, unknown>>;
 
 export type Question<S extends AnswerSchema> = {
   /** Who the model is and what it decides, the same for every question. */

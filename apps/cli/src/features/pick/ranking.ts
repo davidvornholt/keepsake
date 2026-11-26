@@ -1,9 +1,8 @@
 import { Effect, Schema } from 'effect';
 import type { Pick } from '../../shared/domain.ts';
-import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import type { OpenShoot } from '../../shared/store.ts';
-import { type Piece, Vision } from '../../shared/vision.ts';
+import { askOnce } from './asked.ts';
 import { variedBest } from './varied.ts';
 
 /** How many photos are compared with each other at once. */
@@ -61,20 +60,23 @@ export const pointsOf = (
 
 const compare = Effect.fn('compare')(function* (
   open: OpenShoot,
-  group: ReadonlyArray<Pick>,
+  {
+    round,
+    group,
+  }: { readonly round: number; readonly group: ReadonlyArray<Pick> },
 ) {
-  const vision = yield* Vision;
-  const pictures = yield* Effect.forEach(group, ({ photo }) =>
-    rendered(open.files.preview(photo), { longSide: pictureSide }),
-  );
-  const { bestFirst } = yield* vision.ask({
+  const { bestFirst } = yield* askOnce(open, {
     role,
     name: 'ranking',
     schema: Ranking,
+    // Rounds may ask about the same photos in the same order, and each
+    // answer counts on its own.
+    round,
     pieces: [
-      ...pictures.flatMap(
-        (picture, index): Array<Piece> => [`Photo ${index + 1}:`, picture],
-      ),
+      ...group.flatMap(({ photo }, index) => [
+        `Photo ${index + 1}:`,
+        { photo, longSide: pictureSide },
+      ]),
       question,
     ],
   });
@@ -95,10 +97,10 @@ export const bestOf = Effect.fn('bestOf')(function* (
     return picks;
   }
   const groups = Array.from({ length: rounds }, (_, round) =>
-    groupsIn(picks, round),
+    groupsIn(picks, round).map((group) => ({ round, group })),
   ).flat();
-  const compared = yield* inSteps('rank', groups, concurrency, (group) =>
-    compare(open, group),
+  const compared = yield* inSteps('rank', groups, concurrency, (asked) =>
+    compare(open, asked),
   );
   // The comparisons are worth one point of the score: they tell photos apart
   // that the score puts on the same or the next step.

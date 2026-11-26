@@ -3,6 +3,7 @@ import { developed } from '../../shared/develop.ts';
 import {
   type Box,
   type Further,
+  Judge,
   type Moment,
   Verdict,
 } from '../../shared/domain.ts';
@@ -10,7 +11,7 @@ import { ModelFailed } from '../../shared/errors/errors.ts';
 import { saveJudge } from '../../shared/judge.ts';
 import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
-import { type OpenShoot, writeJson } from '../../shared/store.ts';
+import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { verdictOn } from '../../shared/verdicts.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 import { chunks } from './chunks.ts';
@@ -212,21 +213,27 @@ const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
   };
 });
 
-/** Asks the model about the moments it hasn't judged yet. */
+/**
+ * Asks the model about the moments it hasn't judged yet. `fileOf` says where
+ * a moment's verdict is kept.
+ */
 export const judgeMoments = Effect.fn('judgeMoments')(function* (
   open: OpenShoot,
   moments: ReadonlyArray<Moment>,
   again: boolean,
+  fileOf = (model: string, moment: Moment) =>
+    open.files.verdict(model, moment.id),
 ) {
   const { model } = yield* Vision;
   const outcomes = yield* inSteps('cull', moments, concurrency, (moment) =>
     Effect.gen(function* () {
-      const before = yield* verdictOn(open, model, moment);
+      const file = fileOf(model, moment);
+      const before = yield* verdictOn(open, model, moment, file);
       if (Option.isSome(before) && !again) {
         return { verdict: before.value };
       }
       const verdict = yield* judge(open, moment);
-      yield* writeJson(Verdict, open.files.verdict(model, moment.id), verdict);
+      yield* writeJson(Verdict, file, verdict);
       return { verdict };
     }).pipe(
       // One moment a model can't answer for doesn't stop the others.
@@ -262,14 +269,29 @@ export const scoreCounts = (verdicts: ReadonlyArray<Verdict>) =>
     ]),
   );
 
+/** How many of the moments may be missing before the choice means nothing. */
+const mostMissing = 0.05;
+
+/** Whether a model judged so few moments, such as at its limit, that its choice means nothing. */
+export const judgedTooFew = (moments: number, failed: number) =>
+  failed > moments * mostMissing;
+
 /** Finds the best frames of every moment and scores them. */
 export const cull = Effect.fn('cull')(function* (
   open: OpenShoot,
   again: boolean,
 ) {
   const { model } = yield* Vision;
-  yield* saveJudge(open, model);
   const { verdicts, failed } = yield* judgeMoments(open, open.moments, again);
+  // Another model stays the judge until this one has judged enough, since
+  // the later steps would find too few verdicts otherwise.
+  const before = yield* readJson(Judge, open.files.judge);
+  if (
+    Option.isNone(before) ||
+    !judgedTooFew(open.moments.length, failed.length)
+  ) {
+    yield* saveJudge(open, model);
+  }
   return {
     shoot: open.shoot.name,
     model,
