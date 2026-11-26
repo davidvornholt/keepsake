@@ -1,6 +1,7 @@
 import { SquareSplitHorizontal } from 'lucide-react';
 import type { Edit } from '../../contract.ts';
 import { iconButton, tab } from '../ui/classes.ts';
+import { Key } from '../ui/controls.tsx';
 
 // Which picture of a photo is shown: the camera's, an earlier edit, or the
 // one of now, and whether two of them are shown side by side.
@@ -18,18 +19,25 @@ type Props = {
 
 const iconSize = 18;
 
-const namesOf = (
-  edit: Edit,
-): ReadonlyArray<{ readonly version: Version; readonly name: string }> => {
+type Choice = {
+  readonly version: Version;
+  readonly name: string;
+  /** The key that leads to it from the one of now, shown where there is a keyboard. */
+  readonly key?: string;
+};
+
+const choicesOf = (edit: Edit): ReadonlyArray<Choice> => {
   const earlier = edit.earlier.map((_, at) => ({
     version: at + 1,
     name:
       edit.earlier.length === 1
         ? 'Earlier'
         : `Earlier ${edit.earlier.length - at}`,
+    // V steps back through them from the one of now, so it names the latest.
+    ...(at === 0 ? { key: 'V' } : {}),
   }));
   return [
-    { version: 'camera', name: 'Camera' },
+    { version: 'camera', name: 'Camera', key: 'B' },
     ...earlier.toReversed(),
     { version: 0, name: 'Now' },
   ];
@@ -57,10 +65,10 @@ export const Compare = ({
       aria-label="Which picture"
       className="flex min-w-0 items-center overflow-x-auto"
     >
-      {namesOf(edit).map((choice) => (
+      {choicesOf(edit).map((choice) => (
         <li key={choice.version}>
           <button
-            aria-keyshortcuts={choice.version === 'camera' ? 'B' : undefined}
+            aria-keyshortcuts={choice.key}
             aria-pressed={!isWiping && version === choice.version}
             className={tab}
             ref={version === choice.version ? intoSight : undefined}
@@ -71,6 +79,12 @@ export const Compare = ({
             type="button"
           >
             {choice.name}
+            {choice.key === undefined ? null : (
+              <>
+                {' '}
+                <Key>{choice.key}</Key>
+              </>
+            )}
           </button>
         </li>
       ))}
@@ -79,12 +93,14 @@ export const Compare = ({
       aria-keyshortcuts="W"
       aria-label="Camera and edit side by side"
       aria-pressed={isWiping}
-      className={`${iconButton} aria-pressed:text-lamp`}
+      // Where there is a keyboard, the button is wide enough for its key.
+      className={`${iconButton} pointer-fine:w-auto pointer-fine:grid-flow-col pointer-fine:gap-1.5 pointer-fine:px-2.5 aria-pressed:text-lamp`}
       onClick={() => onWipe(!isWiping)}
       title="Camera and edit side by side (W)"
       type="button"
     >
       <SquareSplitHorizontal aria-hidden="true" size={iconSize} />
+      <Key>W</Key>
     </button>
   </div>
 );
