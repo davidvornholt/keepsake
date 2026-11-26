@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import {
+  asked,
   failureOf,
   judge,
   runOk,
@@ -55,6 +56,27 @@ describe('keepsake bench', () => {
     });
     expect(dollarsSpent).toBeCloseTo(0.3);
     expect(models['azure/gpt-6-astra'].calls).toBe(2);
+  });
+
+  it('keeps apart what it asks about moments that a later scan changed', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    // Rated when the burst was its first frame alone.
+    await writeFile(
+      shootFile('ratings.json'),
+      JSON.stringify([
+        { moment: 'A1', photos: ['A1'], best: 'A1', stars: 4, further: [] },
+      ]),
+    );
+    const judged = asked('judgement').length;
+    await runOk('bench', 'lisbon');
+    expect(asked('judgement')).toHaveLength(judged + 1);
+    await runOk('bench', 'lisbon');
+    expect(asked('judgement')).toHaveLength(judged + 1);
+    expect(
+      await shootJson('verdicts', 'azure--gpt-6-astra', 'A1.json'),
+    ).toMatchObject({ photos: ['A1', 'A2'] });
+    expect(await runOk('pick', 'lisbon')).toMatchObject({ notJudged: 0 });
   });
 
   it('needs ratings first', async () => {

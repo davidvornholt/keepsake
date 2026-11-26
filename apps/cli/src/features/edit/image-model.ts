@@ -98,6 +98,23 @@ const readAnswer = (
       : new ModelFailed({ message });
   });
 
+/**
+ * The provider and key an image model is reached with, so a command can stop
+ * before what costs money when it couldn't edit afterwards.
+ */
+export const imageModelAccess = Effect.fn('imageModelAccess')(function* (
+  model: string,
+) {
+  const name = yield* modelName(model);
+  if (name.provider !== 'azure' && name.provider !== 'openai') {
+    return yield* new InvalidInput({
+      message: `keepsake can't edit photos with ${model}. Use an image model of azure or openai.`,
+    });
+  }
+  const { provider } = name;
+  return { provider, model: name.model, access: yield* accessTo(provider) };
+});
+
 /** The model that edits photos in this command. */
 export class ImageModel extends Context.Service<
   ImageModel,
@@ -114,13 +131,8 @@ export class ImageModel extends Context.Service<
     Layer.effect(
       ImageModel,
       Effect.gen(function* () {
-        const name = yield* modelName(model);
-        if (name.provider !== 'azure' && name.provider !== 'openai') {
-          return yield* new InvalidInput({
-            message: `keepsake can't edit photos with ${model}. Use an image model of azure or openai.`,
-          });
-        }
-        const access = yield* accessTo(name.provider);
+        const name = yield* imageModelAccess(model);
+        const { access } = name;
         const client = yield* HttpClient.HttpClient;
         const spending = yield* Spending;
         const turns = yield* Semaphore.make(concurrency);
