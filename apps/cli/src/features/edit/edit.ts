@@ -97,16 +97,18 @@ const makeBudget = Effect.fn('makeBudget')(function* () {
 });
 
 /** Stops before anything is sent to a model whose cost a budget can't know. */
-export const checkPrices = Effect.gen(function* () {
+export const checkPrices = Effect.fn('checkPrices')(function* (
+  imageModel: string,
+) {
   const models = [
-    (yield* ImageModel).model,
+    imageModel,
     (yield* Vision).model,
     (yield* ReviewVision).model,
   ];
   const unknown = models.find((model) => !isPriced(model));
   if (unknown !== undefined) {
     return yield* new InvalidInput({
-      message: `keepsake doesn't know what ${unknown} costs, so it can't keep to the budget with it. Use a subscription's model or one whose price is in shared/spending.ts.`,
+      message: `keepsake doesn't know what ${unknown} costs, so it can't keep to the budget with it. Use a subscription's model or one whose price is in shared/prices.ts.`,
     });
   }
 });
@@ -117,7 +119,7 @@ export const edit = Effect.fn('edit')(function* (
   names: ReadonlyArray<string>,
   options: EditOptions & { readonly budget: number },
 ) {
-  yield* checkPrices;
+  yield* checkPrices((yield* ImageModel).model);
   const todo = yield* jobs(open, names);
   const isAnew = options.again || options.wish !== null;
   const spending = yield* Spending;
