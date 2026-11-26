@@ -133,8 +133,18 @@ describe('forgetting a shoot', () => {
   });
 
   it('forgets one that only a subscription culled', async () => {
-    fakeTools.isSubscribed = true;
     await scanLisbon();
+    const model = 'claude/claude-opus-5-5';
+    await Bun.write(
+      shootFile('verdicts', 'claude--claude-opus-5-5', 'A1.json'),
+      '{}',
+    );
+    await Bun.write(
+      shootFile('spending.json'),
+      JSON.stringify({
+        [model]: { calls: 3, inputTokens: 9, outputTokens: 3, dollars: 0 },
+      }),
+    );
     expect(await forget()).toBe(204);
     expect(existsSync(shootFile())).toBe(false);
   });
