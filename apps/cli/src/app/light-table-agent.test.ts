@@ -61,7 +61,12 @@ describe('the agent', () => {
     const link = 'https://example.com/threads/1';
     fakeTools.programs = { 'start-agent': () => JSON.stringify({ link }) };
     expect(await serving(started)).toMatchObject({ link, failed: null });
-    expect(runsOfAgent().map(({ args }) => args)).toEqual([['lisbon']]);
+    const args = runsOfAgent()[0]?.args ?? [];
+    const [shoot, given = ''] = args;
+    expect(args).toHaveLength(2);
+    expect(shoot).toBe('lisbon');
+    const listed = await runOk('marks', 'lisbon', '--hand-over', given);
+    expect(listed).toMatchObject({ handOvers: [given], agreedDollars: 0.75 });
   });
 
   it('doesn’t have to say where to read along', async () => {

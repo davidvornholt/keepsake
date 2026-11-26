@@ -4,7 +4,9 @@ import { Argument, Command, Flag } from 'effect/cli';
 import {
   agreedDollars,
   claimUnsettled,
-  orderOf,
+  type Only,
+  orderAmong,
+  unsettledOf,
 } from '../features/light-table/hand-over.ts';
 import {
   answerMark,
@@ -65,8 +67,9 @@ const shown = Effect.fn('shown')(function* (
 const ordered = Effect.fn('ordered')(function* (
   open: OpenShoot,
   known: Standings,
+  only: Only,
 ) {
-  const order = yield* orderOf(open.files, known);
+  const order = yield* orderAmong(open.files, known, only);
   if (order === null) {
     return null;
   }
@@ -83,6 +86,28 @@ const ordered = Effect.fn('ordered')(function* (
   };
 });
 
+/** What there is for an agent: of the hand-overs named, or of all. */
+const listed = Effect.fn('listed')(function* (
+  open: OpenShoot,
+  model: string,
+  { all, only }: { readonly all: boolean; readonly only: Only },
+) {
+  const known = yield* standings(yield* openShoot(open.shoot.name), model);
+  const unsettled = yield* unsettledOf(open.files, known, only);
+  const named = new Set(unsettled.flatMap(({ marks: ids }) => ids));
+  const every = yield* readMarks(open.files);
+  return {
+    known,
+    handOvers: unsettled.map(({ id }) => id),
+    found: every.filter(
+      (mark) =>
+        (all || isWaiting(mark)) && (only === null || named.has(mark.id)),
+    ),
+    album: yield* ordered(open, known, only),
+    agreedDollars: yield* agreedDollars(open.files, known, only),
+  };
+});
+
 export const marks = Command.make(
   'marks',
   {
@@ -95,39 +120,41 @@ export const marks = Command.make(
       'all',
       'Also list marks that aren’t handed over yet or are answered already',
     ),
+    handOvers: Flag.String('hand-over').pipe(
+      Flag.withDescription(
+        'Only what was handed over with this id, as the agent was given it; can be given several times',
+      ),
+      Flag.atLeast(0),
+    ),
   },
-  ({ shoot, wait, all }) =>
+  ({ shoot, wait, all, handOvers }) =>
     Effect.gen(function* () {
-      if (wait && all) {
-        return yield* fail('Give either --wait or --all.');
+      if (wait && (all || handOvers.length > 0)) {
+        return yield* fail('Give --wait alone, or --all and --hand-over.');
       }
       const open = yield* openShoot(shoot);
       const model = yield* judgeOf(open, Option.none());
-      const current = Effect.gen(function* () {
-        const known = yield* standings(yield* openShoot(shoot), model);
-        const every = yield* readMarks(open.files);
-        return {
-          known,
-          found: every.filter((mark) => all || isWaiting(mark)),
-          album: yield* ordered(open, known),
-        };
-      });
+      let only: Only = handOvers.length > 0 ? new Set(handOvers) : null;
       if (wait) {
         const take = Effect.gen(function* () {
           const known = yield* standings(yield* openShoot(shoot), model);
           const by = `marks --wait ${process.pid}`;
           return yield* claimUnsettled(open.files, known, by);
         });
-        yield* waitForHandOver(open.files, take, (taken) => taken.length > 0);
+        only = new Set(
+          yield* waitForHandOver(open.files, take, (taken) => taken.length > 0),
+        );
       }
-      const { known, found, album } = yield* current;
+      const found = yield* listed(open, model, { all, only });
       yield* emit({
         shoot,
         link: yield* shootLink(shoot),
-        /** What the owner agreed to pay for all of it. */
-        agreedDollars: yield* agreedDollars(open.files, known),
-        album,
-        marks: yield* shown(open, known, found),
+        /** The hand-overs it is about, to name with --hand-over again. */
+        handOvers: found.handOvers,
+        /** What is left of what the owner agreed to pay for all of it. */
+        agreedDollars: found.agreedDollars,
+        album: found.album,
+        marks: yield* shown(open, found.known, found.found),
       });
     }),
 ).pipe(

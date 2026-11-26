@@ -57,17 +57,35 @@ export const orderOf = Effect.fn('orderOf')(function* (
     : { at: order.at, dollars: order.dollars, photos: order.album ?? [] };
 });
 
+/** Which hand-overs an agent is about: those it was given, or all. */
+export type Only = ReadonlySet<string> | null;
+
 /** The hand-overs an agent still has to act on. */
 export const unsettledOf = Effect.fn('unsettledOf')(function* (
   files: ShootFiles,
   known: Standings,
+  only: Only = null,
 ) {
   const waiting = new Set(
     (yield* readMarks(files)).filter(isWaiting).map(({ id }) => id),
   );
   return (yield* handOversOf(files, known)).filter(
-    (record) => isOrder(record) || record.marks.some((id) => waiting.has(id)),
+    (record) =>
+      (only === null || only.has(record.id)) &&
+      (isOrder(record) || record.marks.some((id) => waiting.has(id))),
   );
+});
+
+/** The order among those hand-overs, if one of them is one. */
+export const orderAmong = Effect.fn('orderAmong')(function* (
+  files: ShootFiles,
+  known: Standings,
+  only: Only,
+) {
+  const order = (yield* unsettledOf(files, known, only)).findLast(isOrder);
+  return order === undefined
+    ? null
+    : { at: order.at, photos: order.album ?? [] };
 });
 
 /**
@@ -98,8 +116,9 @@ const spentOn = (files: ShootFiles) =>
 export const agreedDollars = Effect.fn('agreedDollars')(function* (
   files: ShootFiles,
   known: Standings,
+  only: Only = null,
 ) {
-  const unsettled = yield* unsettledOf(files, known);
+  const unsettled = yield* unsettledOf(files, known, only);
   if (unsettled.length === 0) {
     return 0;
   }

@@ -165,7 +165,9 @@ describe('keepsake marks', () => {
   it('waits only for new ones', async () => {
     await pickLisbon();
     const failure = await failureOf('marks', 'lisbon', '--wait', '--all');
-    expect(failure.message).toBe('Give either --wait or --all.');
+    expect(failure.message).toBe(
+      'Give --wait alone, or --all and --hand-over.',
+    );
   });
 });
 
@@ -190,6 +192,23 @@ describe('a hand-over', () => {
     const listed = await waiting;
     expect(new Set(idsOf(listed))).toEqual(new Set(['one', 'two']));
     expect(listed.agreedDollars).toBe(1.5);
+  });
+
+  it('gives an agent that waits only what it took', async () => {
+    await pickLisbon();
+    await mark('one', notHandedOver);
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    await handedOver('first', { dollars: 0.75, marks: ['one'] });
+    const busy = await runOk('marks', 'lisbon', '--wait');
+    await handedOver('second', { dollars: 0.5, marks: ['two'] });
+    const other = await runOk('marks', 'lisbon', '--wait');
+    expect(busy).toMatchObject({ handOvers: ['first'], agreedDollars: 0.75 });
+    expect(idsOf(busy)).toEqual(['one']);
+    expect(other).toMatchObject({ handOvers: ['second'], agreedDollars: 0.5 });
+    expect(idsOf(other)).toEqual(['two']);
+    const named = await runOk('marks', 'lisbon', '--hand-over', 'second');
+    expect(idsOf(named)).toEqual(['two']);
+    expect(idsOf(await runOk('marks', 'lisbon'))).toEqual(['one', 'two']);
   });
 
   it('counts what was spent since against what was agreed', async () => {

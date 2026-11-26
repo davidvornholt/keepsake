@@ -30,21 +30,29 @@ export const agentOf = Effect.fn('agentOf')(function* (
 const patience = '2 minutes';
 
 /**
- * Has a program start an agent that acts on what was handed over. Goes on
+ * Has a program start an agent that acts on what was handed over, with the
+ * shoot's name and the ids of the hand-overs it is for. Goes on
  * as soon as the program runs; what comes of it is written down. When it
  * can't be started, `giveBack` runs first, so that another may take it.
  */
 export const startAgent = Effect.fn('startAgent')(function* <R>(
   files: ShootFiles,
-  name: string,
-  program: string,
+  {
+    name,
+    handOvers,
+    program,
+  }: {
+    readonly name: string;
+    readonly handOvers: ReadonlyArray<string>;
+    readonly program: string;
+  },
   giveBack: Effect.Effect<void, unknown, R>,
 ) {
   const at = DateTime.formatIso(yield* DateTime.now);
   const note = (link: string | null, failed: string | null) =>
     writeJson(Started, files.agent, { at, link, failed });
   yield* note(null, null);
-  yield* toolText(program, [name]).pipe(
+  yield* toolText(program, [name, ...handOvers]).pipe(
     Effect.timeout(patience),
     Effect.matchEffect({
       onFailure: ({ message }) =>

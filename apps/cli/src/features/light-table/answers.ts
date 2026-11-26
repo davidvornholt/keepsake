@@ -128,7 +128,11 @@ const callAgent = Effect.fn('callAgent')(function* (
     const giveBack = Effect.forEach(taken, (id) => release(files, id), {
       discard: true,
     });
-    yield* startAgent(files, shoot.name, program, giveBack);
+    yield* startAgent(
+      files,
+      { name: shoot.name, handOvers: taken, program },
+      giveBack,
+    );
   }
 });
 
