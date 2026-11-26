@@ -43,15 +43,22 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
       ids.map((id) => [id, at] as const),
     ),
   );
-  return marks
-    .flatMap(Option.toArray)
-    .map(
-      (mark): Mark => ({
-        ...mark,
-        handedOverAt: handedAt.get(mark.id) ?? null,
-      }),
-    )
-    .toSorted((left, right) => left.madeAt.localeCompare(right.madeAt));
+  return (
+    marks
+      .flatMap(Option.toArray)
+      .map(
+        (mark): Mark => ({
+          ...mark,
+          handedOverAt: handedAt.get(mark.id) ?? null,
+        }),
+      )
+      // By id where two were made at once, so the order is the same everywhere.
+      .toSorted(
+        (left, right) =>
+          left.madeAt.localeCompare(right.madeAt) ||
+          left.id.localeCompare(right.id),
+      )
+  );
 });
 
 export const saveMark = (files: ShootFiles, mark: SavedMark) =>
