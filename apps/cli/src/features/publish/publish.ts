@@ -148,6 +148,28 @@ const send = Effect.fn('send')(function* (
   } satisfies Published;
 });
 
+/** The publication with a photo's upload in it, and the one it replaced. */
+const withSent = (
+  publication: Publication,
+  done: Published,
+  before: Published | undefined,
+): Publication => {
+  const outdated = (publication.outdated ?? []).filter(
+    (asset) => asset !== done.asset,
+  );
+  return {
+    ...publication,
+    photos: [
+      ...publication.photos.filter(({ photo }) => photo !== done.photo),
+      done,
+    ],
+    outdated:
+      before === undefined || before.asset === done.asset
+        ? outdated
+        : [...outdated, before.asset],
+  };
+};
+
 /** Uploads the picked photos, or those named, to an album in Immich. */
 export const publish = Effect.fn('publish')(function* (
   open: OpenShoot,
@@ -162,8 +184,8 @@ export const publish = Effect.fn('publish')(function* (
   const isSame = isAbout(before, target);
   const there = isSame ? yield* readAlbum(open) : null;
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
-  let published = isSame && before !== null ? before.photos : [];
-  const ready = yield* jobs(open, names, target, published);
+  const previous = isSame && before !== null ? before.photos : [];
+  const ready = yield* jobs(open, names, target, previous);
   if (ready.length === 0) {
     return yield* new StepMissing({
       message: `${names.length === 0 ? `No photo of ${name} is` : 'None of these photos is'} finished yet. Run \`keepsake edit ${[name, ...names].join(' ')}\` first.`,
@@ -179,34 +201,36 @@ export const publish = Effect.fn('publish')(function* (
       : { id: target.id, name: target.name };
   const albumId = album.id;
   yield* ensureTag(tag);
+  // Replaced uploads stay noted until a publish has named them, also one that
+  // fails half-way, so none is left in the album untold.
+  let publication: Publication = {
+    album: album.name,
+    albumId,
+    photos: previous,
+    outdated: before?.outdated ?? [],
+  };
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
       const done = yield* send(open, job, albumId);
-      published = [
-        ...published.filter(({ photo }) => photo !== done.photo),
-        done,
-      ];
-      yield* writeJson(Publication, open.files.publication, {
-        album: album.name,
-        albumId,
-        photos: published,
-      });
+      publication = withSent(publication, done, job.before);
+      yield* writeJson(Publication, open.files.publication, publication);
       return done;
     }),
   );
   yield* readAlbum(open);
+  const outdated = publication.outdated ?? [];
+  // Named now, so the next publish doesn't name them again.
+  yield* writeJson(Publication, open.files.publication, {
+    ...publication,
+    outdated: [],
+  });
   return {
     shoot: name,
     album: { id: albumId, name: album.name },
     published: sent.length,
     alreadyThere: ready.length - todo.length,
     /** Earlier versions, which keepsake leaves in the library. */
-    outdated: todo.flatMap(({ before: earlier, photo }) =>
-      earlier === undefined ||
-      sent.some((one) => one.photo === photo && one.asset === earlier.asset)
-        ? []
-        : [earlier.asset],
-    ),
+    outdated,
   };
 });

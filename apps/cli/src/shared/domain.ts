@@ -260,6 +260,8 @@ export const Publication = Schema.Struct({
       replaced: Schema.optionalKey(Schema.Array(Schema.String)),
     }),
   ),
+  /** Replaced uploads that no `publish` has named under `outdated` yet. */
+  outdated: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type Publication = typeof Publication.Type;
 

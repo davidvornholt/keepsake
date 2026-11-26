@@ -63,7 +63,7 @@ Do the same when they tell you in the chat instead: `take-out` with their reason
 - Another frame, such as more room around the subject: `edit <shoot> <photo> --again --wish "<what the user wants>"`, then `publish`. It starts over, so the wish should say everything the user wants of the photo. `--again` without `--wish` keeps the earlier wishes.
 - Another attempt at a photo: `edit <shoot> <photo> --again`, then `publish`.
 
-After each of these, and after a mark, the earlier upload stays in Immich and its id is listed under `outdated`. The user asked for the better one, not for two, so move the earlier one to the trash with the photos command right away, without asking first; the trash keeps it for a month.
+After each of these, and after a mark, the earlier upload stays in Immich and its id is listed under `outdated`, or under that of the next `publish` when this one failed. The user asked for the better one, not for two, so move the earlier one to the trash with the photos command right away, without asking first; the trash keeps it for a month.
 
 ## Comparing vision models
 

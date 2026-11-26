@@ -115,4 +115,19 @@ describe('keepsake publish, to the album it published to', () => {
       photos.map(({ photo }: { readonly photo: string }) => photo),
     ).toEqual(['A1', 'B', 'C']);
   });
+  it('names a replaced upload after a publish that failed half-way', async () => {
+    await publishLisbon();
+    await editAgain('A1');
+    await editAgain('B');
+    fakeTools.broken.add('B-keepsake.jpg');
+    await failureOf('publish', 'lisbon');
+    fakeTools.broken.clear();
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({
+      published: 1,
+      outdated: ['asset-1', 'asset-3'],
+    });
+    const again = await runOk('publish', 'lisbon');
+    expect(again).toMatchObject({ published: 0, outdated: [] });
+  });
 });
