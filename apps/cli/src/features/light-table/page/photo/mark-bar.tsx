@@ -1,8 +1,8 @@
 import { Heart, Undo2 } from 'lucide-react';
 import type { MarkKind, PhotoView } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
-import { isFavorite, markedIn } from '../data/derive.ts';
-import { effectFor, kindsFor, nameFor } from '../marks/act.ts';
+import { isFavorite } from '../data/derive.ts';
+import { effectFor, isMadeOn, kindsFor, nameFor } from '../marks/act.ts';
 import { lookOf, seedTextOf } from '../marks/kinds.ts';
 import { WaxMark } from '../marks/wax-mark.tsx';
 import { Key } from '../ui/controls.tsx';
@@ -91,7 +91,6 @@ export const MarkBar = ({
   readonly onKind: (kind: MarkKind) => void;
 }) => {
   const { index, state, store } = useShootContext();
-  const { open } = markedIn(index, photo.id);
   const { undoable } = state;
   const kinds = kindsFor(index, photo);
   return (
@@ -110,7 +109,7 @@ export const MarkBar = ({
             {kinds.map((kind) => (
               <li key={kind}>
                 <MarkButton
-                  isMade={open?.kind === kind}
+                  isMade={isMadeOn(index, photo, kind)}
                   kind={kind}
                   onKind={onKind}
                   photo={photo}

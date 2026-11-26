@@ -20,6 +20,8 @@ import {
 const boxName = /^Box 1 of 1$/u;
 const anyBox = /^Box \d+ of \d+$/u;
 const portoMarks = /\/api\/shoots\/porto\/marks$/u;
+const putIn = /^Put in/u;
+const wishFor = /^Wish for the edit/u;
 
 test('shows a finished photo whole and from close', async ({ page }) => {
   await open(page, '/lisbon/photos/D121');
@@ -134,6 +136,31 @@ test('asks for a change in words', async ({ page }) => {
   await scan(page);
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(said).toBeHidden();
+});
+
+test('takes a wish with a photo that is put in', async ({ page }) => {
+  await open(page, '/porto/photos/D70');
+  await expect(marks(page)).toHaveText([putIn]);
+  await page.keyboard.press('p');
+  await expect(pressed(page, putIn)).toBeVisible();
+  await page.keyboard.press('c');
+  const note = page.getByRole('textbox', {
+    name: 'What do you want of the edit?',
+  });
+  await expect(note).toBeFocused();
+  // Boxes show places of an edit, and the photo may have none yet.
+  await expect(large(page).locator('[data-boxes]')).toHaveCount(0);
+  await scan(page);
+  await note.fill('Warmer light.');
+  await page.keyboard.press('Enter');
+  const said = large(page).getByText('To be put in: Warmer light.').first();
+  await expect(said).toBeVisible();
+  await expect(pressed(page, putIn)).toBeVisible();
+  await expect(pressed(page, wishFor)).toBeVisible();
+  await page.keyboard.press('c');
+  await page.getByRole('button', { name: 'Take back the wish' }).click();
+  await expect(said).toBeHidden();
+  await expect(pressed(page, putIn)).toBeVisible();
 });
 
 test('gives back a change that keepsake didn’t get', async ({ page }) => {

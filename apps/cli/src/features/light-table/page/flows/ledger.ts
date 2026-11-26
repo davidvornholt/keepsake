@@ -55,8 +55,10 @@ const costsOf = ({ mark, photo }: Omit<Line, 'costs'>): boolean => {
     // A wish for a photo that isn't edited yet is part of its first edit.
     return !awaitsEdit(photo);
   }
+  // A wish for a photo that has an edit already has it edited again.
   return (
-    (mark.kind === 'put-in' || mark.kind === 'swap') && photo.edit === null
+    (mark.kind === 'put-in' || mark.kind === 'swap') &&
+    (photo.edit === null || mark.note !== '')
   );
 };
 
@@ -127,8 +129,9 @@ export const ledgerOf = (
   const firstEdits = shoot.photos.filter(
     (photo) => awaitsEdit(photo) && toEdit.has(photo.id),
   ).length;
+  // The marks that have a photo edited again, beside the first edits.
   const changes = open.filter(
-    ({ mark, costs }) => mark.kind === 'change' && costs,
+    ({ photo, costs }) => costs && !toEdit.has(photo.id),
   ).length;
   const edits = toEdit.size + changes;
   return {

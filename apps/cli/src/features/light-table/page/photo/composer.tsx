@@ -6,7 +6,8 @@ import { mainButton, quietButton } from '../ui/classes.ts';
 import { Key } from '../ui/controls.tsx';
 
 // Where the owner writes what should change, and sees the boxes they drew
-// on the photo to show where.
+// on the photo to show where; or, for a photo that is to come in, what they
+// want of its edit.
 
 export type Draft = {
   readonly note: string;
@@ -27,6 +28,8 @@ type Props = {
   readonly draft: Draft;
   /** Whether a change was written down before, which can be taken back. */
   readonly isSaved: boolean;
+  /** Whether it is a wish for a photo that comes in, which has no boxes. */
+  readonly isWish: boolean;
   /** Whether something was done to the boxes that can be undone. */
   readonly canUndo: boolean;
   readonly onUndo: () => void;
@@ -39,6 +42,7 @@ type Props = {
 export const Composer = ({
   draft,
   isSaved,
+  isWish,
   canUndo,
   onUndo,
   onDraft,
@@ -49,6 +53,9 @@ export const Composer = ({
   const noteRef = useRef<HTMLTextAreaElement>(null);
   // Boxes show only where; an agent needs the words to know what.
   const hasNoNote = draft.note.trim() === '';
+  const words = isWish
+    ? { asked: 'What do you want of the edit?', saves: 'Mark the wish' }
+    : { asked: 'What should change?', saves: 'Mark the change' };
 
   const save = useEffectEvent(() => {
     if (!hasNoNote) {
@@ -96,7 +103,7 @@ export const Composer = ({
 
   return (
     <form
-      aria-label="What should change"
+      aria-label={words.asked.slice(0, -1)}
       className="mx-auto flex w-full max-w-[44rem] flex-col gap-1 px-3"
       onSubmit={(event) => {
         event.preventDefault();
@@ -105,29 +112,29 @@ export const Composer = ({
     >
       <div className="flex items-end gap-2">
         <textarea
-          aria-label="What should change?"
+          aria-label={words.asked}
           className="field-sizing-content max-h-32 min-h-11 min-w-0 flex-1 resize-none border border-wax-yellow bg-sheet px-3 py-2.5 text-[0.9375rem] text-lamp leading-snug outline-none placeholder:text-quiet"
           enterKeyHint="done"
           onChange={(event) => onDraft({ ...draft, note: event.target.value })}
           onKeyDown={onKeyDown}
-          placeholder="What should change?"
+          placeholder={words.asked}
           ref={noteRef}
           rows={1}
           value={draft.note}
         />
         <button
-          aria-label="Mark the change"
+          aria-label={words.saves}
           className={`${mainButton} h-11 shrink-0 max-sm:w-11 max-sm:justify-center max-sm:px-0`}
           disabled={hasNoNote}
           type="submit"
         >
           <Check aria-hidden="true" className="sm:hidden" size={iconSize} />
-          <span className="max-sm:hidden">Mark the change</span>
+          <span className="max-sm:hidden">{words.saves}</span>
         </button>
       </div>
       <div className="flex flex-wrap items-center gap-x-4">
         <p className="mr-auto flex min-h-9 flex-wrap items-center gap-x-3 text-quiet text-sm">
-          {boxesSay(draft)}
+          {isWish ? 'It goes with the photo into the album.' : boxesSay(draft)}
         </p>
         {canUndo ? (
           <button
@@ -146,7 +153,7 @@ export const Composer = ({
             onClick={onRemove}
             type="button"
           >
-            Take back
+            {isWish ? 'Take back the wish' : 'Take back'}
           </button>
         ) : null}
         <button

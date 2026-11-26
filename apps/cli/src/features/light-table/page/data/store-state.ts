@@ -24,7 +24,7 @@ export type ShootState = {
   readonly hint: string | null;
   /** What Undo takes back or brings back, if anything. */
   readonly undoable: Undo | null;
-  /** The changes keepsake didn't get, by photo, until they are written again. */
+  /** The changes and wishes keepsake didn't get, by photo, until they are written again. */
   readonly unsaved: Readonly<Record<string, Unsaved>>;
 };
 

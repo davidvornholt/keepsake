@@ -80,6 +80,7 @@ export const Below = ({
           canUndo={composing.canUndo}
           draft={composing.draft}
           isSaved={composing.isSaved}
+          isWish={composing.isWish}
           onCancel={composing.cancel}
           onDraft={composing.setDraft}
           onRemove={composing.remove}

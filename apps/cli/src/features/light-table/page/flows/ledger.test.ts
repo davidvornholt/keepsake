@@ -64,6 +64,26 @@ describe('ledgerOf', () => {
     expect(ledger.limit).toBe(170);
   });
 
+  it('costs an edit for a wish that comes in with a photo edited before', () => {
+    const wished = marks.map((mark) =>
+      mark.id === '1' ? { ...mark, note: 'Warmer' } : mark,
+    );
+    const wishedFor = ledgerOf(indexOf(sampleShoot(photos, wished)));
+    expect(wishedFor.open.map(({ costs }) => costs)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(wishedFor.edits).toBe(3);
+  });
+
+  it('counts a wish for a photo without an edit as part of its first edit', () => {
+    const wished = marks.map((mark) =>
+      mark.id === '2' ? { ...mark, note: 'Warmer' } : mark,
+    );
+    expect(ledgerOf(indexOf(sampleShoot(photos, wished))).edits).toBe(2);
+  });
+
   it('keeps marks with the open ones while they are shown going', () => {
     const held = ledgerOf(indexOf(sampleShoot(photos, marks)), new Set(['5']));
     expect(held.open.map(({ mark }) => mark.id)).toEqual(['3', '5', '2', '1']);

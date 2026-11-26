@@ -270,13 +270,19 @@ export const attentionOf = (marks: ReadonlyArray<Mark>): Attention => ({
 });
 
 /** Whether acting on a mark means editing a photo, which costs money. */
-export const needsEdit = (index: Index, { kind, photo }: Mark): boolean => {
+export const needsEdit = (
+  index: Index,
+  { kind, photo, note }: Mark,
+): boolean => {
   const about = index.byId.get(photo);
   if (kind === 'change') {
     // A wish for a photo that isn't edited yet is part of its first edit.
     return about?.standing.kind !== 'picked';
   }
-  return (kind === 'put-in' || kind === 'swap') && about?.edit === null;
+  return (
+    (kind === 'put-in' || kind === 'swap') &&
+    (about?.edit === null || note !== '')
+  );
 };
 
 /** How many photos are chosen once these marks are acted on. */

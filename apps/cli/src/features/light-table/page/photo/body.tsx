@@ -212,7 +212,7 @@ const Drawn = ({
   readonly composing: Composing;
   readonly following: ReturnType<typeof useFollowing>;
 }) =>
-  composing.draft === null ? null : (
+  composing.draft === null || !composing.canDraw ? null : (
     <Boxes
       boxes={composing.draft.boxes}
       handleRef={following.boxesRef}
@@ -332,7 +332,7 @@ export const Body = ({
         from={around.from}
         handleRef={stageRef}
         ink={ink}
-        isDrawing={isComposing}
+        isDrawing={composing.canDraw}
         look={lookOf(shown.version, shown.isWiping)}
         onClose={setIsClose}
         onOffset={following.onOffset}

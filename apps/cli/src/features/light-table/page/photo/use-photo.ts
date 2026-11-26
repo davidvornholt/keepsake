@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import type { Box, MarkKind, PhotoView, Picture } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { favoriteHint } from '../app/use-table.ts';
+import { wantedOf } from '../data/changes.ts';
 import { isFavorite, markedIn, type Pile } from '../data/derive.ts';
 import type { Unsaved } from '../data/store-state.ts';
-import { actionFor, kindOfKey, offeredFor } from '../marks/act.ts';
+import { actionFor, kindOfKey, offeredFor, writingFor } from '../marks/act.ts';
 import type { Keys } from '../ui/keys.ts';
 import type { Version } from './compare.tsx';
 import type { Draft } from './composer.tsx';
@@ -101,8 +102,8 @@ const draftOf = ({ note, boxes }: Unsaved): Draft => ({
 /** The change that is being written, and what the owner does with it. */
 export const useComposing = (photo: PhotoView) => {
   const { index, state, store } = useShootContext();
-  const { open } = markedIn(index, photo.id);
-  const saved = open?.kind === 'change' ? open : null;
+  const writing = writingFor(index, photo);
+  const saved = writing?.mark ?? null;
   const unsaved = state.unsaved[photo.id] ?? null;
   /** What is written when the change is begun: what wasn't saved, if any. */
   const fresh = (): Draft =>
@@ -151,7 +152,11 @@ export const useComposing = (photo: PhotoView) => {
   return {
     draft,
     setDraft,
-    isSaved: saved !== null,
+    /** Whether it is a wish for a photo that comes in, which can't show where. */
+    isWish: writing?.into === 'wish',
+    /** Whether boxes are drawn on the photo, which only a change has. */
+    canDraw: draft !== null && writing?.into !== 'wish',
+    isSaved: (saved?.note ?? '') !== '',
     selected,
     select: setSelected,
     canUndo: past.length > 0,
@@ -183,19 +188,28 @@ export const useComposing = (photo: PhotoView) => {
       }
     },
     save: () => {
-      if (draft !== null) {
+      if (draft === null) {
+        return;
+      }
+      const note = draft.note.trim();
+      if (writing?.into === 'wish') {
+        store.make({ ...wantedOf(writing.mark), note });
+      } else if (writing?.into === 'change') {
         store.make({
           photo: photo.id,
           kind: 'change',
-          note: draft.note.trim(),
+          note,
           boxes: draft.boxes.map(({ box }) => box),
           other: null,
         });
-        end();
       }
+      end();
     },
     remove: () => {
-      if (saved !== null) {
+      if (writing?.into === 'wish') {
+        // The photo still comes in, without the wish.
+        store.make({ ...wantedOf(writing.mark), note: '' });
+      } else if (saved !== null) {
         store.takeBack(saved).catch(() => undefined);
       }
       end();
