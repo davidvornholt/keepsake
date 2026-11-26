@@ -30,7 +30,7 @@ const Faults = Schema.Struct({
       }),
       rightInOriginal: Schema.Boolean.annotate({
         description:
-          'True when the same place looks right in the original and could be put back from it',
+          'True when the same place looks right in the original and could be put back from it. False for what is left of something half removed, since the original shows all of it.',
       }),
     }),
   ),
