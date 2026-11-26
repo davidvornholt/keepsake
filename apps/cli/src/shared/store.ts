@@ -129,6 +129,8 @@ const editFiles = (path: Path.Path, directory: string, base: string) => ({
   textures: path.join(directory, 'textures.json'),
   /** What the image model made. */
   version: (number: number) => path.join(directory, `version-${number}.png`),
+  /** The versions an attempt made, once all of them are saved. */
+  batch: (attempt: number) => path.join(directory, `attempt-${attempt}.json`),
   /** The signs it got wrong. */
   changedSigns: (number: number) =>
     path.join(directory, `version-${number}-signs.json`),

@@ -45,7 +45,7 @@ const versionsFor = (
   versionsOf(
     files,
     { number, versions },
-    Effect.gen(function* () {
+    Effect.fn('makeVersions')(function* (count: number) {
       const image = yield* ImageModel;
       return yield* image.edit({
         picture: new Uint8Array(yield* readBytes(files.input)),
@@ -59,7 +59,7 @@ const versionsFor = (
           problems,
         }),
         size,
-        versions,
+        versions: count,
       });
     }),
   );

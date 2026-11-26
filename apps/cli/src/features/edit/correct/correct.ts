@@ -83,13 +83,13 @@ const attempt = Effect.fn('attempt')(function* (
   const numbers = yield* versionsOf(
     files,
     { number, versions },
-    Effect.gen(function* () {
+    Effect.fn('makeVersions')(function* (count: number) {
       const image = yield* ImageModel;
       return yield* image.edit({
         picture: new Uint8Array(yield* readBytes(files.input)),
         prompt: correctionPrompt(open.shoot, about.description, changes),
         size,
-        versions,
+        versions: count,
       });
     }),
   );
