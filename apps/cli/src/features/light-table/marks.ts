@@ -103,6 +103,10 @@ export const makeMark = Effect.fn('makeMark')(function* (
       message: 'The mark is about photos the shoot doesn’t have.',
     });
   }
+  // An agent can't know what to change, also where boxes show the place.
+  if (kind === 'change' && note.trim() === '') {
+    return yield* new InvalidInput({ message: 'Say what should change.' });
+  }
   const all = yield* readMarks(open.files);
   const own = all.filter((one) => one.photo === photo);
   const mark: Mark = {

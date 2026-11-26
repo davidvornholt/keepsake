@@ -108,6 +108,7 @@ describe('marks on the light table', () => {
     { ...change, kind: 'swap', other: 'D' },
     { ...change, other: 'C' },
     { ...change, boxes: [{ left: 0 }] },
+    { ...change, note: ' ' },
     'nonsense',
   ])('that make no sense are refused: %p', async (wanted) => {
     await pickLisbon();
