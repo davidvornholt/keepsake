@@ -44,13 +44,15 @@ const jobs = Effect.fn('jobs')(function* (
   }
   const { model } = yield* Vision;
   const judged = yield* verdicts(open, model);
-  return yield* Effect.forEach(names, (name) =>
+  const named = yield* Effect.forEach(names, (name) => photoNamed(open, name));
+  // A photo named twice, such as by its path and by its name, is edited once.
+  const photos = [...new Map(named.map((photo) => [photo.id, photo])).values()];
+  return yield* Effect.forEach(photos, (photo) =>
     Effect.gen(function* () {
-      const photo = yield* photoNamed(open, name);
       const verdict = judged.find(({ photos }) => photos.includes(photo.id));
       if (verdict === undefined) {
         return yield* new InvalidInput({
-          message: `${model} has not judged ${name}. Run \`keepsake cull ${open.shoot.name}\` first.`,
+          message: `${model} has not judged ${photo.id}. Run \`keepsake cull ${open.shoot.name}\` first.`,
         });
       }
       const { moment, subject, further } = verdict;

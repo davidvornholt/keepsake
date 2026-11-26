@@ -62,6 +62,12 @@ describe('keepsake edit, with a photo in a folder named like another', () => {
     expect(folder.startsWith(`${await folderOf('A')}/`)).toBe(false);
   });
 
+  it('edits a photo once that is named by its path and its name', async () => {
+    await scanNested();
+    expect((await editLisbon('A/B', 'B')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(1);
+  });
+
   it('finds the edits that were kept inside another photo’s', async () => {
     await scanNested();
     await editLisbon('A', 'A/B');

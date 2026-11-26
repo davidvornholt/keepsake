@@ -134,6 +134,14 @@ describe('keepsake edit, with named photos', () => {
     expect((await editLisbon('A2')).edited).toBe(1);
     expect(asked('description')).toHaveLength(1);
   });
+
+  it('edits a photo named twice once', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    const result = await editLisbon('B', 'B', '--again');
+    expect(result.edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(2);
+  });
 });
 
 describe('keepsake edit, with people', () => {
