@@ -15,7 +15,6 @@ import { dirname } from 'node:path';
 import process from 'node:process';
 import { Context, Effect, Option } from 'effect';
 import { ShootBusy, StoreFailed } from './errors/errors.ts';
-import { isRunning } from './processes.ts';
 import type { ShootFiles } from './store.ts';
 
 // The kernel holds the locks, with flock(2), so a lock can't be taken from a
@@ -131,16 +130,6 @@ const holding =
       );
     });
 
-/** Whether a command that changes the shoot seems to be running. */
-export const isBusy = (files: ShootFiles) =>
-  Effect.gen(function* () {
-    const holder = Number.parseInt(
-      holderOf(files.lock).replace(/\D/gu, ''),
-      decimal,
-    );
-    return Number.isInteger(holder) && (yield* isRunning(holder));
-  });
-
 const busy = (path: string) =>
   new ShootBusy({
     message: `Another keepsake command${holderOf(path)} is working on this shoot. Wait for it, or stop it.`,
@@ -174,7 +163,11 @@ const waitingFor =
           onSome: Effect.succeed,
           onNone: () =>
             triesLeft === 0
-              ? Effect.fail(busy(path))
+              ? Effect.fail(
+                  new ShootBusy({
+                    message: `Another keepsake command${holderOf(path)} has been changing the album of this shoot for long. Try again later.`,
+                  }),
+                )
               : Effect.andThen(
                   Effect.sleep(albumPause),
                   waitingFor(path, triesLeft - 1)(work),
