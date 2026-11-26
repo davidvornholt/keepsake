@@ -4,6 +4,7 @@ import { isBusy } from '../../shared/lock.ts';
 import { type OpenShoot, openShoot, shootNames } from '../../shared/store.ts';
 import type { Changed } from './contract.ts';
 import {
+  forgetPictures,
   type Gallery,
   type Kind,
   openGallery,
@@ -54,6 +55,14 @@ const makeWarming = () => {
     }
   });
 };
+
+/** Every shoot that can be read. */
+const readable = Effect.gen(function* () {
+  const found = yield* Effect.forEach(yield* shootNames, (name) =>
+    Effect.option(openShoot(name)),
+  );
+  return found.flatMap(Option.toArray).map(({ shoot }) => shoot);
+});
 
 /** The shoots as the server has them, so it needn't read them every time. */
 export const makeShoots = Effect.fn('makeShoots')(function* (
@@ -157,20 +166,15 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     changed,
     list,
     view,
-    /** Every shoot that can be read. */
-    all: Effect.gen(function* () {
-      const found = yield* Effect.forEach(yield* shootNames, (name) =>
-        Effect.option(openShoot(name)),
-      );
-      return found.flatMap(Option.toArray).map(({ shoot }) => shoot);
+    all: readable,
+    /** Forgets a shoot that isn't there any more, and its smaller pictures. */
+    forget: Effect.fn('forget')(function* (name: string) {
+      const gallery = galleries.get(name);
+      galleries.delete(name);
+      views.delete(name);
+      changes.delete(name);
+      yield* forgetPictures(name, gallery);
     }),
-    /** Forgets what the server knows of a shoot that isn't there any more. */
-    forget: (name: string) =>
-      Effect.sync(() => {
-        galleries.delete(name);
-        views.delete(name);
-        changes.delete(name);
-      }),
     /** Gets every shoot ready, also new ones, so nobody waits for it later. */
     prepare: Effect.gen(function* () {
       const names = yield* shootNames;

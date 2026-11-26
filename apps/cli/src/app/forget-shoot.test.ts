@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BunServices } from '@effect/platform-bun';
 import { ConfigProvider, Effect, FileSystem, Layer } from 'effect';
@@ -14,11 +15,19 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
-import { send, statusOf, whileServing } from './light-table-fixtures.ts';
+import {
+  eventually,
+  send,
+  statusOf,
+  whileServing,
+} from './light-table-fixtures.ts';
 import { whileHeld } from './lock-fixtures.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
+
+/** Long enough for a request to get to where it waits. */
+const pause = 50;
 
 const forget = () =>
   whileServing((address) =>
@@ -88,6 +97,39 @@ describe('forgetting a shoot', () => {
     await runOk('cull', 'lisbon');
     expect(await forget()).toBe(400);
     expect(existsSync(shootFile('shoot.json'))).toBe(true);
+  });
+
+  it('removes its smaller pictures once those being made are there, and only its own', async () => {
+    await scanLisbon();
+    const porto = join(fake.home, 'porto');
+    await mkdir(porto);
+    await runOk('scan', porto, '--name', 'porto');
+    const cache = (shoot: string) =>
+      join(fake.home, 'cache', 'keepsake', shoot);
+    const making = Promise.withResolvers<void>();
+    const made = Promise.withResolvers<void>();
+    const holdUp = () => {
+      making.resolve();
+      return made.promise;
+    };
+    fakeTools.pause = ({ command, args }) =>
+      command === 'magick' &&
+      args.some((arg) => arg.startsWith(cache('lisbon')))
+        ? holdUp()
+        : undefined;
+    const status = await whileServing(async (address) => {
+      await fetch(`${address}/api/shoots/porto`);
+      await eventually(async () => existsSync(cache('porto')), Boolean);
+      await fetch(`${address}/api/shoots/lisbon`);
+      await making.promise;
+      const forgot = statusOf(send('DELETE', `${address}/api/shoots/lisbon`));
+      await Bun.sleep(pause);
+      made.resolve();
+      return forgot;
+    });
+    expect(status).toBe(204);
+    expect(existsSync(cache('lisbon'))).toBe(false);
+    expect(existsSync(cache('porto'))).toBe(true);
   });
 
   it('forgets one that only a subscription culled', async () => {
