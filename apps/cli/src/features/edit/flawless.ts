@@ -1,6 +1,7 @@
 import { Effect, Schema } from 'effect';
 import type { Box, Outline } from '../../shared/domain.ts';
-import { atomically, type EditFiles } from '../../shared/store.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
+import { atomically } from '../../shared/store.ts';
 import { Fault, inspect } from './inspect.ts';
 import { keepOriginals, type Originals } from './keep-originals.ts';
 import { type Prepared, remembered } from './prepare.ts';
@@ -40,19 +41,17 @@ const mend = Effect.fn('mend')(function* (
   const patches = faults.filter(({ kind }) => kind !== 'texture');
   yield* atomically(files.versionMended(number), (draft) =>
     keepOriginals(
-      {
-        ...originals,
-        bystanders: [...originals.bystanders, ...patches.map(({ box }) => box)],
-        textures: [
-          ...originals.textures,
-          ...textures.map(({ box }) => outlineOf(box)),
-        ],
-      },
+      originals,
       crop.box,
       {
         original: files.input,
         version: files.version(number),
         target: draft,
+      },
+      // Where the edit shows them, which the inspection looked at.
+      {
+        patches: patches.map(({ box }) => box),
+        textures: textures.map(({ box }) => outlineOf(box)),
       },
     ),
   );
@@ -104,6 +103,6 @@ export const flawless = Effect.fn('flawless')(function* (
   return {
     file: left === null ? checked.version : files.versionMended(checked.number),
     problems: wrong.map(({ what }) => what),
-    isWorse: wrong.some(({ rightInOriginal }) => rightInOriginal),
+    isWorse: wrong.some(({ inOriginal }) => !inOriginal),
   };
 });

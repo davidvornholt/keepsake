@@ -1,5 +1,5 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
@@ -10,6 +10,7 @@ type Run = {
   readonly args: ReadonlyArray<string>;
   /** What it read from its standard input. */
   readonly input: string;
+  readonly inputBytes: Uint8Array;
   /** The environment variables that were set or removed for it. */
   readonly env: Readonly<Record<string, unknown>>;
 };
@@ -26,12 +27,13 @@ const greyPixels = 72;
 const middleGrey = 128;
 const greyPixel = [middleGrey, middleGrey, middleGrey];
 const rgbaChannels = 4;
+const rgbChannels = 3;
 const cameraSize = '7008 4672';
 /** Small, since pixels of it are computed with. */
 const editSize = '48 32';
 const editBytes = 4608;
 const editPattern =
-  /(?:input(?:-\d+)?\.jpg|version-\d+(?:-kept|-mended)?\.png|(?:candidate-\d+|result)-\d+\.png|-keepsake\.jpg)$/u;
+  /(?:input(?:-\d+)?\.jpe?g|version-\d+(?:-kept|-mended)?\.png|(?:candidate-\d+|result)-\d+\.png|-keepsake\.jpg)$/u;
 
 const wantedSize = /(?<width>\d+)x(?<height>\d+)!/u;
 
@@ -71,6 +73,8 @@ export const fakeTools = {
   assistant: undefined as ((run: Run) => string) | undefined,
   /** Other programs, which print something or fail with an error. */
   programs: {} as Record<string, (run: Run) => string>,
+  /** How bright ImageMagick finds each pixel of a file, by how its path ends. */
+  pictures: {} as Record<string, (x: number, y: number) => number>,
   /** Holds a program up until the promise settles; one that rejects stops keepsake. */
   pause: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
   /** Holds back what a program answered, as it was when it ran, until the promise settles. */
@@ -86,6 +90,7 @@ export const resetTools = () => {
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
   fakeTools.programs = {};
+  fakeTools.pictures = {};
   fakeTools.pause = undefined;
   fakeTools.late = undefined;
 };
@@ -108,13 +113,42 @@ const exiftool = (args: ReadonlyArray<string>): string => {
   );
 };
 
-const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
+/**
+ * The pixels of a file: as a test drew them, as they were written, or black.
+ * Rasters that were written keep their pixels, so a test can look at them.
+ */
+const pixelsOf = (file: string, args: ReadonlyArray<string>): Uint8Array => {
+  const { width, height } = wantedSize.exec(args.join(' '))?.groups ?? {};
+  const size = { width: Number(width), height: Number(height) };
+  const drawn = Object.entries(fakeTools.pictures).find(([end]) =>
+    file.endsWith(end),
+  )?.[1];
+  const length = size.width * size.height * rgbChannels;
+  if (drawn !== undefined) {
+    return Uint8Array.from({ length }, (_, index) => {
+      const pixel = Math.floor(index / rgbChannels);
+      return drawn(pixel % size.width, Math.floor(pixel / size.width));
+    });
+  }
+  const written = existsSync(file) ? readFileSync(file) : new Uint8Array();
+  return written.length === length
+    ? new Uint8Array(written)
+    : new Uint8Array(editBytes);
+};
+
+const magick = (run: Run): string | Uint8Array => {
+  const { args } = run;
   const target = args.at(-1) ?? '';
   if (args[0] === 'identify') {
     return editPattern.test(target) ? editSize : cameraSize;
   }
   if (target === 'rgb:-') {
-    return new Uint8Array(editBytes);
+    return pixelsOf(args[0] ?? '', args);
+  }
+  if (args[0] === '-size') {
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, run.inputBytes);
+    return '';
   }
   if (target === 'rgba:-') {
     const { width, height } = wantedSize.exec(args.join(' '))?.groups ?? {};
@@ -198,7 +232,7 @@ const answer = (run: Run): string | Uint8Array => {
     case 'exiftool':
       return exiftool(args);
     case 'magick':
-      return magick(args);
+      return magick(run);
     case 'photos':
       return JSON.stringify(photos(args));
     default:
@@ -230,21 +264,35 @@ const firstPid = 1000;
 const inputOf = (stdin: unknown) =>
   Stream.isStream(stdin)
     ? (stdin as Stream.Stream<Uint8Array>).pipe(
-        Stream.decodeText(),
-        Stream.mkString,
+        Stream.runCollect,
+        Effect.map((chunks) => {
+          const bytes = new Uint8Array(
+            chunks.reduce((length, chunk) => length + chunk.length, 0),
+          );
+          let at = 0;
+          for (const chunk of chunks) {
+            bytes.set(chunk, at);
+            at += chunk.length;
+          }
+          return bytes;
+        }),
       )
-    : Effect.succeed('');
+    : Effect.succeed(new Uint8Array());
 
 const spawner = ChildProcessSpawner.make((spawned) =>
   Effect.gen(function* () {
+    const inputBytes = ChildProcess.isStandardCommand(spawned)
+      ? yield* inputOf(spawned.options.stdin)
+      : new Uint8Array();
     const run: Run = ChildProcess.isStandardCommand(spawned)
       ? {
           command: spawned.command,
           args: spawned.args.map(String),
-          input: yield* inputOf(spawned.options.stdin),
+          input: new TextDecoder().decode(inputBytes),
+          inputBytes,
           env: spawned.options.env ?? {},
         }
-      : { command: '', args: [], input: '', env: {} };
+      : { command: '', args: [], input: '', inputBytes, env: {} };
     fakeTools.runs.push(run);
     const paused = fakeTools.pause?.(run);
     if (paused !== undefined) {

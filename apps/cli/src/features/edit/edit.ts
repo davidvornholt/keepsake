@@ -10,6 +10,7 @@ import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
+import { anewFor, doneIn, doneWithAnew } from './anew.ts';
 import {
   type Edited,
   type EditOptions,
@@ -43,13 +44,17 @@ const jobs = Effect.fn('jobs')(function* (
   }
   const { model } = yield* Vision;
   const judged = yield* verdicts(open, model);
-  return yield* Effect.forEach(names, (name) =>
+  const named = yield* Effect.forEach(names, (name) => photoNamed(open, name));
+  // A photo named twice, such as by its path and by its name, is edited once.
+  const distinct = [
+    ...new Map(named.map((photo) => [photo.id, photo])).values(),
+  ];
+  return yield* Effect.forEach(distinct, (photo) =>
     Effect.gen(function* () {
-      const photo = yield* photoNamed(open, name);
       const verdict = judged.find(({ photos }) => photos.includes(photo.id));
       if (verdict === undefined) {
         return yield* new InvalidInput({
-          message: `${model} has not judged ${name}. Run \`keepsake cull ${open.shoot.name}\` first.`,
+          message: `${model} has not judged ${photo.id}. Run \`keepsake cull ${open.shoot.name}\` first.`,
         });
       }
       const { moment, subject, further } = verdict;
@@ -121,21 +126,40 @@ export const edit = Effect.fn('edit')(function* (
 ) {
   yield* checkPrices((yield* ImageModel).model);
   const todo = yield* jobs(open, names);
-  const isAnew = options.again || options.wish !== null;
+  const { again, wish, areas } = options;
+  const photos = todo.map(({ photo }) => photo.id);
+  const imageModel = (yield* ImageModel).model;
+  const reviewModel = (yield* ReviewVision).model;
+  const anew =
+    again || wish !== null
+      ? yield* anewFor(open, {
+          imageModel,
+          reviewModel,
+          again,
+          wish,
+          areas,
+          photos,
+        })
+      : null;
   const spending = yield* Spending;
   const withinBudget = yield* makeBudget();
   const outcomes = yield* inSteps('edit', todo, concurrency, (toEdit) =>
     Effect.gen(function* () {
       const before = yield* editOf(open, toEdit.photo.id);
-      if (Option.isSome(before) && !isAnew) {
+      // Done before, or by this command before it stopped.
+      const notDone =
+        anew === null
+          ? Option.some([])
+          : yield* doneIn(open.files.edit(toEdit.photo.id), anew);
+      if (Option.isSome(before) && Option.isSome(notDone)) {
         return {
           kind: 'done',
           record: before.value,
-          notDone: [],
+          notDone: notDone.value,
         } satisfies Outcome;
       }
       const edited = yield* withinBudget(
-        editPhoto(open, toEdit, options).pipe(during(toEdit.photo.id)),
+        editPhoto(open, toEdit, options, anew).pipe(during(toEdit.photo.id)),
       );
       return Option.match(edited, {
         onNone: (): Outcome => ({
@@ -162,6 +186,9 @@ export const edit = Effect.fn('edit')(function* (
   const done = outcomes.flatMap((outcome) =>
     outcome.kind === 'done' ? [outcome] : [],
   );
+  if (anew !== null && done.length === outcomes.length) {
+    yield* doneWithAnew(open);
+  }
   const records = done.map(({ record }) => record);
   return {
     shoot: open.shoot.name,

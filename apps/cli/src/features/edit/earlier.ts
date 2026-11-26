@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Option } from 'effect';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import { atomically, type EditFiles, exists } from '../../shared/store.ts';
+import { atomically, exists } from '../../shared/store.ts';
 
 /**
  * Keeps a finished photo that a newer one is about to replace, under the time

@@ -10,6 +10,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { type Asked, assessment, fakeModels } from './fake-models.ts';
+import { fakeTools } from './fake-tools.ts';
 
 const chair = 'Remove the grey chair';
 const boat = 'Make the boat red';
@@ -29,6 +30,15 @@ const choice = (number: number, best: number, notes = 'It looks natural') => ({
 });
 
 const finalFile = () => shootFile('edits', 'B', 'B-keepsake.jpg');
+
+/** The finished photo is grey, and the versions take away a chair in it. */
+const grey = 100;
+const isChair = (x: number, y: number) => x >= 7 && x < 12 && y >= 14 && y < 18;
+const withoutChair = (x: number, y: number) => (isChair(x, y) ? 200 : grey);
+
+/** How bright a pixel of a picture is that keepsake wrote, 48 pixels wide. */
+const brightnessAt = (file: string, x: number, y: number) =>
+  readFileSync(file)[(y * 48 + x) * 3];
 const final = () => readFileSync(finalFile(), 'utf8');
 
 /** Edits a photo and marks its file, to see whether it stays. */
@@ -51,8 +61,21 @@ describe('keepsake edit, with a wish for places of a finished photo', () => {
     await editB();
     const camera = shootFile('edits', 'B', 'B.jpg');
     const { mtimeMs } = statSync(camera);
+    fakeTools.pictures = {
+      'B-keepsake.jpg': () => grey,
+      'correction/version-1.png': withoutChair,
+      'correction/version-2.png': withoutChair,
+    };
     const result = await editLisbon('B', '--wish', 'No chair');
     expect(result).toMatchObject({ edited: 1, notDone: [], failed: [] });
+    const changed = shootFile('edits', 'B', 'correction', 'result-1.png');
+    expect(brightnessAt(changed, 10, 16)).toBeGreaterThan(150);
+    expect(brightnessAt(changed, 40, 5)).toBe(grey);
+    // The finished photo is made of it.
+    expect(fakeTools.runs.at(-2)?.args.slice(0, 2)).toEqual([
+      changed,
+      '-strip',
+    ]);
     expect(asked('places')[0]?.texts.join(' ')).toContain('“No chair”');
     expect(fakeModels.edits).toHaveLength(2);
     expect(fakeModels.edits[1]?.prompt).toContain(
