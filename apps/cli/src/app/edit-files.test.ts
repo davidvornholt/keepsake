@@ -46,9 +46,8 @@ const contentsOf = (folder: string): Record<string, string> =>
 const filesOf = async (photo: string) =>
   (await runOk('show', 'lisbon', photo)).files;
 
-const folderOf = async (photo: string) => {
-  return join((await filesOf(photo)).final, '..');
-};
+const folderOf = async (photo: string) =>
+  join((await filesOf(photo)).final, '..');
 
 describe('keepsake edit, with a photo in a folder named like another', () => {
   it('keeps the edits of each apart', async () => {
