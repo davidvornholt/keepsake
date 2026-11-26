@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { around, wholePicture } from '../../shared/boxes.ts';
+import { around, coverage, wholePicture } from '../../shared/boxes.ts';
 import type { Box, Outline, Person, Sign } from '../../shared/domain.ts';
 import {
   frameOf,
@@ -57,6 +57,35 @@ const boundsOf = ({ face, outline }: Person): Box =>
     face,
     ...outline.map(({ x, y }) => ({ left: x, top: y, right: x, bottom: y })),
   ]);
+
+const half = 0.5;
+
+/**
+ * Whether most of what is to be removed is on someone's face. It stays then,
+ * since a face always comes back as the photo shows it.
+ */
+export const isOnFace = (people: ReadonlyArray<Person>, box: Box): boolean =>
+  people.some(({ face }) => {
+    const width =
+      Math.min(box.right, face.right) - Math.max(box.left, face.left);
+    const height =
+      Math.min(box.bottom, face.bottom) - Math.max(box.top, face.top);
+    return width > 0 && height > 0 && width * height > half * coverage(box);
+  });
+
+/** Why something on a face isn't removed. */
+export const keptOnFace =
+  'It is on someone’s face, which keepsake keeps as the photo shows it';
+
+/** What is to be removed and stays, since it is on someone's face. */
+export const removalsOnFaces = (
+  { people, gone }: Pick<Originals, 'people' | 'gone'>,
+  removed: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  removed.filter((_, index) => {
+    const box = gone[index];
+    return box !== undefined && isOnFace(people, box);
+  });
 
 /** The texts and logos on a person. */
 const writtenOn = (

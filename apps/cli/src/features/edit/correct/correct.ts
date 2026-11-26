@@ -12,6 +12,7 @@ import type { Job } from '../best-edit.ts';
 import { descriptionOf } from '../describe.ts';
 import { editableSize } from '../geometry.ts';
 import { ImageModel } from '../image-model.ts';
+import { isOnFace, keptOnFace } from '../keep-originals.ts';
 import { peopleAndSigns, remembered } from '../prepare.ts';
 import { mostAttempts, versionsOf, withOriginals } from '../versions.ts';
 import { candidatesOf, type Taken, writeWith } from './candidates.ts';
@@ -155,25 +156,47 @@ export const correct = Effect.fn('correct')(function* (job: Correction) {
   let description: string | null = null;
   let attempts = 0;
   let isRefused = false;
+  // Nothing is paid for what would come back with a face.
+  const onFaces: Array<ToChange> = [];
   while (left.length > 0 && attempts < mostAttempts && !isRefused) {
     attempts += 1;
     const files = { ...job.files, input: job.files.inputOf(attempts) };
     const size = yield* inputFor(base, files.input);
     const about = yield* known(job, files);
     ({ description } = about);
-    const start: Start = { number: attempts, base, changes: left };
-    const result = yield* attempt(job, files, start, { size, about }).pipe(
-      Effect.catchTag('PhotoRefused', ({ message }) =>
-        Effect.succeed({
-          base: start.base,
-          left: start.changes.map(
-            ({ place }): ToChange => ({ place, problem: message }),
-          ),
-          isRefused: true,
-        }),
-      ),
+    const { people } = about.originals;
+    const isKept = ({ place }: ToChange) =>
+      place.isRemoval && isOnFace(people, place.box);
+    onFaces.push(
+      ...left
+        .filter(isKept)
+        .map(({ place }): ToChange => ({ place, problem: keptOnFace })),
     );
+    const start: Start = {
+      number: attempts,
+      base,
+      changes: left.filter((change) => !isKept(change)),
+    };
+    const result =
+      start.changes.length === 0
+        ? { base, left: [], isRefused: false }
+        : yield* attempt(job, files, start, { size, about }).pipe(
+            Effect.catchTag('PhotoRefused', ({ message }) =>
+              Effect.succeed({
+                base: start.base,
+                left: start.changes.map(
+                  ({ place }): ToChange => ({ place, problem: message }),
+                ),
+                isRefused: true,
+              }),
+            ),
+          );
     ({ base, left, isRefused } = result);
   }
-  return { file: base === final ? null : base, description, attempts, left };
+  return {
+    file: base === final ? null : base,
+    description,
+    attempts,
+    left: [...left, ...onFaces],
+  };
 });

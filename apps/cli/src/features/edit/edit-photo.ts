@@ -13,11 +13,13 @@ import {
 import { wishIn, writeWish } from '../../shared/wishes.ts';
 import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
+
 import { type CorrectionFiles, correct } from './correct/correct.ts';
 import { Change, findPlaces, inMarked, type Place } from './correct/places.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
+import { keptOnFace, removalsOnFaces } from './keep-originals.ts';
 import { remembered } from './prepare.ts';
 import { sentence } from './prompt.ts';
 import { bothWishes, emptied } from './wishes.ts';
@@ -197,6 +199,17 @@ const moved = (from: EditFiles, to: EditFiles) =>
     ),
   );
 
+/** What was to be removed and stays in an edit, since it is on a face. */
+const keptOnFaces = ({
+  best,
+  prepared,
+}: Effect.Success<ReturnType<typeof bestEdit>>): ReadonlyArray<string> =>
+  best === null
+    ? []
+    : removalsOnFaces(prepared.originals, prepared.removed).map(
+        (what) => `${sentence(what)} ${sentence(keptOnFace)}`,
+      );
+
 /** Edits all of a photo anew. The edit it has stays until that is better. */
 const changeAll = Effect.fn('changeAll')(function* ({
   job,
@@ -218,7 +231,7 @@ const changeAll = Effect.fn('changeAll')(function* ({
   const record = yield* writeEdit(anew, made);
   yield* writeWish(files.wish, wanted);
   yield* moved(files, job.files);
-  return { record, notDone: [] } satisfies Edited;
+  return { record, notDone: keptOnFaces(made) } satisfies Edited;
 });
 
 /** Changes a finished photo, as little of it as the wish is about. */
@@ -300,7 +313,9 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     yield* noted(null);
   }
   const job = jobFor(yield* wishIn(files.wish));
-  const record = yield* writeEdit(job, yield* bestEdit(job));
-  yield* noted([]);
-  return { record, notDone: [] } satisfies Edited;
+  const made = yield* bestEdit(job);
+  const record = yield* writeEdit(job, made);
+  const left = keptOnFaces(made);
+  yield* noted(left);
+  return { record, notDone: left } satisfies Edited;
 });
