@@ -1,12 +1,19 @@
 import { Context, Effect, Layer, Schedule, type Schema } from 'effect';
-import { type AiError, LanguageModel, Prompt, type Response } from 'effect/ai';
+import {
+  AiError,
+  LanguageModel,
+  Prompt,
+  type Response,
+  Telemetry,
+} from 'effect/ai';
 import {
   ModelFailed,
   type OverBudget,
   type StoreFailed,
 } from './errors/errors.ts';
 import { modelName, visionLayer } from './models.ts';
-import { Spending, type Usage } from './spending.ts';
+import { bytesOf, type RequestSize, type Usage } from './prices.ts';
+import { type Paid, Spending } from './spending.ts';
 
 /** One piece of a question: text, or a photo as JPEG bytes. */
 export type Piece = string | Uint8Array;
@@ -48,6 +55,24 @@ const usageOf = ({
     ? undefined
     : { inputTokens: inputTokens.total, outputTokens: outputTokens.total };
 
+/** Whether a model answered, but not in the shape asked for. */
+const isMalformed = (error: { readonly _tag: string }): boolean =>
+  error instanceof AiError.AiError &&
+  (error.reason._tag === 'StructuredOutputError' ||
+    error.reason._tag === 'InvalidOutputError');
+
+/** What a question sends, as far as it bounds what it can cost. */
+const sizeOf = ({ role, pieces }: Question<AnswerSchema>): RequestSize => ({
+  text:
+    bytesOf(role) +
+    pieces.reduce(
+      (sum, piece) => sum + (typeof piece === 'string' ? bytesOf(piece) : 0),
+      0,
+    ),
+  pictures: pieces.filter((piece) => typeof piece !== 'string').length,
+  versions: 1,
+});
+
 export type VisionModel = {
   /** The model's name with its provider. */
   readonly model: string;
@@ -70,24 +95,60 @@ export class Vision extends Context.Service<Vision, VisionModel>()(
         const ask = Effect.fn('Vision.ask')(function* <S extends AnswerSchema>(
           question: Question<S>,
         ) {
-          const response = yield* language
-            .generateObject({
-              objectName: question.name,
-              schema: question.schema,
-              prompt: Prompt.make([
-                { role: 'system', content: question.role },
-                Prompt.userMessage({ content: question.pieces.map(part) }),
-              ]),
-            })
+          const once = (paid: Paid) =>
+            Effect.gen(function* () {
+              const seen: { answered: boolean; usage?: Response.Usage } = {
+                answered: false,
+              };
+              const exit = yield* language
+                .generateObject({
+                  objectName: question.name,
+                  schema: question.schema,
+                  prompt: Prompt.make([
+                    { role: 'system', content: question.role },
+                    Prompt.userMessage({ content: question.pieces.map(part) }),
+                  ]),
+                })
+                .pipe(
+                  // Sees the answer before its shape is checked, so an answer
+                  // of the wrong shape is counted too.
+                  Effect.provideService(
+                    Telemetry.CurrentSpanTransformer,
+                    ({ response: pieces }) => {
+                      seen.answered = true;
+                      for (const piece of pieces) {
+                        if (piece.type === 'finish') {
+                          seen.usage = piece.usage;
+                        }
+                      }
+                    },
+                  ),
+                  Effect.exit,
+                );
+              if (seen.answered) {
+                yield* paid.settle(
+                  seen.usage === undefined ? undefined : usageOf(seen.usage),
+                );
+              }
+              return yield* exit;
+            });
+          const response = yield* spending
+            .paying(model, sizeOf(question), once)
             .pipe(
+              // An answer of the wrong shape is asked for again at once, and
+              // a busy model later. Each try is paid for.
+              Effect.retry({ while: isMalformed, times: 1 }),
               Effect.retry({
-                while: (error) => error.isRetryable,
+                while: (error) =>
+                  error._tag === 'AiError' &&
+                  error.isRetryable &&
+                  !isMalformed(error),
                 schedule: backoff,
                 times: retries,
               }),
-              Effect.mapError(modelFailed(model)),
-              Effect.tap(({ usage }) => spending.add(model, usageOf(usage))),
-              (request) => spending.paying(model, 1, request),
+              Effect.mapError((error) =>
+                error._tag === 'AiError' ? modelFailed(model)(error) : error,
+              ),
             );
           return response.value;
         });

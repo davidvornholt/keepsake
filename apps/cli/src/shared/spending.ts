@@ -10,40 +10,8 @@ import {
   Semaphore,
 } from 'effect';
 import { OverBudget, type StoreFailed } from './errors/errors.ts';
+import { costOf, mostCostOf, type RequestSize, type Usage } from './prices.ts';
 import { readJson, writeJson } from './store.ts';
-import { isSubscription } from './subscriptions/subscriptions.ts';
-
-type Tokens = { readonly input: number; readonly output: number };
-
-/**
- * Dollars for a million tokens, and the most tokens one request is expected
- * to take and give: for an image model, for each version it makes. A budget
- * counts a request at that most before it is sent, and so does an answer that
- * doesn't say what it used. Both are above what requests used so far.
- */
-type Price = Tokens & { readonly most: Tokens };
-
-const million = 1_000_000;
-
-// List prices in US dollars for a million tokens, by the model's name without
-// its provider. A model that isn't here counts as free, so its tokens are
-// shown instead, and so does every model of a subscription. Under a budget,
-// only a subscription's model may be one that isn't here.
-const prices: ReadonlyMap<string, Price> = new Map([
-  [
-    'gpt-6-astra',
-    { input: 10, output: 50, most: { input: 30_000, output: 3000 } },
-  ],
-  // Image tokens; the few text tokens of the prompt cost less.
-  [
-    'gpt-image-2.5-sunburst',
-    { input: 8, output: 30, most: { input: 2000, output: 10_000 } },
-  ],
-  [
-    'gpt-image-2.5-flare',
-    { input: 8, output: 30, most: { input: 2000, output: 10_000 } },
-  ],
-]);
 
 /** About what editing or changing one photo costs. */
 export const dollarsForOneEdit = 0.75;
@@ -60,54 +28,11 @@ export type ModelSpending = typeof ModelSpending.Type;
 export const SpendingRecord = Schema.Record(Schema.String, ModelSpending);
 export type SpendingRecord = typeof SpendingRecord.Type;
 
-/** What a request used, as its answer says. */
-export type Usage = {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-};
-
 const nothing: ModelSpending = {
   calls: 0,
   inputTokens: 0,
   outputTokens: 0,
   dollars: 0,
-};
-
-const isFree = (model: string) =>
-  isSubscription(model.slice(0, model.indexOf('/')));
-
-const priceOf = (model: string): Price | undefined =>
-  isFree(model) ? undefined : prices.get(model.slice(model.indexOf('/') + 1));
-
-const dollarsFor = (price: Price, { input, output }: Tokens) =>
-  (input * price.input + output * price.output) / million;
-
-/**
- * The most a request can cost, for so many versions of an image model: 0 on
- * a subscription, and undefined when keepsake doesn't know the price.
- */
-export const mostCostOf = (model: string, units = 1): number | undefined => {
-  if (isFree(model)) {
-    return 0;
-  }
-  const price = priceOf(model);
-  return price === undefined
-    ? undefined
-    : dollarsFor(price, {
-        input: price.most.input * units,
-        output: price.most.output * units,
-      });
-};
-
-/** What a request cost, or the most it can have when its answer doesn't say. */
-const costOf = (model: string, used: Usage | undefined, units: number) => {
-  const price = priceOf(model);
-  if (price === undefined) {
-    return 0;
-  }
-  return used === undefined
-    ? (mostCostOf(model, units) ?? 0)
-    : dollarsFor(price, { input: used.inputTokens, output: used.outputTokens });
 };
 
 const add = (left: ModelSpending, right: ModelSpending): ModelSpending => ({
@@ -184,28 +109,102 @@ const hold = (
     return most;
   });
 
+/** A paid request, while it runs. */
+export type Paid = {
+  /** The most it can cost, in dollars. */
+  readonly most: number;
+  /**
+   * Counts it at the most, now that its answer is coming, so it stays
+   * counted when the answer is lost.
+   */
+  readonly answered: Effect.Effect<void, StoreFailed>;
+  /**
+   * Counts what it used, or the most when its answer doesn't say, in place
+   * of what `answered` counted.
+   */
+  readonly settle: (
+    used: Usage | undefined,
+  ) => Effect.Effect<void, StoreFailed>;
+};
+
+/** Changes what was spent and what is held in one step, and writes it. */
+type Ledger = {
+  readonly charge: (
+    model: string,
+    entry: ModelSpending,
+    release: number,
+  ) => Effect.Effect<void, StoreFailed>;
+  readonly release: (held: number) => Effect.Effect<void>;
+};
+
+/**
+ * What a request adds when it settles: all it cost, or what it cost beyond
+ * its most once that was counted when its answer began.
+ */
+const settlementOf = (
+  model: string,
+  used: Usage | undefined,
+  {
+    most,
+    wasAnswered,
+  }: { readonly most: number; readonly wasAnswered: boolean },
+): ModelSpending => {
+  const dollars = used === undefined ? most : costOf(model, used);
+  return {
+    calls: wasAnswered ? 0 : 1,
+    inputTokens: used?.inputTokens ?? 0,
+    outputTokens: used?.outputTokens ?? 0,
+    dollars: wasAnswered ? dollars - most : dollars,
+  };
+};
+
+const paymentFor = (
+  model: string,
+  { most, held }: { readonly most: number; readonly held: number },
+  ledger: Ledger,
+) => {
+  let stage: 'held' | 'answered' | 'settled' = 'held';
+  const paid: Paid = {
+    most,
+    answered: Effect.suspend(() => {
+      if (stage !== 'held') {
+        return Effect.void;
+      }
+      stage = 'answered';
+      const entry = { ...nothing, calls: 1, dollars: most };
+      return ledger.charge(model, entry, held);
+    }).pipe(Effect.uninterruptible),
+    settle: (used) =>
+      Effect.suspend(() => {
+        if (stage === 'settled') {
+          return Effect.void;
+        }
+        const wasAnswered = stage === 'answered';
+        stage = 'settled';
+        const entry = settlementOf(model, used, { most, wasAnswered });
+        return ledger.charge(model, entry, wasAnswered ? 0 : held);
+      }).pipe(Effect.uninterruptible),
+  };
+  // A request that got no answer cost nothing.
+  const release = Effect.suspend(() =>
+    stage === 'held' ? ledger.release(held) : Effect.void,
+  );
+  return { paid, release };
+};
+
 /** Adds up what one command spends on models. */
 export class Spending extends Context.Service<
   Spending,
   {
     /**
-     * Counts what a request cost, at the most it can have cost when `used`
-     * is missing, and adds it to the shoot's spending right away.
-     */
-    readonly add: (
-      model: string,
-      used: Usage | undefined,
-      units?: number,
-    ) => Effect.Effect<void, StoreFailed>;
-    /**
      * Sends a paid request only when what is left of the budget covers the
-     * most it can cost, for so many versions, and holds that much while it
-     * runs. `request` should `add` what it cost.
+     * most it can cost, and holds that much until the request counts what
+     * it cost with `paid`.
      */
     readonly paying: <A, E, R>(
       model: string,
-      units: number,
-      request: Effect.Effect<A, E, R>,
+      size: RequestSize,
+      request: (paid: Paid) => Effect.Effect<A, E, R>,
     ) => Effect.Effect<A, E | OverBudget, R>;
     /** Keeps what the paid requests of `work` cost within a budget. */
     readonly within: (
@@ -253,42 +252,41 @@ export class Spending extends Context.Service<
         );
       }).pipe(writing.withPermits(1), Effect.uninterruptible);
 
-      return Spending.of({
-        add: (model, used, units = 1) => {
-          const call: SpendingRecord = {
-            [model]: {
-              calls: 1,
-              inputTokens: used?.inputTokens ?? 0,
-              outputTokens: used?.outputTokens ?? 0,
-              dollars: costOf(model, used, units),
-            },
-          };
-          return Ref.update(state, (now) => ({
-            ...now,
-            total: merge(now.total, call),
+      const ledger: Ledger = {
+        charge: (model, entry, release) =>
+          Ref.update(state, (now) => ({
+            total: merge(now.total, { [model]: entry }),
+            held: now.held - release,
           })).pipe(
-            Effect.andThen(Ref.update(unsaved, (now) => merge(now, call))),
+            Effect.andThen(
+              Ref.update(unsaved, (now) => merge(now, { [model]: entry })),
+            ),
             Effect.andThen(flush),
-            Effect.uninterruptible,
-          );
-        },
-        paying: (model, units, request) =>
+          ),
+        release: (held) =>
+          Ref.update(state, (now) => ({ ...now, held: now.held - held })),
+      };
+
+      return Spending.of({
+        paying: (model, size, request) =>
           Effect.gen(function* () {
             const budget = yield* Ref.get(limit);
-            const most = mostCostOf(model, units);
-            if (Option.isNone(budget) || most === 0) {
-              return yield* request;
-            }
-            if (most === undefined) {
+            const most = mostCostOf(model, size);
+            if (most === undefined && Option.isSome(budget)) {
               return yield* new OverBudget({
                 message: `keepsake doesn't know what ${model} costs, so it can't keep to a budget with it.`,
               });
             }
+            const holding =
+              Option.isNone(budget) || most === undefined || most === 0
+                ? Effect.succeed(0)
+                : hold(state, { model, most, budget });
             return yield* Effect.acquireUseRelease(
-              hold(state, { model, most, budget }),
-              () => request,
-              (held) =>
-                Ref.update(state, (now) => ({ ...now, held: now.held - held })),
+              Effect.map(holding, (held) =>
+                paymentFor(model, { most: most ?? 0, held }, ledger),
+              ),
+              ({ paid }) => request(paid),
+              ({ release }) => release,
             );
           }),
         within: (dollars) => (work) =>
@@ -316,6 +314,3 @@ export class Spending extends Context.Service<
     }),
   );
 }
-
-/** Whether keepsake knows what a model costs, or it costs nothing. */
-export const isPriced = (model: string) => mostCostOf(model) !== undefined;

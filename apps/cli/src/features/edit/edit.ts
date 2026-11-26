@@ -2,13 +2,10 @@ import { Effect, Option, Ref } from 'effect';
 import { during } from '../../shared/activity.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
+import { isPriced } from '../../shared/prices.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { ReviewVision } from '../../shared/review-vision.ts';
-import {
-  dollarsForOneEdit,
-  isPriced,
-  Spending,
-} from '../../shared/spending.ts';
+import { dollarsForOneEdit, Spending } from '../../shared/spending.ts';
 import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';

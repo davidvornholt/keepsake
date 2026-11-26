@@ -16,7 +16,8 @@ import {
 } from '../../shared/errors/errors.ts';
 import { accessTo, modelName, openAiUrl } from '../../shared/models.ts';
 import type { Size } from '../../shared/pictures.ts';
-import { mostCostOf, Spending, type Usage } from '../../shared/spending.ts';
+import { bytesOf, type Usage } from '../../shared/prices.ts';
+import { type Paid, Spending } from '../../shared/spending.ts';
 
 /** How many requests run at once; image models allow only a few. */
 const concurrency = 3;
@@ -65,26 +66,24 @@ const refusalCodes = new Set([
 type Images = typeof Images.Type;
 
 /**
- * Reads the images of a successful answer. One that breaks off or can't be
- * read may have been paid for all the same, so `lost` counts it at the most
- * it can cost, and it isn't asked for again.
+ * Reads the images of a successful answer, and counts what it cost. One that
+ * breaks off or can't be read may have been paid for all the same, so it
+ * stays counted at the most, and isn't asked for again.
  */
 const readImages = (
   model: string,
   response: HttpClientResponse.HttpClientResponse,
-  lost: Effect.Effect<number, StoreFailed>,
+  paid: Paid,
 ) =>
   response.json.pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(Images)),
-    Effect.catch((error) =>
-      Effect.flatMap(lost, (dollars) =>
-        Effect.fail(
-          new ModelFailed({
-            message: `${model} answered, but its answer couldn't be read (${error.message}). It may have cost up to $${dollars.toFixed(2)}, which is counted as spent, so keepsake didn't ask again.`,
-          }),
-        ),
-      ),
+    Effect.mapError(
+      (error) =>
+        new ModelFailed({
+          message: `${model} answered, but its answer couldn't be read (${error.message}). It may have cost up to $${paid.most.toFixed(2)}, which is counted as spent, so keepsake didn't ask again.`,
+        }),
     ),
+    Effect.tap((images) => paid.settle(usageOf(images))),
   );
 
 const usageOf = ({ usage }: Images): Usage | undefined =>
@@ -169,32 +168,39 @@ export class ImageModel extends Context.Service<
         const edit = Effect.fn('ImageModel.edit')(function* (
           wanted: ImageEdit,
         ) {
-          const { versions } = wanted;
-          const lost = Effect.as(
-            spending.add(model, undefined, versions),
-            mostCostOf(model, versions) ?? 0,
-          );
-          const answer = yield* client.execute(request(wanted)).pipe(
-            Effect.mapError(
-              (error) =>
-                new TryLater({ message: `${model}: ${error.message}` }),
-            ),
-            Effect.flatMap(
-              (
-                response,
-              ): Effect.Effect<
-                Images,
-                ModelFailed | PhotoRefused | TryLater | StoreFailed
-              > =>
-                response.status === okStatus
-                  ? readImages(model, response, lost)
-                  : readProblem(model, response),
-            ),
-            Effect.tap((images) =>
-              spending.add(model, usageOf(images), versions),
-            ),
-            // Each try is paid for, so each has to fit into the budget.
-            (once) => spending.paying(model, versions, once),
+          const size = {
+            text: bytesOf(wanted.prompt) + bytesOf(name.model),
+            pictures: 1,
+            versions: wanted.versions,
+          };
+          // Each try is paid for, so each has to fit into the budget.
+          const once = (paid: Paid) =>
+            Effect.uninterruptibleMask((restore) =>
+              restore(client.execute(request(wanted))).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new TryLater({ message: `${model}: ${error.message}` }),
+                ),
+                // It is counted once its answer begins, so that it stays
+                // counted when reading the answer is interrupted.
+                Effect.tap((response) =>
+                  response.status === okStatus ? paid.answered : Effect.void,
+                ),
+              ),
+            ).pipe(
+              Effect.flatMap(
+                (
+                  response,
+                ): Effect.Effect<
+                  Images,
+                  ModelFailed | PhotoRefused | TryLater | StoreFailed
+                > =>
+                  response.status === okStatus
+                    ? readImages(model, response, paid)
+                    : readProblem(model, response),
+              ),
+            );
+          const answer = yield* spending.paying(model, size, once).pipe(
             // Only the request takes a turn, not the wait before another try.
             turns.withPermits(1),
             Effect.retry({

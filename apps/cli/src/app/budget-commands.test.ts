@@ -1,13 +1,17 @@
 // biome-ignore-all lint/style/useNamingConvention: the API's names for tokens
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
+import { Effect, Fiber } from 'effect';
+import { bytesOf, mostCostOf } from '../shared/prices.ts';
 import {
   asked,
   editLisbon,
   failureOf,
+  judge,
   pickLisbon,
   setUp,
   shootFile,
+  start,
   tearDown,
 } from './command-fixtures.ts';
 import { assessment, fakeModels } from './fake-models.ts';
@@ -15,8 +19,24 @@ import { assessment, fakeModels } from './fake-models.ts';
 const imageModel = 'azure/gpt-image-2.5-sunburst';
 /** What the fake image model's answer costs. */
 const oneRequest = 0.432;
-/** The most a request for the two usual versions may cost. */
-const mostForTwo = 0.632;
+/** What the fake vision model's usual answer costs. */
+const oneQuestion = 0.15;
+/**
+ * Three versions make an image request cost more at its most than the
+ * review of them, so a budget can cover the review but not another attempt.
+ */
+const threeVersions = ['--versions', '3'] as const;
+const reviewButNoSecondAttempt = '1.35';
+
+/** The most the last request to the image model could cost. */
+const mostOfLastEdit = () =>
+  mostCostOf(imageModel, {
+    text:
+      bytesOf(fakeModels.edits.at(-1)?.prompt ?? '') +
+      bytesOf(imageModel.slice(imageModel.indexOf('/') + 1)),
+    pictures: 1,
+    versions: 2,
+  });
 
 const free = { prompt_tokens: 0, completion_tokens: 0 };
 
@@ -30,10 +50,9 @@ const spentOn = (model: string) => {
 /** Every version fails its review, so another attempt is wanted. */
 const everyVersionFails = () => {
   fakeModels.answers.assessment = {
-    assessments: [
-      assessment(1, { sameMoment: false }),
-      assessment(2, { sameMoment: false }),
-    ],
+    assessments: [1, 2, 3].map((version) =>
+      assessment(version, { sameMoment: false }),
+    ),
   };
 };
 
@@ -55,7 +74,13 @@ describe('keepsake edit, with a budget', () => {
     await pickLisbon();
     fakeModels.chatUsage = free;
     everyVersionFails();
-    const result = await editLisbon('B', '--budget', '0.75');
+    const result = await editLisbon(
+      'B',
+      ...threeVersions,
+      '--budget',
+      reviewButNoSecondAttempt,
+    );
+    expect(asked('assessment')).toHaveLength(1);
     expect(result.overBudget).toEqual(['B']);
     expect(fakeModels.edits).toHaveLength(1);
     expect(result.dollarsSpent).toBeCloseTo(oneRequest);
@@ -86,8 +111,30 @@ describe('keepsake edit, with a budget', () => {
         data: [{ b64_json: btoa('a png') }, { b64_json: btoa('a png') }],
       });
     const result = await editLisbon('B');
-    expect(result.models[imageModel].dollars).toBeCloseTo(mostForTwo);
-    expect(result.models['azure/gpt-6-astra'].dollars).toBeGreaterThan(0);
+    expect(result.models[imageModel].dollars).toBeCloseTo(
+      mostOfLastEdit() ?? 0,
+    );
+    expect(result.models[judge].dollars).toBeGreaterThan(0);
+  });
+
+  it('holds what a request sends, however long its prompt', async () => {
+    await pickLisbon();
+    const wish = 'Make the sky a little bluer. '.repeat(7000);
+    const result = await editLisbon('B', '--wish', wish, '--budget', '2');
+    expect(result.overBudget).toEqual(['B']);
+    expect(fakeModels.edits).toHaveLength(0);
+  });
+});
+
+describe('keepsake edit, when an answer has the wrong shape', () => {
+  it('counts each answer before it asks again', async () => {
+    await pickLisbon();
+    fakeModels.answers.crops = { crops: 'none' };
+    const result = await editLisbon('B');
+    expect(asked('crops')).toHaveLength(2);
+    expect(result.failed).toHaveLength(1);
+    expect(result.models[judge]).toMatchObject({ calls: 2 });
+    expect(result.models[judge].dollars).toBeCloseTo(2 * oneQuestion);
   });
 });
 
@@ -95,10 +142,10 @@ describe('keepsake edit, when an answer breaks off', () => {
   it('counts it as spent and doesn’t ask again', async () => {
     await pickLisbon();
     fakeModels.editAnswer = () => {
-      const start = new TextEncoder().encode('{"data":[{"b64_json":"YS');
+      const beginning = new TextEncoder().encode('{"data":[{"b64_json":"YS');
       const body = new ReadableStream({
         start: (controller) => {
-          controller.enqueue(start);
+          controller.enqueue(beginning);
           controller.error(new Error('connection reset'));
         },
       });
@@ -110,8 +157,36 @@ describe('keepsake edit, when an answer breaks off', () => {
     const result = await editLisbon('B');
     expect(fakeModels.edits).toHaveLength(1);
     expect(result.failed[0].reason).toContain('counted as spent');
-    expect(result.models[imageModel].dollars).toBeCloseTo(mostForTwo);
-    expect(spentOn(imageModel)).toBeCloseTo(mostForTwo);
+    expect(result.models[imageModel].dollars).toBeCloseTo(
+      mostOfLastEdit() ?? 0,
+    );
+    expect(spentOn(imageModel)).toBeCloseTo(mostOfLastEdit() ?? 0);
+  });
+
+  it('counts it as spent when keepsake is stopped while it arrives', async () => {
+    await pickLisbon();
+    const arriving = Promise.withResolvers<void>();
+    fakeModels.editAnswer = () => {
+      const body = new ReadableStream(
+        {
+          // Asked for only once the answer is read; the rest never comes.
+          pull: (controller) => {
+            controller.enqueue(new TextEncoder().encode('{"data":['));
+            arriving.resolve();
+            return new Promise<void>(() => undefined);
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    const editing = start('edit', 'lisbon', 'B', '--review-model', judge);
+    await arriving.promise;
+    await Effect.runPromise(Fiber.interrupt(editing));
+    expect(spentOn(imageModel)).toBeCloseTo(mostOfLastEdit() ?? 0);
   });
 });
 
@@ -146,7 +221,14 @@ describe('keepsake edit, with a wish and a budget', () => {
     };
     // The first attempt and its review fit, a second attempt doesn't: the
     // reviewer's questions are held at the most they can cost.
-    const result = await editLisbon('B', '--wish', 'No chair', '--budget', '1');
+    const result = await editLisbon(
+      'B',
+      '--wish',
+      'No chair',
+      ...threeVersions,
+      '--budget',
+      reviewButNoSecondAttempt,
+    );
     expect(fakeModels.edits).toHaveLength(2);
     expect(asked('choices')).toHaveLength(1);
     expect(result.notDone).toEqual([
