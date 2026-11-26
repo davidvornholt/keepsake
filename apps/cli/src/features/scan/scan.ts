@@ -148,14 +148,12 @@ const makeNotes = Effect.fn('makeNotes')(function* (files: ShootFiles) {
   };
 });
 
-/** What a shoot is called and where its photos are. */
-const shootOf = Effect.fn('shootOf')(function* (options: ScanOptions) {
-  const path = yield* Path.Path;
-  const source = yield* folderAt(options.folder);
-  const name = Option.getOrElse(options.name, () =>
-    nameFor(path.basename(source)),
-  );
-  const files = yield* shootFiles(name);
+/** What a shoot is about, which a scan of another folder can't change. */
+const shootOf = Effect.fn('shootOf')(function* (
+  options: ScanOptions,
+  { name, source }: Pick<Shoot, 'name' | 'source'>,
+  files: ShootFiles,
+) {
   const before = yield* readJson(Shoot, files.shoot);
   if (Option.isSome(before) && before.value.source !== source) {
     return yield* new InvalidInput({
@@ -165,22 +163,27 @@ const shootOf = Effect.fn('shootOf')(function* (options: ScanOptions) {
   const timeZone = Option.isSome(options.timeZone)
     ? yield* checkTimeZone(options.timeZone.value)
     : Option.getOrUndefined(before)?.timeZone;
-  const shoot: Shoot = {
+  return {
     name,
     source,
     ...(timeZone === undefined ? {} : { timeZone }),
     about: Option.getOrElse(options.about, () =>
       Option.isSome(before) ? before.value.about : null,
     ),
-  };
-  return { shoot, files };
+  } satisfies Shoot;
 });
 
 /** Finds a folder's photos, makes previews and groups them into moments. */
 export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
-  const { shoot, files } = yield* shootOf(options);
-  const { name, source, about } = shoot;
+  const path = yield* Path.Path;
+  const source = yield* folderAt(options.folder);
+  const name = Option.getOrElse(options.name, () =>
+    nameFor(path.basename(source)),
+  );
+  const files = yield* shootFiles(name);
   return yield* Effect.gen(function* () {
+    const shoot = yield* shootOf(options, { name, source }, files);
+    const { about } = shoot;
     const found = yield* findPhotos(source);
     const notes = yield* makeNotes(files);
     const results = yield* inSteps('scan', found, concurrency, (photo) =>

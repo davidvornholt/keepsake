@@ -154,7 +154,10 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     });
   }
   const path = yield* Path.Path;
-  const root = path.join(yield* shootsDirectory, name);
+  const shoots = yield* shootsDirectory;
+  const root = path.join(shoots, name);
+  // Beside the shoot's folder, so a shoot can be removed while it is held.
+  const locks = path.join(shoots, '..', 'locks');
   return {
     root,
     shoot: path.join(root, 'shoot.json'),
@@ -175,7 +178,10 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     marks: path.join(root, 'marks'),
     labels: path.join(root, 'labels.json'),
     spending: path.join(root, 'spending.json'),
-    lock: path.join(root, 'lock'),
+    /** Held by the command that changes the shoot. */
+    lock: path.join(locks, name),
+    /** Held while what is in its album is read or changed. */
+    albumLock: path.join(locks, `${name}.album`),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** The agent that waits for marks, and the one the page started last. */

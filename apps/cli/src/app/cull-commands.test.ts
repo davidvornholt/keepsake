@@ -14,6 +14,7 @@ import {
 } from './command-fixtures.ts';
 import { fakeModels, verdictAnswer } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
+import { lockFile, whileHeld } from './lock-fixtures.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -158,15 +159,16 @@ describe('keepsake cull', () => {
 
   it('refuses a shoot another command is working on', async () => {
     await scanLisbon();
-    await writeFile(shootFile('lock'), `${process.ppid}\n`);
-    expect((await failureOf('cull', 'lisbon'))._tag).toBe('ShootBusy');
+    const failure = await whileHeld(() => failureOf('cull', 'lisbon'));
+    expect(failure._tag).toBe('ShootBusy');
+    expect(failure.message).toContain(`process ${process.pid}`);
   });
 
   it('takes over from a command that was killed', async () => {
     await scanLisbon();
-    await writeFile(shootFile('lock'), '999999999\n');
+    await writeFile(lockFile(), '999999999\n');
     await runOk('cull', 'lisbon');
-    expect(existsSync(shootFile('lock'))).toBe(false);
+    expect(existsSync(lockFile())).toBe(false);
   });
 });
 
