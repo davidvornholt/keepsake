@@ -35,6 +35,7 @@ describe('keepsake edit, with something to remove', () => {
       'description',
       'people',
       'everyone',
+      'animals',
       'signs',
       'textures',
       'assessment',

@@ -50,6 +50,26 @@ describe('keepsake edit, with everyone else', () => {
   });
 });
 
+describe('keepsake edit, with animals', () => {
+  it('puts back those too small for the image model to draw', async () => {
+    await pickLisbon();
+    const box = { left: 0.1, top: 0.1, right: 0.3, bottom: 0.6 };
+    fakeModels.answers.animals = {
+      animals: [
+        { part: 0, box },
+        // A speck, or in a part that isn't there.
+        { part: 0, box: { ...box, right: 0.12, bottom: 0.12 } },
+        { part: 99, box },
+      ],
+    };
+    await editLisbon('B');
+    expect(await shootJson('edits', 'B', 'animals.json')).toEqual([box]);
+    expect(existsSync(shootFile('edits', 'B', 'version-2-kept.png'))).toBe(
+      true,
+    );
+  });
+});
+
 describe('keepsake edit, looking closely', () => {
   const fault = (overrides: object = {}) => ({
     part: 1,

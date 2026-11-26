@@ -21,6 +21,7 @@ import {
   writeBytes,
   writeJson,
 } from '../../shared/store.ts';
+import { findSmallAnimals } from './animals/find-animals.ts';
 import { chooseCrop } from './crop.ts';
 import { descriptionOf } from './describe.ts';
 import { type CameraData, copyCameraData } from './finish.ts';
@@ -105,7 +106,10 @@ const imageInput = Effect.fn('imageInput')(function* (
   return size;
 });
 
-/** The people and signs that are in a photo to stay. */
+/**
+ * The people and signs that are in a photo to stay, and the animals too small
+ * for the image model to draw, which come back like people far away.
+ */
 export const peopleAndSigns = Effect.fn('peopleAndSigns')(function* (
   files: EditFiles,
   /** What the picture shows of the photo. */
@@ -122,12 +126,17 @@ export const peopleAndSigns = Effect.fn('peopleAndSigns')(function* (
     files.bystanders,
     findBystanders(files.input, people, removed, wish),
   );
+  const animals = yield* remembered(
+    Schema.Array(Box),
+    files.animals,
+    findSmallAnimals(files.input, removed, wish),
+  );
   const signs = yield* remembered(
     Schema.Array(Sign),
     files.signs,
     findSigns(files.input, removed),
   );
-  return { people, bystanders, signs };
+  return { people, bystanders: [...bystanders, ...animals], signs };
 });
 
 const originalsOf = Effect.fn('originalsOf')(function* (

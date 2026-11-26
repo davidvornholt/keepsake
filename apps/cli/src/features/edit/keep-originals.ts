@@ -33,7 +33,10 @@ import { keepTexture } from './textures/keep-texture.ts';
 export type Originals = {
   readonly people: ReadonlyArray<Person>;
   readonly signs: ReadonlyArray<Sign>;
-  /** Everyone else, however small, and what else is put back around it. */
+  /**
+   * Everyone else, however small, animals too small for the image model to
+   * draw, and what else is put back around them.
+   */
   readonly bystanders: ReadonlyArray<Box>;
   /** The areas that keep the photo's own texture. */
   readonly textures: ReadonlyArray<Outline>;
