@@ -5,6 +5,7 @@ import {
   asked,
   editLisbon,
   failureOf,
+  judge,
   pickLisbon,
   runOk,
   setUp,
@@ -13,61 +14,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
-
-/** What was spent on the shoot so far, in dollars. */
-const spentSoFar = async () =>
-  existsSync(shootFile('spending.json'))
-    ? Object.values(
-        (await shootJson('spending.json')) as Record<
-          string,
-          { readonly dollars: number }
-        >,
-      ).reduce((sum, { dollars }) => sum + dollars, 0)
-    : 0;
-
-/** Saves what the owner handed over at once. */
-const handedOver = async (id: string, overrides: object = {}) =>
-  Bun.write(
-    shootFile('hand-overs', `${id}.json`),
-    JSON.stringify({
-      id,
-      at: '2026-04-01T11:00:00Z',
-      dollars: 0,
-      spentBefore: await spentSoFar(),
-      marks: [],
-      album: null,
-      fulfilledAt: null,
-      ...overrides,
-    }),
-  );
-
-/** Saves a mark, and hands it over unless `handedOverAt` is null. */
-const mark = async (
-  id: string,
-  {
-    handedOverAt = '2026-04-01T11:00:00Z',
-    ...overrides
-  }: Record<string, unknown> = {},
-) => {
-  await Bun.write(
-    shootFile('marks', `${id}.json`),
-    JSON.stringify({
-      id,
-      photo: 'B',
-      kind: 'change',
-      note: 'Remove the chair',
-      boxes: [],
-      other: null,
-      madeAt: '2026-04-01T10:00:00Z',
-      answer: null,
-      seenAt: null,
-      ...overrides,
-    }),
-  );
-  if (handedOverAt !== null) {
-    await handedOver(`for-${id}`, { at: handedOverAt, marks: [id] });
-  }
-};
+import { handedOver, mark, spentSoFar } from './mark-fixtures.ts';
 
 const until = async (isSo: () => boolean): Promise<void> => {
   if (!isSo()) {
@@ -333,7 +280,7 @@ describe('keepsake edit --mark', () => {
     await pickLisbon();
     await editLisbon('B');
     await mark('one');
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result).toMatchObject({ edited: 1 });
     expect(fakeModels.edits.at(-1)?.prompt).toContain('Remove the chair');
   });
@@ -349,7 +296,7 @@ describe('keepsake edit --mark', () => {
       places: [{ place: 1, best: 1, notes: 'Clean' }],
     };
     await mark('one', { boxes: [box] });
-    await editLisbon('--mark', 'one');
+    await editLisbon('--mark', 'one', '--budget', '5');
     expect(asked('places')[0]?.texts.join(' ')).toContain('marked');
     expect(await shootJson('edits', 'B', 'correction', 'areas.json')).toEqual([
       box,
@@ -359,8 +306,31 @@ describe('keepsake edit --mark', () => {
   it('needs to know what to do at the places of a mark', async () => {
     await pickLisbon();
     await mark('one', { note: '', boxes: [box] });
-    const failure = await failureOf('edit', 'lisbon', '--mark', 'one');
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      '--mark',
+      'one',
+      '--budget',
+      '5',
+    );
     expect(failure.message).toContain('--wish');
+  });
+
+  it('needs a budget, which only the owner can give', async () => {
+    await pickLisbon();
+    await mark('one');
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      '--mark',
+      'one',
+      '--review-model',
+      judge,
+    );
+    expect(failure._tag).toBe('InvalidInput');
+    expect(failure.message).toContain('--budget');
+    expect(fakeModels.edits).toHaveLength(0);
   });
 
   it('takes the photo from the mark', async () => {
