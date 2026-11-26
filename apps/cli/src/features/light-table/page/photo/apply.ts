@@ -1,7 +1,9 @@
+import { clamp } from '../motion/spring.ts';
+import type { Rect } from '../sheet/layout.ts';
 import type { Shown } from './gliding.ts';
-import { drawInk, type Ink } from './ink.ts';
+import { drawInk, type Ink, type Travel } from './ink.ts';
 import { onScreen, type View } from './plane.ts';
-import { dividerOn, type Setting } from './setting.ts';
+import { dividerOn, restOf, type Setting } from './setting.ts';
 
 // Puts a photo that is looked at where its springs say it is: the plane with
 // the pictures, the divider between before and after, and what is drawn.
@@ -18,6 +20,11 @@ export type Elements = {
 export type Live = {
   readonly setting: Setting;
   ink: Ink;
+  /**
+   * The frame of the table the photo came out of or goes back to: where it
+   * is on the screen, and the part of the plane it shows.
+   */
+  frame: { readonly rect: Rect; readonly part: Rect } | null;
   /** The widest the finished photo has been asked to be, in device pixels. */
   onPixels: (pixels: number) => void;
   /** Whether the photo has been put where it belongs, which it isn't at first. */
@@ -62,6 +69,20 @@ const wipe = (elements: Elements, setting: Setting, view: View) => {
   divider.style.height = `${seen.h}px`;
 };
 
+/** How far the photo is on its way from its frame of the table to where it rests. */
+const travelOf = ({ frame, setting }: Live, view: View): Travel | null => {
+  if (frame === null) {
+    return null;
+  }
+  const atFrame = frame.rect.w / frame.part.w;
+  const atRest = restOf(setting).s;
+  const share =
+    atRest === atFrame
+      ? 1
+      : clamp((view.s - atFrame) / (atRest - atFrame), 0, 1);
+  return { part: frame.part, share };
+};
+
 /** Puts everything where the springs say it is. Says whether ink is still drawn. */
 export const apply = (
   elements: Elements,
@@ -88,7 +109,14 @@ export const apply = (
     ? false
     : drawInk(
         pencil,
-        { ink: live.ink, plane: setting.plane, view, shown: printed, now },
+        {
+          ink: live.ink,
+          plane: setting.plane,
+          view,
+          shown: printed,
+          now,
+          travel: travelOf(live, view),
+        },
         size,
       );
 };
