@@ -166,6 +166,11 @@ export const Removed = Schema.Struct({
   photo: Schema.String,
   at: Schema.String,
   because: Schema.NullOr(Schema.String),
+  /**
+   * The id of the album it went missing from. Without one it stays out of
+   * every album, as the owner asked or as records from before ids were kept.
+   */
+  album: Schema.optionalKey(Schema.String),
 });
 export type Removed = typeof Removed.Type;
 
@@ -238,17 +243,44 @@ export const EditRecord = Schema.Struct({
 });
 export type EditRecord = typeof EditRecord.Type;
 
-export const Publication = Schema.Struct({
+/** A photo keepsake uploaded to an album. */
+export const PublishedPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+  cameraAsset: Schema.String,
+  /** The SHA-256 of the file that was published. */
+  digest: Schema.String,
+  /** Earlier uploads of the photo, which may wait in the album for the trash. */
+  replaced: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+export type PublishedPhoto = typeof PublishedPhoto.Type;
+
+/** What keepsake published to an album it published to before the last. */
+export const EarlierAlbum = Schema.Struct({
   album: Schema.String,
-  photos: Schema.Array(
-    Schema.Struct({
-      photo: Schema.String,
-      asset: Schema.String,
-      cameraAsset: Schema.String,
-      /** The SHA-256 of the file that was published. */
-      digest: Schema.String,
-    }),
-  ),
+  albumId: Schema.String,
+  /**
+   * Whether the album was this account's own rather than shared with it, when
+   * keepsake last published to it. Missing in records from before it noted it.
+   */
+  owned: Schema.optionalKey(Schema.Boolean),
+  photos: Schema.Array(PublishedPhoto),
+});
+export type EarlierAlbum = typeof EarlierAlbum.Type;
+
+export const Publication = Schema.Struct({
+  /** The album's name when keepsake last published to it. */
+  album: Schema.String,
+  /** Missing only in records from before keepsake kept the album's id. */
+  albumId: Schema.optionalKey(Schema.String),
+  /** Whether the album is this account's own, as for an earlier album. */
+  owned: Schema.optionalKey(Schema.Boolean),
+  /** What was published to this album, and to no other. */
+  photos: Schema.Array(PublishedPhoto),
+  /** Replaced uploads that no `publish` has named under `outdated` yet. */
+  outdated: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The other albums keepsake published to, by their id. */
+  elsewhere: Schema.optionalKey(Schema.Array(EarlierAlbum)),
 });
 export type Publication = typeof Publication.Type;
 

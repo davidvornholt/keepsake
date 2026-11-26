@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
   editLisbon,
   failureOf,
+  judge,
+  photosFolder,
   pickLisbon,
+  putPhotos,
   runOk,
   scanLisbon,
   setUp,
@@ -10,7 +13,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools } from './fake-tools.ts';
+import { fakeTools, firstAlbum } from './fake-tools.ts';
 
 const publishLisbon = async () => {
   await pickLisbon();
@@ -20,9 +23,12 @@ const publishLisbon = async () => {
 
 /** The owner takes a photo out of the album in Immich. */
 const removeInImmich = (photo: string) => {
-  fakeTools.album = fakeTools.album?.filter(
-    ({ fileName }) => fileName !== `${photo}-keepsake.jpg`,
-  );
+  const [album] = fakeTools.albums;
+  if (album !== undefined) {
+    album.assets = album.assets.filter(
+      ({ fileName }) => fileName !== `${photo}-keepsake.jpg`,
+    );
+  }
 };
 
 const inAlbum = async () => {
@@ -61,9 +67,58 @@ describe('keepsake publish, with an album that changed in Immich', () => {
     await publishLisbon();
     removeInImmich('B');
     const result = await runOk('publish', 'lisbon', 'B');
-    expect(result).toMatchObject({ published: 1, outdated: ['asset-3'] });
+    // Immich knows the unchanged photo by its checksum and keeps its asset.
+    expect(result).toMatchObject({ published: 1, outdated: [] });
     expect(await inAlbum()).toEqual(['A1', 'C', 'B']);
     expect(await shootJson('removed.json')).toEqual([]);
+  });
+
+  it('names the earlier upload when the photo changed meanwhile', async () => {
+    await publishLisbon();
+    removeInImmich('B');
+    await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');
+    const result = await runOk('publish', 'lisbon', 'B');
+    expect(result).toMatchObject({ published: 1, outdated: ['asset-3'] });
+  });
+
+  it('leaves the photos of one album out of another', async () => {
+    await publishLisbon();
+    const second = await runOk('publish', 'lisbon', 'A1', '--album', 'Second');
+    expect(second).toMatchObject({ album: { id: 'album-2' }, outdated: [] });
+    expect(await shootJson('removed.json').catch(() => [])).toEqual([]);
+    const rest = await runOk('publish', 'lisbon');
+    expect(rest).toMatchObject({
+      album: { id: 'album-2', name: 'Second' },
+      published: 2,
+      alreadyThere: 1,
+      outdated: [],
+    });
+    expect(await inAlbum()).toEqual(['A1', 'B', 'C']);
+    expect(fakeTools.albums[0]?.assets).toHaveLength(3);
+  });
+
+  it('knows a photo only by a name that no other photo has', async () => {
+    fakeTools.files = [
+      { file: 'one/B.ARW', second: 0 },
+      { file: 'two/B.ARW', second: 600 },
+    ];
+    await putPhotos();
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
+    await runOk('cull', 'lisbon');
+    await runOk('pick', 'lisbon');
+    await editLisbon('one/B');
+    await runOk('publish', 'lisbon', 'one/B');
+    const [album] = fakeTools.albums;
+    if (album !== undefined) {
+      const stranger = { id: 'asset-9', fileName: 'B-keepsake.jpg' };
+      album.assets = [
+        ...album.assets,
+        { ...stranger, favorite: false, trashed: false },
+      ];
+    }
+    await runOk('publish', 'lisbon', 'one/B');
+    expect(await inAlbum()).toEqual(['one/B']);
   });
 
   it('takes the newer of two versions until the older is trashed', async () => {
@@ -99,7 +154,7 @@ describe('keepsake take-out', () => {
       ],
       inAlbum: 1,
     });
-    expect(fakeTools.album?.map(({ id }) => id)).toEqual(['asset-1']);
+    expect(firstAlbum()?.map(({ id }) => id)).toEqual(['asset-1']);
     const { standing } = await runOk('show', 'lisbon', 'B');
     expect(standing).toMatchObject({
       kind: 'taken-out',
@@ -170,5 +225,34 @@ describe('keepsake take-out', () => {
     const because = ['--because', 'It is blurred.'];
     const failure = await failureOf('take-out', 'lisbon', 'B', ...because);
     expect(failure.message).toContain('B isn’t in the album');
+  });
+});
+
+describe('keepsake take-out, with what Immich does', () => {
+  it('takes out the upload of a photo that waits for the trash', async () => {
+    await publishLisbon();
+    await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');
+    await runOk('publish', 'lisbon');
+    const because = ['--because', 'It is blurred.'];
+    await runOk('take-out', 'lisbon', 'B', ...because);
+    expect(firstAlbum()?.map(({ id }) => id)).toEqual(['asset-1', 'asset-5']);
+    const { standing } = await runOk('show', 'lisbon', 'B');
+    expect(standing).toMatchObject({
+      kind: 'taken-out',
+      because: 'It is blurred.',
+    });
+  });
+
+  it('notes only what Immich took out', async () => {
+    await publishLisbon();
+    fakeTools.refused.add('asset-3');
+    const because = ['--because', 'It is blurred.'];
+    const failure = await failureOf('take-out', 'lisbon', 'B', 'C', ...because);
+    expect(failure.message).toContain('did not take B out');
+    expect(await inAlbum()).toEqual(['A1', 'B']);
+    const removed = await shootJson('removed.json');
+    expect(
+      removed.map(({ photo }: { readonly photo: string }) => photo),
+    ).toEqual(['C']);
   });
 });

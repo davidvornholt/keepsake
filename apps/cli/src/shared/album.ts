@@ -1,8 +1,15 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
-import { Album, AlbumPhoto, Publication, Removed } from './domain.ts';
-import { albumAssets, findAlbum, immichServer } from './immich.ts';
+import { Album, AlbumPhoto, Removed } from './domain.ts';
+import {
+  type Asset,
+  albumAssets,
+  albumNamed,
+  albumWithId,
+  immichServer,
+} from './immich.ts';
 import { withAlbum } from './lock.ts';
-import { readRemoved } from './standing.ts';
+import { type AlbumRecord, readPublication } from './publication.ts';
+import { isOutOf, readAllRemoved } from './standing.ts';
 import { type OpenShoot, readJson, writeJson } from './store.ts';
 
 const finishedName = /^(?<base>.+)-keepsake\.jpg$/u;
@@ -10,76 +17,150 @@ const finishedName = /^(?<base>.+)-keepsake\.jpg$/u;
 const isSame = Schema.toEquivalence(
   Schema.Struct({
     photos: Schema.Array(AlbumPhoto),
+    id: Schema.String,
     name: Schema.String,
   }),
 );
 
-/**
- * Reads what the album has in Immich now, whoever changed it there. Photos
- * that aren't in it any more are noted as taken out.
- */
-export const readAlbum = (open: OpenShoot) =>
-  readNow(open).pipe(withAlbum(open.files));
+/** The album of a record, as it is called in Immich now, unless it is gone. */
+const albumOf = (record: AlbumRecord) =>
+  record.albumId === undefined
+    ? albumNamed(record.album)
+    : albumWithId(record.albumId);
 
-const readNow = Effect.fn('readAlbum')(function* (open: OpenShoot) {
-  const published = yield* readJson(Publication, open.files.publication);
-  if (Option.isNone(published)) {
-    return null;
+/** The photos of the shoot by the last part of their id, for names to match. */
+const photosByBase = (open: OpenShoot) => {
+  const byBase = new Map<string, Array<string>>();
+  for (const id of open.photos.keys()) {
+    const base = id.slice(id.lastIndexOf('/') + 1);
+    byBase.set(base, [...(byBase.get(base) ?? []), id]);
   }
-  const found = yield* findAlbum(published.value.album);
-  if (found === undefined) {
-    return null;
+  return byBase;
+};
+
+/** The photos each upload is, as several photos can be the same file. */
+const photosOfAssets = (record: AlbumRecord) => {
+  const photosOf = new Map<string, Array<string>>();
+  for (const { asset, photo } of record.photos) {
+    photosOf.set(asset, [...(photosOf.get(asset) ?? []), photo]);
   }
-  // Asked first, so little happens between reading the album and saving it.
-  const server = yield* immichServer;
-  const photoOf = new Map(
-    published.value.photos.map(({ asset, photo }) => [asset, photo] as const),
-  );
-  const byBase = new Map(
-    [...open.photos.keys()].map(
-      (id) => [id.slice(id.lastIndexOf('/') + 1), id] as const,
-    ),
-  );
+  return photosOf;
+};
+
+/** Which photo of the shoot each asset of the album is, where that is known. */
+const photosIn = (
+  open: OpenShoot,
+  record: AlbumRecord,
+  assets: ReadonlyArray<Asset>,
+) => {
+  const photosOf = photosOfAssets(record);
+  const replaced = new Set(record.photos.flatMap((one) => one.replaced ?? []));
+  const byBase = photosByBase(open);
   const inAlbum = new Map<string, AlbumPhoto>();
-  for (const { id, fileName, favorite } of yield* albumAssets(found.id)) {
+  for (const { id, fileName, favorite } of assets) {
     const base = finishedName.exec(fileName)?.groups?.base ?? '';
-    const photo = photoOf.get(id) ?? byBase.get(base);
-    // An outdated version may be there too until it is trashed.
-    const isOutdated = !photoOf.has(id) && inAlbum.has(photo ?? '');
-    if (photo !== undefined && !isOutdated) {
-      inAlbum.set(photo, { photo, asset: id, favorite });
+    const [match, ...others] = byBase.get(base) ?? [];
+    // An upload keepsake doesn't know is the photo of its name, unless that
+    // names several or keepsake replaced the upload since.
+    const named =
+      replaced.has(id) || others.length > 0 || match === undefined
+        ? []
+        : [match];
+    const known = photosOf.get(id);
+    for (const photo of known ?? named) {
+      // An outdated version may be there too until it is trashed.
+      if (known !== undefined || !inAlbum.has(photo)) {
+        inAlbum.set(photo, { photo, asset: id, favorite });
+      }
     }
   }
-  const photos = [...inAlbum.values()];
-  const readAt = DateTime.formatIso(yield* DateTime.now);
-  const album: Album = {
-    id: found.id,
-    name: found.name,
-    server,
-    readAt,
-    photos,
-  };
-  const before = Option.getOrNull(yield* readJson(Album, open.files.album));
-  const removed = yield* readRemoved(open);
-  const there = new Set(photos.map(({ photo }) => photo));
+  return [...inAlbum.values()];
+};
+
+/**
+ * Notes as taken out the photos that are gone from the album, and forgets
+ * that those were taken out that are back in it.
+ */
+const noteRemoved = Effect.fn('noteRemoved')(function* (
+  open: OpenShoot,
+  record: AlbumRecord,
+  album: Album,
+  before: Album | null,
+) {
+  // `publish` gives the removals from before keepsake kept album ids their
+  // album before it reads another one, so the rest are about this one.
+  const all = yield* readAllRemoved(open, album.id);
+  const counts = isOutOf(album.id);
+  const there = new Set(album.photos.map(({ photo }) => photo));
   const known = new Set(
-    [...published.value.photos, ...(before?.photos ?? [])].map(
+    [...record.photos, ...(before?.id === album.id ? before.photos : [])].map(
       ({ photo }) => photo,
     ),
   );
   const gone = [...known].filter(
     (photo) =>
-      !(there.has(photo) || removed.some((one) => one.photo === photo)),
+      !(
+        there.has(photo) ||
+        all.some((one) => one.photo === photo && counts(one))
+      ),
   );
-  const isBack = removed.some(({ photo }) => there.has(photo));
+  const isBack = all.some((one) => counts(one) && there.has(one.photo));
   if (gone.length > 0 || isBack) {
     yield* writeJson(Schema.Array(Removed), open.files.removed, [
-      ...removed.filter(({ photo }) => !there.has(photo)),
-      ...gone.map((photo) => ({ photo, at: readAt, because: null })),
+      ...all.filter((one) => !(counts(one) && there.has(one.photo))),
+      ...gone.map((photo) => ({
+        photo,
+        at: album.readAt,
+        because: null,
+        album: album.id,
+      })),
     ]);
   }
-  if (before === null || !isSame(before, album)) {
+});
+
+const refreshNow = Effect.fn('refreshAlbum')(function* (
+  open: OpenShoot,
+  record: AlbumRecord,
+  isCurrent: boolean,
+) {
+  const found = yield* albumOf(record);
+  if (found === undefined) {
+    return null;
+  }
+  // Asked first, so little happens between reading the album and saving it.
+  const server = yield* immichServer;
+  const photos = photosIn(open, record, yield* albumAssets(found.id));
+  const album: Album = {
+    id: found.id,
+    name: found.name,
+    server,
+    readAt: DateTime.formatIso(yield* DateTime.now),
+    photos,
+  };
+  const before = Option.getOrNull(yield* readJson(Album, open.files.album));
+  yield* noteRemoved(open, record, album, before);
+  if (isCurrent && (before === null || !isSame(before, album))) {
     yield* writeJson(Album, open.files.album, album);
   }
   return album;
 });
+
+/**
+ * Reads what an album keepsake published to has in Immich now, whoever
+ * changed it there. Photos that aren't in it any more are noted as taken out
+ * of it. Only the album keepsake publishes to is kept in `album.json`.
+ */
+export const refreshAlbum = (
+  open: OpenShoot,
+  record: AlbumRecord,
+  isCurrent: boolean,
+) => refreshNow(open, record, isCurrent).pipe(withAlbum(open.files));
+
+const readNow = Effect.fn('readAlbum')(function* (open: OpenShoot) {
+  const published = yield* readPublication(open);
+  return published === null ? null : yield* refreshNow(open, published, true);
+});
+
+/** Reads what the album keepsake publishes to has in Immich now. */
+export const readAlbum = (open: OpenShoot) =>
+  readNow(open).pipe(withAlbum(open.files));

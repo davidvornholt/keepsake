@@ -4,10 +4,11 @@ import {
   pickLisbon,
   runOk,
   setUp,
+  shootFile,
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools } from './fake-tools.ts';
+import { fakeTools, firstAlbum } from './fake-tools.ts';
 import { send, whileServing } from './light-table-fixtures.ts';
 
 beforeEach(() => setUp(spyOn));
@@ -76,5 +77,36 @@ describe('the page reading the album again', () => {
     expect((await shootJson('album.json')).photos).toMatchObject([
       { photo: 'B', favorite: true },
     ]);
+  });
+});
+
+describe('keepsake publish, while the page marks a favorite', () => {
+  it('gives the new upload the favorite marked meanwhile', async () => {
+    await publishB();
+    await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another B');
+    const uploading = Promise.withResolvers<void>();
+    const go = Promise.withResolvers<void>();
+    fakeTools.pause = ({ command, args }) => {
+      if (command !== 'photos' || args[0] !== 'upload') {
+        return;
+      }
+      fakeTools.pause = undefined;
+      uploading.resolve();
+      return go.promise;
+    };
+    const publishing = runOk('publish', 'lisbon', 'B');
+    await uploading.promise;
+    const marked = await whileServing((address) =>
+      send('PUT', `${address}/api/shoots/lisbon/favorites`, {
+        photo: 'B',
+        favorite: true,
+      }),
+    );
+    expect(marked.ok).toBe(true);
+    go.resolve();
+    await publishing;
+    const [{ asset }] = (await shootJson('publication.json')).photos;
+    const now = firstAlbum()?.find(({ id }) => id === asset);
+    expect(now).toMatchObject({ favorite: true });
   });
 });

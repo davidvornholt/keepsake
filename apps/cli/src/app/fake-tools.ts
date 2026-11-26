@@ -1,8 +1,16 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
+import { answerPhotos, type FakeAlbum } from './fake-photos.ts';
 
 /** A program that was run. */
 type Run = {
@@ -13,13 +21,6 @@ type Run = {
   readonly inputBytes: Uint8Array;
   /** The environment variables that were set or removed for it. */
   readonly env: Readonly<Record<string, unknown>>;
-};
-
-type FakeAsset = {
-  readonly id: string;
-  readonly fileName: string;
-  readonly favorite: boolean;
-  readonly trashed: boolean;
 };
 
 const greyPixels = 72;
@@ -61,10 +62,14 @@ export const fakeTools = {
   runs: [] as Array<Run>,
   /** The RAW files in the folder that is scanned, by the second each was taken; `putPhotos` puts them there. */
   files: [] as Array<{ readonly file: string; readonly second: number }>,
-  /** Assets the photos command has uploaded, by file. */
+  /** Files the photos command has sent to Immich, in the order it got them. */
   uploads: [] as Array<string>,
-  /** The album in Immich, once it was created. */
-  album: undefined as ReadonlyArray<FakeAsset> | undefined,
+  /** The assets in Immich, with the file and the checksum of its bytes. */
+  library: [] as Array<{ id: string; file: string; checksum: string }>,
+  /** The albums in Immich, the first of which is created as `album-1`. */
+  albums: [] as Array<FakeAlbum>,
+  /** Assets Immich refuses to put into an album or take out of one. */
+  refused: new Set<string>(),
   /** RAW files whose pictures can't be read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
@@ -85,7 +90,9 @@ export const resetTools = () => {
   fakeTools.runs = [];
   fakeTools.files = [];
   fakeTools.uploads = [];
-  fakeTools.album = undefined;
+  fakeTools.library = [];
+  fakeTools.albums = [];
+  fakeTools.refused = new Set();
   fakeTools.broken = new Set();
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
@@ -98,6 +105,13 @@ export const resetTools = () => {
 const exiftool = (args: ReadonlyArray<string>): string => {
   if (args[0] === '-s3') {
     return '2026:03:30 10:00:00.000+02:00\n';
+  }
+  if (args.includes('-overwrite_original')) {
+    // The data copied into a picture makes its bytes those of its photo, so
+    // Immich tells the uploads of different photos apart by their checksum.
+    const target = args.at(-1) ?? '';
+    appendFileSync(target, `\n${args.slice(0, -1).join(' ')}`);
+    return '';
   }
   if (args[0] !== '-json') {
     return '';
@@ -171,43 +185,8 @@ const magick = (run: Run): string | Uint8Array => {
   return '';
 };
 
-const album = { id: 'album-1', name: 'Lisbon, May 2026' };
-
-const upload = ([, file = '', inAlbum]: ReadonlyArray<string>) => {
-  fakeTools.uploads.push(file);
-  const id = `asset-${fakeTools.uploads.length}`;
-  if (inAlbum === '--album') {
-    const fileName = file.slice(file.lastIndexOf('/') + 1);
-    fakeTools.album = [
-      ...(fakeTools.album ?? []),
-      { id, fileName, favorite: false, trashed: false },
-    ];
-  }
-  return { files: [{ status: 'created', assetId: id }] };
-};
-
-const photos = (args: ReadonlyArray<string>): unknown => {
-  switch (`${args[0]} ${args[1]}`) {
-    case 'albums list':
-      return fakeTools.album === undefined ? [] : [album];
-    case 'albums create':
-      fakeTools.album = [];
-      return { ...album, name: args[2] };
-    case 'albums show':
-      return { album, assets: fakeTools.album, nextCursor: null };
-    case 'albums remove':
-      fakeTools.album = fakeTools.album?.filter(
-        ({ id }) => !args.slice(2).includes(id),
-      );
-      return {};
-    case 'tags list':
-      return [];
-    case 'status undefined':
-      return { server: 'https://photos.example.com' };
-    default:
-      return args[0] === 'upload' ? upload(args) : {};
-  }
-};
+/** The assets of the album keepsake made first. */
+export const firstAlbum = () => fakeTools.albums[0]?.assets;
 
 const claudeStatus = () =>
   JSON.stringify({
@@ -234,7 +213,7 @@ const answer = (run: Run): string | Uint8Array => {
     case 'magick':
       return magick(run);
     case 'photos':
-      return JSON.stringify(photos(args));
+      return JSON.stringify(answerPhotos(fakeTools, args));
     default:
       return fakeTools.programs[command]?.(run) ?? '';
   }

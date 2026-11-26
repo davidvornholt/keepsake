@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { ToolFailed } from './errors/errors.ts';
+import { InvalidInput, ToolFailed } from './errors/errors.ts';
 import { toolText } from './tools.ts';
 
 // keepsake reaches Immich through the photos command, so it needs no key of
@@ -22,22 +22,60 @@ const photos = Effect.fn('photos')(function* <S extends Schema.Constraint>(
   );
 });
 
-const Named = Schema.Struct({ id: Schema.String, name: Schema.String });
+const Named = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  /** The name of the account the album belongs to. */
+  owner: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The other accounts it is shared with. */
+  sharedWith: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ name: Schema.String })),
+  ),
+});
 const NamedList = Schema.Array(Named);
 
-/** The album with this name, if there is one. */
-export const findAlbum = Effect.fn('findAlbum')(function* (name: string) {
-  const albums = yield* photos(NamedList, ['albums', 'list', '--name', name]);
-  return albums.find((candidate) => candidate.name === name);
+export type NamedAlbum = typeof Named.Type;
+
+/** Every album, the owner's own and those shared with them. */
+export const listAlbums = photos(NamedList, ['albums', 'list']);
+
+/**
+ * The album of these with this name, if there is one. Albums are told apart
+ * by their id, so a name two albums share names none of them.
+ */
+export const uniqueNamed = Effect.fn('uniqueNamed')(function* (
+  albums: ReadonlyArray<NamedAlbum>,
+  name: string,
+) {
+  const same = albums.filter((candidate) => candidate.name === name);
+  if (same.length > 1) {
+    return yield* new InvalidInput({
+      message: `Immich has ${same.length} albums called ${name} (${same.map(({ id }) => id).join(', ')}), and keepsake can't tell which is meant. Rename all but one of them in Immich, or give another name with --album.`,
+    });
+  }
+  return same[0];
 });
 
-/** The album with this name, which is created when there is none. */
+/** The album with this name, if there is exactly one. */
 export const albumNamed = Effect.fn('albumNamed')(function* (name: string) {
-  return (
-    (yield* findAlbum(name)) ??
-    (yield* photos(Named, ['albums', 'create', name]))
+  return yield* uniqueNamed(
+    yield* photos(NamedList, ['albums', 'list', '--name', name]),
+    name,
   );
 });
+
+/** The album with this id, under the name it has now, unless it is gone. */
+export const albumWithId = Effect.fn('albumWithId')(function* (id: string) {
+  return (yield* listAlbums).find((candidate) => candidate.id === id);
+});
+
+export const createAlbum = (name: string) =>
+  photos(Named, ['albums', 'create', name]);
+
+/** What Immich didn't change of what it was asked to, and why. */
+const Unchanged = Schema.Array(
+  Schema.Struct({ id: Schema.String, reason: Schema.String }),
+);
 
 const Uploaded = Schema.Struct({
   files: Schema.Array(
@@ -48,19 +86,35 @@ const Uploaded = Schema.Struct({
       reason: Schema.optionalKey(Schema.String),
     }),
   ),
+  album: Schema.optionalKey(
+    Schema.Struct({ added: Schema.Array(Schema.String), unchanged: Unchanged }),
+  ),
 });
+
+/** Why Immich didn't put an asset into the album, if it didn't. */
+const notAdded = (asset: string, album: (typeof Uploaded.Type)['album']) => {
+  if (album?.added.includes(asset) === true) {
+    return;
+  }
+  const unchanged = album?.unchanged.find(({ id }) => id === asset);
+  if (unchanged === undefined) {
+    return 'it did not say whether it did';
+  }
+  // Immich's reason for a photo that was in the album already.
+  return unchanged.reason === 'duplicate' ? undefined : unchanged.reason;
+};
 
 /** Uploads a file and returns its asset's id, also when Immich had it. */
 export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
   file: string,
   album: string | null,
 ) {
-  const { files } = yield* photos(Uploaded, [
+  const answer = yield* photos(Uploaded, [
     'upload',
     file,
     ...(album === null ? [] : ['--album', album]),
   ]);
-  const [result] = files;
+  const [result] = answer.files;
   if (result?.assetId === undefined) {
     return yield* new ToolFailed({
       message: `Immich did not take ${file}: ${result?.reason ?? 'no reason given'}`,
@@ -69,6 +123,13 @@ export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
   if (result.trashed === true) {
     return yield* new ToolFailed({
       message: `${file} is in Immich's trash. Restore it with \`photos restore ${result.assetId}\`.`,
+    });
+  }
+  const refused =
+    album === null ? undefined : notAdded(result.assetId, answer.album);
+  if (refused !== undefined) {
+    return yield* new ToolFailed({
+      message: `Immich took ${file} as ${result.assetId} but did not put it into the album: ${refused}`,
     });
   }
   return result.assetId;
@@ -105,7 +166,7 @@ export type Asset = (typeof Page.Type)['assets'][number];
 
 const pageSize = '1000';
 
-/** Every photo of an album. */
+/** Every photo of an album that isn't in the trash. */
 export const albumAssets = Effect.fn('albumAssets')(function* (id: string) {
   const assets: Array<Asset> = [];
   let cursor: string | null = null;
@@ -124,9 +185,25 @@ export const albumAssets = Effect.fn('albumAssets')(function* (id: string) {
   return assets;
 });
 
-/** Takes photos out of an album. They stay in the library. */
-export const removeFromAlbum = (album: string, assets: ReadonlyArray<string>) =>
-  photos(Schema.Unknown, ['albums', 'remove', album, ...assets]);
+const Removal = Schema.Struct({ unchanged: Unchanged });
+
+/**
+ * Takes photos out of an album and returns those Immich refused to take out,
+ * with its reason. They stay in the library.
+ */
+export const removeFromAlbum = Effect.fn('removeFromAlbum')(function* (
+  album: string,
+  assets: ReadonlyArray<string>,
+) {
+  const { unchanged } = yield* photos(Removal, [
+    'albums',
+    'remove',
+    album,
+    ...assets,
+  ]);
+  // Immich's reason for a photo that wasn't in the album.
+  return unchanged.filter(({ reason }) => reason !== 'not_found');
+});
 
 /** Gives a photo the favorite mark, or takes it away. */
 export const markFavorite = (asset: string, isFavorite: boolean) =>
@@ -136,10 +213,31 @@ export const markFavorite = (asset: string, isFavorite: boolean) =>
     isFavorite ? '--favorite' : '--no-favorite',
   ]);
 
-const Status = Schema.Struct({ server: Schema.String });
+const Status = Schema.Struct({
+  server: Schema.String,
+  /** The name of the account, unless the key may not read it. */
+  user: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
 
 /** The web address of Immich. */
 export const immichServer = Effect.map(
   photos(Status, ['status']),
   ({ server }) => server,
 );
+
+/** The name of the account photos is signed in to, if it may read it. */
+export const signedInUser = Effect.map(
+  photos(Status, ['status']),
+  ({ user }) => user ?? null,
+);
+
+/**
+ * Whether the album is the account's own, or undefined when photos can't
+ * tell. Accounts are told apart by their name here, so an album shared by a
+ * namesake counts as not the account's own.
+ */
+export const isOwnAlbum = (album: NamedAlbum, user: string | null) =>
+  user === null || album.owner === undefined || album.owner === null
+    ? undefined
+    : album.owner === user &&
+      !(album.sharedWith ?? []).some(({ name }) => name === user);

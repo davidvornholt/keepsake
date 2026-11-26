@@ -7,6 +7,7 @@ import {
   Removed,
   type Verdict,
 } from './domain.ts';
+import { readPublication } from './publication.ts';
 import { type OpenShoot, readJson } from './store.ts';
 import { verdicts } from './verdicts.ts';
 
@@ -46,11 +47,42 @@ export const readReasons = (open: OpenShoot) =>
     Option.getOrElse((): ReadonlyArray<Reason> => []),
   );
 
-export const readRemoved = (open: OpenShoot) =>
+/**
+ * Every photo that was taken out, of whichever album. Those that went missing
+ * before keepsake kept the album's id went missing from `legacyAlbum`.
+ */
+export const readAllRemoved = (
+  open: OpenShoot,
+  legacyAlbum: string | undefined,
+) =>
   Effect.map(
     readJson(Removals, open.files.removed),
-    Option.getOrElse((): ReadonlyArray<Removed> => []),
+    Option.match({
+      onNone: (): ReadonlyArray<Removed> => [],
+      onSome: (all) =>
+        all.map((one) =>
+          one.because === null &&
+          one.album === undefined &&
+          legacyAlbum !== undefined
+            ? { ...one, album: legacyAlbum }
+            : one,
+        ),
+    }),
   );
+
+/** Whether a photo that was taken out stays out of the album with this id. */
+export const isOutOf =
+  (album: string | undefined) =>
+  (removed: Removed): boolean =>
+    removed.album === undefined || removed.album === album;
+
+/** The photos that stay out of the album keepsake publishes to. */
+export const readRemoved = Effect.fn('readRemoved')(function* (
+  open: OpenShoot,
+) {
+  const album = (yield* readPublication(open))?.albumId;
+  return (yield* readAllRemoved(open, album)).filter(isOutOf(album));
+});
 
 type Known = {
   readonly album: Album | null;
