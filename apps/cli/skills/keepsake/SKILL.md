@@ -47,9 +47,11 @@ When the user handed something over, or asks you to go through it:
    - `put-in`: `edit <shoot> --mark <id>`, unless it has a `final` and the mark no note, then `publish <shoot> <photo>`.
    - `take-out`: `take-out <shoot> <photo> --because "<the note, or what the user said about it>"`.
    - `swap`: put in `photo`, and take out `other` for it.
-4. `answer <shoot> <id> --done "<what changed, in a sentence>"`, or `--not-done "<why>"`, right after each one. The page shows it to the user with the photo, so they know where to look again.
+4. `answer <shoot> <id> --done "<what changed, in a sentence>"`, or `--not-done "<why>"`, right after each one is in the album or out of it. The page shows it to the user with the photo, so they know where to look again.
 5. With an `album`, go on with the chosen photos after the marks, which may take some of them out: `edit <shoot> --budget <what is left of agreedDollars>`, look at them, and `publish <shoot>`. The order is done when all of them are in the album. Where the budget ends first, publish what is done and ask.
 6. `explain <shoot>` when the album changed.
+
+Only one command at a time works on a shoot; another one stops with `ShootBusy` and changes nothing. So publish after the edits have ended, and read what each command prints on stderr too, rather than hiding it.
 
 Do the same when they tell you in the chat instead: `take-out` with their reason, so the page can show it. Photos that are only chosen so far can be taken out too.
 
@@ -61,7 +63,7 @@ Do the same when they tell you in the chat instead: `take-out` with their reason
 - Another frame, such as more room around the subject: `edit <shoot> <photo> --again --wish "<what the user wants>"`, then `publish`. It starts over, so the wish should say everything the user wants of the photo. `--again` without `--wish` keeps the earlier wishes.
 - Another attempt at a photo: `edit <shoot> <photo> --again`, then `publish`.
 
-After each of these the earlier upload stays in Immich and its id is listed under `outdated`; show it to the user and ask before trashing it with the photos command.
+After each of these, and after a mark, the earlier upload stays in Immich and its id is listed under `outdated`. The user asked for the better one, not for two, so move the earlier one to the trash with the photos command right away, without asking first; the trash keeps it for a month.
 
 ## Comparing vision models
 

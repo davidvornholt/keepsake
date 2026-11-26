@@ -71,14 +71,19 @@ describe('keepsake edit, looking closely', () => {
       .filter(({ command }) => command === 'magick')
       .map(({ args }) => args[0]);
 
-  it('ignores what nobody notices', async () => {
+  it('puts back what few notice too', async () => {
     await pickLisbon();
-    inTurn([fault({ serious: false })]);
+    inTurn([fault({ serious: false })], [fault({ serious: false })]);
+    expect((await editLisbon('B')).edited).toBe(1);
+    expect(asked('faults')).toHaveLength(3);
+    expect(finishedFrom().at(-1)).toEndWith('B/version-1-mended.png');
+  });
+
+  it('leaves alone what the original has wrong too', async () => {
+    await pickLisbon();
+    inTurn([fault({ serious: false, rightInOriginal: false })]);
     expect((await editLisbon('B')).edited).toBe(1);
     expect(asked('faults')).toHaveLength(1);
-    expect(existsSync(shootFile('edits', 'B', 'version-1-mended.png'))).toBe(
-      false,
-    );
   });
 
   it('puts back from the original what is wrong', async () => {
