@@ -70,40 +70,51 @@ describe('the folders of photos on the page', () => {
     const { trip } = await withLinkOutside();
     await Bun.write(join(trip, '.hidden', 'C.jpg'), 'a photo');
     await Bun.write(join(trip, 'notes.txt'), 'notes');
-    const lists: Array<string> = [];
-    fakeTools.pause = async ({ command, args }) => {
-      if (command === 'exiftool' && args.includes('-@')) {
-        lists.push(await Bun.file(args[args.indexOf('-@') + 1] ?? '').text());
-      }
-    };
     const scanned = await runOk('scan', trip, '--name', 'trip');
     expect(scanned).toMatchObject({ photos: 1, moments: 1 });
     const [exiftool] = fakeTools.runs.filter(
       ({ command }) => command === 'exiftool',
     );
-    const [option, list] = exiftool?.args.slice(-2) ?? [];
-    expect(option).toBe('-@');
-    // No other file or folder than its list of files.
-    expect(exiftool?.args.filter((arg) => arg.startsWith('/'))).toEqual([
-      list ?? '',
+    // No other file or folder, each after the end of the options.
+    expect(exiftool?.args.slice(exiftool.args.indexOf('--'))).toEqual([
+      '--',
+      join(trip, 'A.jpg'),
     ]);
-    expect(lists).toEqual([`#[CSTR]${join(trip, 'A.jpg')}\n`]);
+    expect(exiftool?.args.filter((arg) => arg.startsWith('/'))).toEqual([
+      join(trip, 'A.jpg'),
+    ]);
     expect(readOf('B.jpg')).toEqual([]);
   });
 
   it('hands exiftool any name a photo can have', async () => {
-    const odd = join(photosFolder(), 'odd', 'a\\b\nc.jpg');
+    const odd = join(photosFolder(), 'o@dd', 'a\\b\nc$d@e.jpg');
     await Bun.write(odd, 'a photo');
-    const lists: Array<string> = [];
-    fakeTools.pause = async ({ command, args }) => {
-      if (command === 'exiftool' && args.includes('-@')) {
-        lists.push(await Bun.file(args[args.indexOf('-@') + 1] ?? '').text());
-      }
-    };
-    const scanned = await runOk('scan', join(photosFolder(), 'odd'));
+    const scanned = await runOk('scan', join(photosFolder(), 'o@dd'));
     expect(scanned).toMatchObject({ photos: 1 });
-    expect(lists).toEqual([
-      `#[CSTR]${join(photosFolder(), 'odd')}/a\\\\b\\nc.jpg\n`,
-    ]);
+    const [exiftool] = fakeTools.runs.filter(
+      ({ command }) => command === 'exiftool',
+    );
+    expect(exiftool?.args.at(-1)).toBe(odd);
+  });
+
+  it('hands exiftool very many photos in runs it can be given', async () => {
+    const count = 3000;
+    const long = 'a-long-name-of-a-trip-to-fill-the-arguments-'.repeat(2);
+    await Promise.all(
+      Array.from({ length: count }, (_, index) =>
+        Bun.write(join(photosFolder(), 'many', `${long}${index}.jpg`), ''),
+      ),
+    );
+    const scanned = await runOk('scan', join(photosFolder(), 'many'));
+    expect(scanned).toMatchObject({ photos: count });
+    const runs = fakeTools.runs.filter(
+      ({ command, args }) => command === 'exiftool' && args.includes('--'),
+    );
+    const named = runs.map(({ args }) => args.slice(args.indexOf('--') + 1));
+    expect(runs.length).toBeGreaterThan(1);
+    expect(named.flat()).toHaveLength(count);
+    for (const files of named) {
+      expect(Buffer.byteLength(files.join('\0'))).toBeLessThan(256 * 1024);
+    }
   });
 });

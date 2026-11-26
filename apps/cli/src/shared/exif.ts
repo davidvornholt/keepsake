@@ -158,11 +158,6 @@ export const isInside = (path: Path.Path, folder: string, file: string) => {
   );
 };
 
-const unusable = (error: { readonly message: string }) =>
-  new StoreFailed({
-    message: `Could not use a temporary folder: ${error.message}`,
-  });
-
 const isPhoto = new Set<string>(photoExtensions);
 
 /** A photo's file, and when it was last changed. */
@@ -225,17 +220,33 @@ export const photoFilesIn = Effect.fn('photoFilesIn')(function* (
 });
 
 /**
- * A line of an argument file of exiftool that is exactly the path, whatever
- * it has in it.
+ * How many bytes of paths one run of exiftool is given, 256 KiB, far below what Linux
+ * lets a program be given. Each is given on its own, since in an argument file
+ * exiftool takes some characters for others.
  */
-const argumentLine = (file: string) =>
-  `#[CSTR]${file.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll('\r', '\\r')}`;
+const batchBytes = 262_144;
+/** What Linux counts for each argument beyond its bytes. */
+const argumentOverhead = 9;
 
-const readExif = Effect.fn('readExif')(function* (
-  source: string,
-  args: ReadonlyArray<string>,
-) {
-  const path = yield* Path.Path;
+/** Files in batches that each name at most `batchBytes` of them. */
+const inBatches = (files: ReadonlyArray<string>) => {
+  const batches: Array<Array<string>> = [];
+  let size = 0;
+  for (const file of files) {
+    const bytes = Buffer.byteLength(file) + argumentOverhead;
+    const last = batches.at(-1);
+    if (last === undefined || size + bytes > batchBytes) {
+      batches.push([file]);
+      size = bytes;
+    } else {
+      last.push(file);
+      size += bytes;
+    }
+  }
+  return batches;
+};
+
+const exifOf = Effect.fn('exifOf')(function* (files: ReadonlyArray<string>) {
   const { stdout, stderr } = yield* runTool('exiftool', [
     '-json',
     '-n',
@@ -253,12 +264,11 @@ const readExif = Effect.fn('readExif')(function* (
     '-ImageSize',
     '-FullImageSize',
     '-JpgFromRawLength',
-    ...args,
+    '--',
+    ...files,
   ]);
   if (stdout.length === 0) {
-    return yield* new InvalidInput({
-      message: `There are no photos in ${source}${stderr === '' ? '' : ` (exiftool says: ${stderr})`}.`,
-    });
+    return { list: [], stderr };
   }
   const list = yield* Schema.decodeUnknownEffect(ExifList)(
     new TextDecoder().decode(stdout),
@@ -270,6 +280,23 @@ const readExif = Effect.fn('readExif')(function* (
         }),
     ),
   );
+  return { list, stderr };
+});
+
+/** What exiftool finds in some files of a folder. */
+const readExif = Effect.fn('readExif')(function* (
+  source: string,
+  files: ReadonlyArray<string>,
+) {
+  const path = yield* Path.Path;
+  const read = yield* Effect.forEach(inBatches(files), exifOf);
+  const list = read.flatMap((batch) => batch.list);
+  if (list.length === 0) {
+    const said = read.map((batch) => batch.stderr).find((one) => one !== '');
+    return yield* new InvalidInput({
+      message: `There are no photos in ${source}${said === undefined ? '' : ` (exiftool says: ${said})`}.`,
+    });
+  }
   return foundPhotos(
     list.map((exif) => ({
       file: path.relative(source, exif.SourceFile),
@@ -278,33 +305,19 @@ const readExif = Effect.fn('readExif')(function* (
   );
 });
 
-/**
- * Every photo in a folder and the folders below it. exiftool gets only the
- * files that are, in a file of its own, since there may be very many.
- */
+/** Every photo in a folder and the folders below it. */
 export const findPhotos = Effect.fn('findPhotos')(function* (source: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
   const files = yield* photoFilesIn(source);
   if (files.length === 0) {
     return yield* new InvalidInput({
       message: `There are no photos in ${source}.`,
     });
   }
-  const list = path.join(
-    yield* fs
-      .makeTempDirectoryScoped({ prefix: 'keepsake-' })
-      .pipe(Effect.mapError(unusable)),
-    'files.txt',
+  return yield* readExif(
+    source,
+    files.map(({ file }) => file),
   );
-  yield* fs
-    .writeFileString(
-      list,
-      `${files.map(({ file }) => argumentLine(file)).join('\n')}\n`,
-    )
-    .pipe(Effect.mapError(unusable));
-  return yield* readExif(source, ['-@', list]);
-}, Effect.scoped);
+});
 
 /** Some photos of a folder, by their paths below it. */
 export const readPhotos = Effect.fn('readPhotos')(function* (

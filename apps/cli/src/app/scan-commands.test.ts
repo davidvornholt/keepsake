@@ -25,9 +25,10 @@ describe('a scan that stopped half-way', () => {
       { file: 'B.ARW', second: 300 },
     ];
     await putPhotos();
-    // B stops the first scan once A has its preview.
+    // B's preview, not the look for photos, stops the first scan once A has
+    // its own.
     fakeTools.pause = ({ args }) =>
-      args.some((arg) => arg.endsWith('B.ARW'))
+      !args.includes('-json') && args.some((arg) => arg.endsWith('B.ARW'))
         ? eventually(
             async () => existsSync(shootFile('previews', 'A.jpg')),
             Boolean,
