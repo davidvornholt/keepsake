@@ -1,7 +1,6 @@
 import {
   type RefObject,
   useEffect,
-  useEffectEvent,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -10,28 +9,16 @@ import {
 import type { PhotoView, Picture } from '../../contract.ts';
 import { blurOf } from '../data/pictures.ts';
 import type { Rect } from '../sheet/layout.ts';
-import { apply, type Live, scaleOf } from './apply.ts';
-import {
-  type Control,
-  type Entry,
-  makeControl,
-  type Wanted,
-} from './control.ts';
+import { type Live, scaleOf } from './apply.ts';
+import type { Entry, Wanted } from './control.ts';
 import { Divider } from './divider.tsx';
-import { listenToGestures } from './gestures.ts';
 import type { Ink } from './ink.ts';
 import { Layer } from './layers.tsx';
-import { type Motion, makeMotion } from './motion.ts';
 import { cover, onScreen, type Plane, planeOf, type View } from './plane.ts';
 import type { Seen } from './room.ts';
-import {
-  isCloser,
-  type Look,
-  partOf,
-  restOf,
-  type Setting,
-} from './setting.ts';
+import { type Look, partOf, restOf, type Setting } from './setting.ts';
 import { useClip } from './use-clip.ts';
+import { type Machine, useMachine } from './use-machine.ts';
 import { useCamera, usePicture } from './use-picture.ts';
 
 // A photo that is looked at: the plane with the camera's picture and the
@@ -107,98 +94,6 @@ const fullOf = ({ edit, full }: PhotoView, plane: Plane): number => {
   return full.width / scaleOf() / plane.camera.w;
 };
 
-type Refs = {
-  readonly stageRef: RefObject<HTMLDivElement | null>;
-  readonly planeRef: RefObject<HTMLDivElement | null>;
-  readonly cameraRef: RefObject<HTMLDivElement | null>;
-  readonly inkRef: RefObject<HTMLCanvasElement | null>;
-  readonly dividerRef: RefObject<HTMLDivElement | null>;
-  readonly rangeRef: RefObject<HTMLInputElement | null>;
-};
-
-/** Starts the springs and the gestures for as long as the stage is there. */
-const useMachine = (refs: Refs, live: Live, wanted: Props['wanted']) => {
-  const [machine, setMachine] = useState<Machine | null>(null);
-  const onSwipe = useEffectEvent(wanted.onSwipe);
-  const onDismiss = useEffectEvent(wanted.onDismiss);
-  const onPull = useEffectEvent(wanted.onPull);
-  const onBox = useEffectEvent(wanted.onBox);
-
-  // Before the first frame is shown, so that none shows the photo unplaced.
-  useLayoutEffect(() => {
-    const stage = refs.stageRef.current;
-    const plane = refs.planeRef.current;
-    const camera = refs.cameraRef.current;
-    const ink = refs.inkRef.current;
-    const divider = refs.dividerRef.current;
-    const range = refs.rangeRef.current;
-    if (
-      stage === null ||
-      plane === null ||
-      camera === null ||
-      ink === null ||
-      divider === null ||
-      range === null
-    ) {
-      return;
-    }
-    const elements = { plane, camera, ink, divider, range };
-    const motion = makeMotion((view, shown, now) => {
-      const part = live.setting.plane.edit ?? live.setting.plane.camera;
-      live.onPixels(part.w * motion.target().s * scaleOf());
-      if (live.hasArrived) {
-        live.onSeen(view, isCloser(live.setting, motion.target()));
-        plane.style.visibility = 'visible';
-      }
-      if (apply(elements, live, { view, shown, now })) {
-        motion.request();
-      }
-    });
-    const control = makeControl(motion, live.setting, {
-      onSwipe,
-      onDismiss,
-      onPull,
-      onBox,
-      onDraft: (draft) => {
-        live.ink = { ...live.ink, draft };
-        motion.request();
-      },
-      onWipe: (share) => {
-        live.setting.wipe = share;
-        motion.request();
-      },
-    });
-    const stop = listenToGestures(stage, control.gestures);
-    const resize = () => {
-      const scale = scaleOf();
-      ink.width = Math.round(stage.clientWidth * scale);
-      ink.height = Math.round(stage.clientHeight * scale);
-      motion.request();
-    };
-    const observer = new ResizeObserver(resize);
-    observer.observe(stage);
-    setMachine({ motion, control });
-    return () => {
-      stop();
-      observer.disconnect();
-      motion.stop();
-      setMachine(null);
-    };
-  }, [
-    refs.stageRef,
-    refs.planeRef,
-    refs.cameraRef,
-    refs.inkRef,
-    refs.dividerRef,
-    refs.rangeRef,
-    live,
-  ]);
-
-  return machine;
-};
-
-type Machine = { readonly motion: Motion; readonly control: Control };
-
 /** Brings a photo onto the stage: out of its frame, from the side, or in place. */
 const arrive = (
   { motion, control }: Machine,
@@ -217,11 +112,7 @@ const arrive = (
 };
 
 /** Keeps the springs up to date with what is to be shown. */
-const useFollowing = (
-  machine: ReturnType<typeof useMachine>,
-  live: Live,
-  props: Props,
-) => {
+const useFollowing = (machine: Machine | null, live: Live, props: Props) => {
   const {
     photo,
     room,
