@@ -97,18 +97,49 @@ const looksAlike = (
   );
 };
 
-const timeOf = ({ takenAt }: Photo) => Date.parse(`${takenAt}Z`);
+/** The offset from UTC most of the photos have, or UTC when none has one. */
+const usualOffset = (photos: ReadonlyArray<Photo>): string => {
+  const counts = new Map<string, number>();
+  for (const { utcOffset } of photos) {
+    if (utcOffset !== null) {
+      counts.set(utcOffset, (counts.get(utcOffset) ?? 0) + 1);
+    }
+  }
+  const [usual] = [...counts].toSorted(
+    ([left, many], [right, more]) => more - many || left.localeCompare(right),
+  );
+  return usual?.[0] ?? 'Z';
+};
+
+/**
+ * When each photo was taken, in milliseconds since 1970. The offset the camera
+ * recorded counts, so the hour that comes twice when the clocks go back isn't
+ * one; a photo without one gets the usual offset of the others.
+ */
+const timesOf = (photos: ReadonlyArray<Photo>): ReadonlyMap<string, number> => {
+  const usual = usualOffset(photos);
+  return new Map(
+    photos.map(({ id, takenAt, utcOffset }) => [
+      id,
+      Date.parse(`${takenAt}${utcOffset ?? usual}`),
+    ]),
+  );
+};
 
 const belongsWith = (
   group: ReadonlyArray<Photo>,
   photo: Photo,
-  looks: ReadonlyMap<string, Look>,
+  context: {
+    readonly looks: ReadonlyMap<string, Look>;
+    readonly times: ReadonlyMap<string, number>;
+  },
 ): boolean => {
+  const { looks, times } = context;
   const last = group.at(-1);
   if (last === undefined) {
     return false;
   }
-  const gap = timeOf(photo) - timeOf(last);
+  const gap = (times.get(photo.id) ?? 0) - (times.get(last.id) ?? 0);
   if (gap <= burstGap) {
     return true;
   }
@@ -122,7 +153,7 @@ const belongsWith = (
 };
 
 /**
- * Groups photos, oldest first, into moments: photos taken one right after
+ * Groups photos into moments, oldest first: photos taken one right after
  * the other, or that show the same from about the same spot within two
  * minutes of the moment's last photo. `looks` has what the photos look like, as far as it is known.
  */
@@ -130,10 +161,16 @@ export const momentsOf = (
   photos: ReadonlyArray<Photo>,
   looks: ReadonlyMap<string, Look> = new Map(),
 ): ReadonlyArray<Moment> => {
+  const times = timesOf(photos);
+  const oldestFirst = photos.toSorted(
+    (left, right) =>
+      (times.get(left.id) ?? 0) - (times.get(right.id) ?? 0) ||
+      left.id.localeCompare(right.id),
+  );
   const groups: Array<Array<Photo>> = [];
-  for (const photo of photos) {
+  for (const photo of oldestFirst) {
     const group = groups.at(-1);
-    if (group !== undefined && belongsWith(group, photo, looks)) {
+    if (group !== undefined && belongsWith(group, photo, { looks, times })) {
       group.push(photo);
     } else {
       groups.push([photo]);

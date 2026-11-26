@@ -32,7 +32,7 @@ export const scanFlags = {
   ),
   timeZone: optionalString(
     'time-zone',
-    'The time zone the photos were taken in, such as Europe/Lisbon, if the camera was set to another one. The finished photos carry the time there.',
+    'The time zone the photos were taken in, such as Europe/Lisbon, if the camera was set to another one. The finished photos carry the time there, where the camera recorded its offset from UTC.',
   ),
 };
 
