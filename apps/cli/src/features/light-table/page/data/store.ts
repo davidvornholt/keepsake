@@ -131,7 +131,12 @@ const answering = (core: Core) => ({
    */
   handOver: async (agreed: HandOver): Promise<number | null> => {
     core.setUndos([]);
-    const handed = await core.send(() => handOverMarks(core.name, agreed));
+    const handed = await core.send(async () => {
+      // A mark that is still being saved is handed over by the id it gets.
+      const ids = await Promise.all(agreed.marks.map(core.idOf));
+      const marks = ids.filter((id) => id !== null);
+      return handOverMarks(core.name, { ...agreed, marks });
+    });
     return handed?.length ?? null;
   },
   /** Has an agent act on what was handed over before. */

@@ -166,6 +166,7 @@ export const shootView = Effect.fn('shootView')(function* (
     onSome: totalDollars,
   });
   const photos = yield* photoViews(gallery, known);
+  const order = yield* orderOf(files, known);
   return {
     name: shoot.name,
     about: shoot.about,
@@ -189,7 +190,7 @@ export const shootView = Effect.fn('shootView')(function* (
     activity: yield* readActivity(files),
     preparation: yield* readPreparation(files),
     agent: yield* agentOf(files, canStartAgent),
-    ordered: yield* orderOf(files, known),
+    ordered: order === null ? null : { at: order.at, dollars: order.dollars },
     rating: yield* ratingOf(open),
   } satisfies ShootView;
 });

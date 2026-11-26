@@ -1,7 +1,13 @@
-import { Effect, Schema, type Semaphore } from 'effect';
+import { Effect, Option, Schema, type Semaphore } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
+import { judgeOf } from '../../shared/judge.ts';
 import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
-import { openShoot, type ShootFiles } from '../../shared/store.ts';
+import { standings } from '../../shared/standing.ts';
+import {
+  type OpenShoot,
+  openShoot,
+  type ShootFiles,
+} from '../../shared/store.ts';
 import { startAgent } from './agent.ts';
 import { pictureWidths } from './contract.ts';
 import { setFavorite } from './favorites.ts';
@@ -97,6 +103,11 @@ export type Has = {
   readonly agent: string | undefined;
 };
 
+const standingsOf = (open: OpenShoot) =>
+  Effect.flatMap(judgeOf(open, Option.none()), (model) =>
+    standings(open, model),
+  );
+
 /** Starts an agent when none waits for what is handed over. */
 const callAgent = Effect.fn('callAgent')(function* (
   files: ShootFiles,
@@ -114,8 +125,10 @@ const handOverAnswer = Effect.fn('handOverAnswer')(function* (
   name: string,
   request: Request,
 ) {
-  const { files } = yield* openShoot(name);
-  const handed = yield* handOver(files, yield* sent(HandOver, request));
+  const open = yield* openShoot(name);
+  const { files } = open;
+  const wanted = yield* sent(HandOver, request);
+  const handed = yield* handOver(files, yield* standingsOf(open), wanted);
   if (agent !== undefined) {
     yield* callAgent(files, name, agent);
   }

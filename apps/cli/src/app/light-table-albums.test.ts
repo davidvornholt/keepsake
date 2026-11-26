@@ -16,6 +16,8 @@ import {
 import { fakeTools } from './fake-tools.ts';
 import {
   eventually,
+  handOver,
+  pickedOf,
   send,
   shootOf,
   statusOf,
@@ -304,9 +306,11 @@ describe('an album that was chosen', () => {
   it('is ordered as a whole', async () => {
     await pickLisbon();
     const [before, after] = await whileServing(async (address) => {
-      const path = `${address}/api/shoots/lisbon/hand-over`;
       const first = await shootOf(address);
-      await send('POST', path, { dollars: 2.25, album: true });
+      await handOver(address, {
+        dollars: 2.25,
+        album: await pickedOf(address),
+      });
       return [first, await shootOf(address)];
     });
     expect(before.ordered).toBeNull();

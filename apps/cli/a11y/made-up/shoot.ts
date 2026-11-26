@@ -11,7 +11,7 @@ import type {
   Shoot,
   Verdict,
 } from '../../src/shared/domain.ts';
-import { marks } from './marks.ts';
+import { handed, marks } from './marks.ts';
 import { type MadeUp, moments } from './moments.ts';
 import { drawn } from './pictures.ts';
 
@@ -243,9 +243,15 @@ const writeChosen = (root: string, wanted: Wanted) =>
     write(root, 'reasons.json', reasons),
     ...(wanted.isOrdered === true
       ? [
-          write(root, 'hand-overs.json', [
-            { at: readAt, dollars: edited.length * perEdit, album: true },
-          ]),
+          write(root, join('hand-overs', 'order.json'), {
+            id: 'order',
+            at: readAt,
+            dollars: edited.length * perEdit,
+            spentBefore: 0,
+            marks: [],
+            album: picksOf().picks.map(({ photo }) => photo),
+            fulfilledAt: null,
+          }),
         ]
       : []),
   ]);
@@ -275,13 +281,24 @@ const writePublished = (root: string, wanted: Wanted) =>
         [shownOf('D120'), ['print', 'calendar']],
       ]),
     ),
-    ...marks.map((mark) =>
+    ...marks.map(({ handedOverAt, ...mark }) =>
       write(root, join('marks', `${mark.id}.json`), {
         ...mark,
         photo: shownOf(mark.photo),
         other: mark.other === null ? null : shownOf(mark.other),
       }),
     ),
+    write(root, join('hand-overs', 'marks.json'), {
+      id: 'marks',
+      at: handed,
+      dollars: perEdit,
+      spentBefore: 0,
+      marks: marks.flatMap(({ id, handedOverAt }) =>
+        handedOverAt === null ? [] : [id],
+      ),
+      album: null,
+      fulfilledAt: null,
+    }),
   ]);
 
 /** The best photo of the moment that begins with this one. */

@@ -181,8 +181,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     /** The agent that waits for marks, and the one the page started last. */
     waiting: path.join(root, 'waiting.json'),
     agent: path.join(root, 'agent.json'),
-    /** When the owner handed something over, and what they agreed to pay. */
-    handOvers: path.join(root, 'hand-overs.json'),
+    /** What the owner handed over, a file for each time, and who took it. */
+    handOvers: path.join(root, 'hand-overs'),
     /** The program that gets the shoot ready for the owner. */
     preparation: path.join(root, 'preparation.json'),
     preview: (photo: string) => path.join(root, 'previews', `${photo}.jpg`),

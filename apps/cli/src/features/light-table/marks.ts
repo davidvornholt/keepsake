@@ -6,7 +6,8 @@ import {
   type ShootFiles,
   writeJson,
 } from '../../shared/store.ts';
-import { Mark, type NewMark } from './schemas.ts';
+import { readHandOvers } from './handed.ts';
+import { type Mark, type NewMark, SavedMark } from './schemas.ts';
 
 const idPattern = /^[a-z0-9]+$/u;
 const idLength = 8;
@@ -20,7 +21,10 @@ const fileOf = (files: ShootFiles, id: string) =>
 const storeFailed = (error: { readonly message: string }) =>
   new StoreFailed({ message: `Could not use the marks: ${error.message}` });
 
-/** Every mark of a shoot, oldest first. */
+/**
+ * Every mark of a shoot, oldest first. A mark is handed over once a hand-over
+ * that names it is saved, and not before.
+ */
 export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
   const fs = yield* FileSystem.FileSystem;
   const names = yield* fs.readDirectory(files.marks).pipe(
@@ -31,16 +35,27 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
   );
   const marks = yield* Effect.forEach(
     names.filter((name) => name.endsWith(extension) && !name.startsWith('.')),
-    (name) => readJson(Mark, `${files.marks}/${name}`),
+    (name) => readJson(SavedMark, `${files.marks}/${name}`),
     { concurrency: 'unbounded' },
+  );
+  const handedAt = new Map(
+    (yield* readHandOvers(files)).flatMap(({ at, marks: ids }) =>
+      ids.map((id) => [id, at] as const),
+    ),
   );
   return marks
     .flatMap(Option.toArray)
+    .map(
+      (mark): Mark => ({
+        ...mark,
+        handedOverAt: handedAt.get(mark.id) ?? null,
+      }),
+    )
     .toSorted((left, right) => left.madeAt.localeCompare(right.madeAt));
 });
 
-export const saveMark = (files: ShootFiles, mark: Mark) =>
-  writeJson(Mark, fileOf(files, mark.id), mark);
+export const saveMark = (files: ShootFiles, mark: SavedMark) =>
+  writeJson(SavedMark, fileOf(files, mark.id), mark);
 
 const remove = (files: ShootFiles, { id }: Mark) =>
   Effect.gen(function* () {
@@ -114,13 +129,12 @@ export const markWith = Effect.fn('markWith')(function* (
   id: string,
 ) {
   const mark = idPattern.test(id)
-    ? yield* readJson(Mark, fileOf(files, id))
-    : Option.none<Mark>();
-  return yield* Option.match(mark, {
-    onNone: () =>
-      Effect.fail(new InvalidInput({ message: `There is no mark ${id}.` })),
-    onSome: Effect.succeed,
-  });
+    ? (yield* readMarks(files)).find((one) => one.id === id)
+    : undefined;
+  if (mark === undefined) {
+    return yield* new InvalidInput({ message: `There is no mark ${id}.` });
+  }
+  return mark;
 });
 
 /** Takes back a mark that isn't handed over yet. */

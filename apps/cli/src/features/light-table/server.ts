@@ -13,6 +13,7 @@ import { makeShoots } from './shoots.ts';
 const badRequest = 400;
 const forbidden = 403;
 const notFound = 404;
+const conflict = 409;
 const failed = 500;
 
 /** How many pictures are made smaller at once. */
@@ -65,6 +66,7 @@ const toThePage =
 const statuses = new Map([
   ['InvalidInput', badRequest],
   ['StepMissing', notFound],
+  ['Outdated', conflict],
 ]);
 
 const failure = ({ _tag, message }: Failure) =>

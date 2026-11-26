@@ -56,7 +56,7 @@ const shown = Effect.fn('shown')(function* (
   );
 });
 
-/** The photos that the owner wants edited and put into an album. */
+/** The photos that the owner ordered edited and put into an album, until they are. */
 const ordered = Effect.fn('ordered')(function* (
   open: OpenShoot,
   known: Standings,
@@ -65,15 +65,15 @@ const ordered = Effect.fn('ordered')(function* (
   if (order === null) {
     return null;
   }
-  const picked = [...known.of].flatMap(([photo, { kind }]) =>
-    kind === 'picked' ? [photo] : [],
+  const waiting = order.photos.filter(
+    (photo) => known.of.get(photo)?.kind === 'picked',
   );
-  const isEdited = yield* Effect.forEach(picked, (photo) =>
+  const isEdited = yield* Effect.forEach(waiting, (photo) =>
     exists(open.files.edit(photo).record),
   );
   return {
     at: order.at,
-    photos: picked.length,
+    photos: waiting,
     edited: isEdited.filter(Boolean).length,
   };
 });
