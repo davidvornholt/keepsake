@@ -70,28 +70,28 @@ describe('keepsake edit, with animals', () => {
   });
 });
 
-describe('keepsake edit, looking closely', () => {
-  const fault = (overrides: object = {}) => ({
-    part: 1,
-    box: { left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 },
-    what: 'A face is melted.',
-    kind: 'people',
-    serious: true,
-    rightInOriginal: true,
-    inOriginal: false,
-    ...overrides,
+const fault = (overrides: object = {}) => ({
+  part: 1,
+  box: { left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 },
+  what: 'A face is melted.',
+  kind: 'people',
+  serious: true,
+  rightInOriginal: true,
+  inOriginal: false,
+  ...overrides,
+});
+/** Answers with each of these in turn, and with the last one from then on. */
+const inTurn = (...answers: ReadonlyArray<ReadonlyArray<object>>) => {
+  fakeModels.answers.faults = () => ({
+    faults: answers[asked('faults').length - 1] ?? answers.at(-1),
   });
-  /** Answers with each of these in turn, and with the last one from then on. */
-  const inTurn = (...answers: ReadonlyArray<ReadonlyArray<object>>) => {
-    fakeModels.answers.faults = () => ({
-      faults: answers[asked('faults').length - 1] ?? answers.at(-1),
-    });
-  };
-  const finishedFrom = () =>
-    fakeTools.runs
-      .filter(({ command }) => command === 'magick')
-      .map(({ args }) => args[0]);
+};
+const finishedFrom = () =>
+  fakeTools.runs
+    .filter(({ command }) => command === 'magick')
+    .map(({ args }) => args[0]);
 
+describe('keepsake edit, looking closely', () => {
   it('puts back what few notice too', async () => {
     await pickLisbon();
     inTurn([fault({ serious: false })], [fault({ serious: false })]);
@@ -192,7 +192,9 @@ describe('keepsake edit, looking closely', () => {
     const { review } = await shootJson('edits', 'B', 'edit.json');
     expect(review).toBe('The face is dark.');
   });
+});
 
+describe('keepsake edit, looking closely at what is left', () => {
   it('keeps the camera’s own picture when what is left of a removal shows', async () => {
     await pickLisbon();
     const legs = 'Two legs of the chair float above the grass.';
