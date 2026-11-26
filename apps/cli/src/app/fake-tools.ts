@@ -1,5 +1,5 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
@@ -19,6 +19,13 @@ type FakeAsset = {
   readonly fileName: string;
   readonly favorite: boolean;
   readonly trashed: boolean;
+};
+
+type FakeAlbum = {
+  readonly id: string;
+  /** Changes when the owner renames the album in Immich. */
+  name: string;
+  assets: ReadonlyArray<FakeAsset>;
 };
 
 const greyPixels = 72;
@@ -59,10 +66,14 @@ export const fakeTools = {
   runs: [] as Array<Run>,
   /** The RAW files in the folder that is scanned, by the second each was taken. */
   files: [] as Array<{ readonly file: string; readonly second: number }>,
-  /** Assets the photos command has uploaded, by file. */
+  /** Files the photos command has sent to Immich, in the order it got them. */
   uploads: [] as Array<string>,
-  /** The album in Immich, once it was created. */
-  album: undefined as ReadonlyArray<FakeAsset> | undefined,
+  /** The assets in Immich, with the file and the bytes each was made of. */
+  library: [] as Array<{ id: string; file: string; bytes: string }>,
+  /** The albums in Immich, the first of which is created as `album-1`. */
+  albums: [] as Array<FakeAlbum>,
+  /** Assets Immich refuses to put into an album or take out of one. */
+  refused: new Set<string>(),
   /** RAW files ImageMagick can't read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
@@ -77,7 +88,9 @@ export const resetTools = () => {
   fakeTools.runs = [];
   fakeTools.files = [];
   fakeTools.uploads = [];
-  fakeTools.album = undefined;
+  fakeTools.library = [];
+  fakeTools.albums = [];
+  fakeTools.refused = new Set();
   fakeTools.broken = new Set();
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
@@ -130,40 +143,143 @@ const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
   return '';
 };
 
-const album = { id: 'album-1', name: 'Lisbon, May 2026' };
+const baseOf = (file: string) => file.slice(file.lastIndexOf('/') + 1);
 
-const upload = ([, file = '', inAlbum]: ReadonlyArray<string>) => {
+/** The assets of the album keepsake made first. */
+export const firstAlbum = () => fakeTools.albums[0]?.assets;
+
+const albumOf = (id: string) => {
+  const found = fakeTools.albums.find((album) => album.id === id);
+  if (found === undefined) {
+    throw new Error(`No album ${id}`);
+  }
+  return found;
+};
+
+const named = ({ id, name }: FakeAlbum) => ({ id, name });
+
+/** Immich's answer for each asset, as `photos` passes it on. */
+const bulk = (
+  ids: ReadonlyArray<string>,
+  change: (id: string) => string | undefined,
+) => {
+  const results = ids.map((id) => ({
+    id,
+    reason: fakeTools.refused.has(id) ? 'no_permission' : change(id),
+  }));
+  return {
+    changed: results.flatMap(({ id, reason }) =>
+      reason === undefined ? [id] : [],
+    ),
+    unchanged: results.flatMap(({ id, reason }) =>
+      reason === undefined ? [] : [{ id, reason }],
+    ),
+  };
+};
+
+const addAssets = (album: FakeAlbum, ids: ReadonlyArray<string>) => {
+  const { changed, unchanged } = bulk(ids, (id) =>
+    album.assets.some((asset) => asset.id === id) ? 'duplicate' : undefined,
+  );
+  album.assets = [
+    ...album.assets,
+    ...changed.map((id) => ({
+      id,
+      fileName: baseOf(
+        fakeTools.library.find((asset) => asset.id === id)?.file ?? id,
+      ),
+      favorite: false,
+      trashed: false,
+    })),
+  ];
+  return { album: named(album), added: changed, unchanged };
+};
+
+const removeAssets = (album: FakeAlbum, ids: ReadonlyArray<string>) => {
+  const { changed, unchanged } = bulk(ids, (id) =>
+    album.assets.some((asset) => asset.id === id) ? undefined : 'not_found',
+  );
+  album.assets = album.assets.filter(({ id }) => !changed.includes(id));
+  return { album: named(album), removed: changed, unchanged };
+};
+
+/**
+ * Immich knows a file again by its checksum. Every picture the fake programs
+ * write has the same bytes, so the file's path stands in for the rest of it.
+ */
+const assetFor = (file: string) => {
+  const bytes = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const known = fakeTools.library.find(
+    (asset) => asset.file === file && asset.bytes === bytes,
+  );
+  if (known !== undefined) {
+    return { status: 'duplicate', assetId: known.id, trashed: false };
+  }
   fakeTools.uploads.push(file);
   const id = `asset-${fakeTools.uploads.length}`;
-  if (inAlbum === '--album') {
-    const fileName = file.slice(file.lastIndexOf('/') + 1);
-    fakeTools.album = [
-      ...(fakeTools.album ?? []),
-      { id, fileName, favorite: false, trashed: false },
-    ];
+  fakeTools.library.push({ id, file, bytes });
+  return { status: 'created', assetId: id };
+};
+
+const upload = ([, file = '', flag, albumId = '']: ReadonlyArray<string>) => {
+  const result = assetFor(file);
+  return {
+    files: [{ file, ...result }],
+    ...(flag === '--album'
+      ? { album: addAssets(albumOf(albumId), [result.assetId]) }
+      : {}),
+  };
+};
+
+const createAlbum = (name: string) => {
+  const album = {
+    id: `album-${fakeTools.albums.length + 1}`,
+    name,
+    assets: [],
+  };
+  fakeTools.albums.push(album);
+  return named(album);
+};
+
+const listAlbums = (args: ReadonlyArray<string>) => {
+  const part = args[2] === '--name' ? (args[3] ?? '').toLowerCase() : '';
+  return fakeTools.albums
+    .filter(({ name }) => name.toLowerCase().includes(part))
+    .map(named);
+};
+
+const markFavorite = ([, id, flag]: ReadonlyArray<string>) => {
+  for (const album of fakeTools.albums) {
+    album.assets = album.assets.map((asset) =>
+      asset.id === id ? { ...asset, favorite: flag === '--favorite' } : asset,
+    );
   }
-  return { files: [{ status: 'created', assetId: id }] };
+  return {};
 };
 
 const photos = (args: ReadonlyArray<string>): unknown => {
+  const [, , albumId = '', ...assets] = args;
   switch (`${args[0]} ${args[1]}`) {
     case 'albums list':
-      return fakeTools.album === undefined ? [] : [album];
+      return listAlbums(args);
     case 'albums create':
-      fakeTools.album = [];
-      return { ...album, name: args[2] };
+      return createAlbum(albumId);
     case 'albums show':
-      return { album, assets: fakeTools.album, nextCursor: null };
+      return {
+        album: named(albumOf(albumId)),
+        assets: albumOf(albumId).assets,
+        nextCursor: null,
+      };
     case 'albums remove':
-      fakeTools.album = fakeTools.album?.filter(
-        ({ id }) => !args.slice(2).includes(id),
-      );
-      return {};
+      return removeAssets(albumOf(albumId), assets);
     case 'tags list':
       return [];
     case 'status undefined':
       return { server: 'https://photos.example.com' };
     default:
+      if (args[0] === 'update') {
+        return markFavorite(args);
+      }
       return args[0] === 'upload' ? upload(args) : {};
   }
 };

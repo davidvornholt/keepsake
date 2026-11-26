@@ -10,7 +10,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools } from './fake-tools.ts';
+import { fakeTools, firstAlbum } from './fake-tools.ts';
 
 const publishLisbon = async () => {
   await pickLisbon();
@@ -20,9 +20,12 @@ const publishLisbon = async () => {
 
 /** The owner takes a photo out of the album in Immich. */
 const removeInImmich = (photo: string) => {
-  fakeTools.album = fakeTools.album?.filter(
-    ({ fileName }) => fileName !== `${photo}-keepsake.jpg`,
-  );
+  const [album] = fakeTools.albums;
+  if (album !== undefined) {
+    album.assets = album.assets.filter(
+      ({ fileName }) => fileName !== `${photo}-keepsake.jpg`,
+    );
+  }
 };
 
 const inAlbum = async () => {
@@ -61,9 +64,18 @@ describe('keepsake publish, with an album that changed in Immich', () => {
     await publishLisbon();
     removeInImmich('B');
     const result = await runOk('publish', 'lisbon', 'B');
-    expect(result).toMatchObject({ published: 1, outdated: ['asset-3'] });
+    // Immich knows the unchanged photo by its checksum and keeps its asset.
+    expect(result).toMatchObject({ published: 1, outdated: [] });
     expect(await inAlbum()).toEqual(['A1', 'C', 'B']);
     expect(await shootJson('removed.json')).toEqual([]);
+  });
+
+  it('names the earlier upload when the photo changed meanwhile', async () => {
+    await publishLisbon();
+    removeInImmich('B');
+    await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');
+    const result = await runOk('publish', 'lisbon', 'B');
+    expect(result).toMatchObject({ published: 1, outdated: ['asset-3'] });
   });
 
   it('takes the newer of two versions until the older is trashed', async () => {
@@ -99,7 +111,7 @@ describe('keepsake take-out', () => {
       ],
       inAlbum: 1,
     });
-    expect(fakeTools.album?.map(({ id }) => id)).toEqual(['asset-1']);
+    expect(firstAlbum()?.map(({ id }) => id)).toEqual(['asset-1']);
     const { standing } = await runOk('show', 'lisbon', 'B');
     expect(standing).toMatchObject({
       kind: 'taken-out',
