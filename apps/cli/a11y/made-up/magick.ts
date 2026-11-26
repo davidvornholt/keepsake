@@ -41,6 +41,17 @@ if (args[0] === 'identify') {
     );
   }
   process.stdout.write(grey);
+} else if (target === 'ppm:-') {
+  // What the photo looks like, shrunk, for grouping it with others.
+  const size = args[args.indexOf('-resize') + 1] ?? '';
+  const [width = 1, height = 1] = size.split('x').map(Number);
+  const pixels = await small();
+  const rgb = new Uint8Array(width * height * colors);
+  for (const [at] of rgb.entries()) {
+    rgb[at] = pixels[Math.floor(at / colors) * channels + (at % colors)] ?? 0;
+  }
+  process.stdout.write(`P6\n${width} ${height}\n255\n`);
+  process.stdout.write(rgb);
 } else if (target === 'jpg:-') {
   // A photo developed for the page: the picture as it is.
   process.stdout.write(await readFile(photo));
