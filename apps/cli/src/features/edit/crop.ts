@@ -89,6 +89,13 @@ export const isWhole = (box: Box): boolean =>
   coverage(tidyBox(box)) >= almostEverything &&
   coverage(box) <= 1 / almostEverything;
 
+/**
+ * The part of each box that is in the photo. A box wholly outside it is a
+ * model's mistake, not something an edge cuts off.
+ */
+export const inPhoto = (boxes: ReadonlyArray<Box>): ReadonlyArray<Box> =>
+  boxes.map(tidyBox).filter((box) => coverage(box) > 0);
+
 /** Finds the framing that makes the strongest photo. */
 export const chooseCrop = Effect.fn('chooseCrop')(function* (
   shoot: Shoot,
@@ -117,11 +124,7 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
   });
   const { facing } = proposals;
   const subject = tidyBox(proposals.subject);
-  // A belonging wholly outside the photo is a model's mistake, not something
-  // an edge cuts off.
-  const belongings = proposals.belongings
-    .map(({ box }) => tidyBox(box))
-    .filter((box) => coverage(box) > 0);
+  const belongings = inPhoto(proposals.belongings.map(({ box }) => box));
   const held = belongings.map((belonging) => widened(belonging, air));
   const crops = proposals.crops
     .slice(0, mostProposals)
