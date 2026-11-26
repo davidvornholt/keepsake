@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
+import { BunServices } from '@effect/platform-bun';
+import { ConfigProvider, Effect, FileSystem, Layer } from 'effect';
+import { makeShoot } from '../features/light-table/new-shoot.ts';
 import {
   editLisbon,
+  failureOf,
   fake,
   photosFolder,
   pickLisbon,
@@ -21,6 +25,7 @@ import {
   statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
+import { whileHeld } from './lock-fixtures.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -285,6 +290,64 @@ describe('a new album', () => {
     });
     expect([status, after]).toEqual([204, 404]);
     expect(existsSync(join(wanted().folder, 'A.ARW'))).toBe(true);
+  });
+});
+
+describe('a new album beside a command on a shoot of its name', () => {
+  beforeEach(() => putPhoto('lisbon/A.ARW', 1));
+
+  it('takes another name than a command that works on a shoot of its name', async () => {
+    const name = await whileHeld(
+      () => serving(async (address) => (await make(address)).json()),
+      shoot,
+    );
+    expect(name).toEqual({ name: `${shoot}-2` });
+  });
+
+  it('keeps a scan of its name from it until it is made', async () => {
+    const folder = join(shootFile(), '..', shoot);
+    const written = Promise.withResolvers<void>();
+    const going = Promise.withResolvers<void>();
+    // Waits once what the shoot has is noted, before the shoot is one.
+    const waiting = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (fs) => ({
+        ...fs,
+        rename: (from: string, to: string) =>
+          to === join(folder, 'moments.json')
+            ? Effect.andThen(
+                fs.rename(from, to),
+                Effect.promise(() => {
+                  written.resolve();
+                  return going.promise;
+                }),
+              )
+            : fs.rename(from, to),
+      })),
+    );
+    const making = Effect.runPromise(
+      makeShoot({ ...wanted(), about: 'Lisbon, May 2026' }).pipe(
+        Effect.provide(waiting),
+        Effect.provide(BunServices.layer),
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromDotEnvContents(
+              `HOME=${fake.home}\nXDG_DATA_HOME=${join(fake.home, 'data')}`,
+            ),
+          ),
+        ),
+      ),
+    );
+    await written.promise;
+    const scan = failureOf('scan', wanted().folder, '--name', shoot);
+    const failure = await scan.finally(() => going.resolve());
+    expect(await making).toBe(shoot);
+    expect(failure._tag).toBe('ShootBusy');
+    expect(await Bun.file(join(folder, 'photos.json')).json()).toEqual([]);
+    expect(await Bun.file(join(folder, 'moments.json')).json()).toEqual([]);
+    expect(await Bun.file(join(folder, 'shoot.json')).json()).toMatchObject({
+      about: 'Lisbon, May 2026',
+    });
   });
 });
 

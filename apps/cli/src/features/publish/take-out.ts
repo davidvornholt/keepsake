@@ -3,6 +3,7 @@ import { readAlbum } from '../../shared/album.ts';
 import { PickList, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { removeFromAlbum } from '../../shared/immich.ts';
+import { withAlbum } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
@@ -17,7 +18,13 @@ const pickedOf = Effect.fn('pickedOf')(function* ({ files }: OpenShoot) {
  * Takes photos out of the album, or out of those that are to be in it, or says
  * why they were taken out before. They stay in the library.
  */
-export const takeOut = Effect.fn('takeOut')(function* (
+export const takeOut = (
+  open: OpenShoot,
+  names: ReadonlyArray<string>,
+  because: string,
+) => takeOutNow(open, names, because).pipe(withAlbum(open.files));
+
+const takeOutNow = Effect.fn('takeOut')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   because: string,

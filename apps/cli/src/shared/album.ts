@@ -1,6 +1,7 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
 import { Album, AlbumPhoto, Publication, Removed } from './domain.ts';
 import { albumAssets, findAlbum, immichServer } from './immich.ts';
+import { withAlbum } from './lock.ts';
 import { readRemoved } from './standing.ts';
 import { type OpenShoot, readJson, writeJson } from './store.ts';
 
@@ -17,7 +18,10 @@ const isSame = Schema.toEquivalence(
  * Reads what the album has in Immich now, whoever changed it there. Photos
  * that aren't in it any more are noted as taken out.
  */
-export const readAlbum = Effect.fn('readAlbum')(function* (open: OpenShoot) {
+export const readAlbum = (open: OpenShoot) =>
+  readNow(open).pipe(withAlbum(open.files));
+
+const readNow = Effect.fn('readAlbum')(function* (open: OpenShoot) {
   const published = yield* readJson(Publication, open.files.publication);
   if (Option.isNone(published)) {
     return null;
