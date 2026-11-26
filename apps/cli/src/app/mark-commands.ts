@@ -1,4 +1,3 @@
-import process from 'node:process';
 import { Effect, Option } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
 import {
@@ -138,8 +137,7 @@ export const marks = Command.make(
       if (wait) {
         const take = Effect.gen(function* () {
           const known = yield* standings(yield* openShoot(shoot), model);
-          const by = `marks --wait ${process.pid}`;
-          return yield* claimUnsettled(open.files, known, by);
+          return yield* claimUnsettled(open.files, known);
         });
         only = new Set(
           yield* waitForHandOver(open.files, take, (taken) => taken.length > 0),

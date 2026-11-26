@@ -58,7 +58,7 @@ It can take hours. When it stops, run it again and it goes on where it stopped. 
 `keepsake serve` serves the page on this machine, and only to it. To reach it from others, let a reverse proxy with TLS in a private network pass it on, and tell keepsake with `--address` where it is reached then; it has no login of its own. Run it as a service with a fixed `--port`, so it is always there.
 
 - `--photos <folder>` names a folder whose folders the page offers for new albums. It can be given several times.
-- `--agent <program>` is started when you hand something over, with the name of the shoot and the ids of the hand-overs it is for, unless an agent waits for that already with `keepsake marks <shoot> --wait`. The program starts your agent with both, so that it runs `keepsake marks <shoot> --hand-over <id>` for each id, and prints `{"link":"…"}` where you can read along. Without it, the page gives you a message to paste into your agent's chat.
+- `--agent <program>` is started when you hand something over, with the name of the shoot and the ids of the hand-overs it is for, unless an agent waits for that already with `keepsake marks <shoot> --wait`. The program starts your agent with both, so that it runs `keepsake marks <shoot> --hand-over <id>` for each id, and prints `{"link":"…"}` where you can read along. Until it has done that, the page starts it again with the same ids when you ask, so it should start nothing new for an id it started an agent for already. Without it, the page gives you a message to paste into your agent's chat.
 
 `keepsake rate` and `keepsake bench` measure which vision model agrees best with your own taste: you rate some moments on the page, and each model is compared with your ratings.
 

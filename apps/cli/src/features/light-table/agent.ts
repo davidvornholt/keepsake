@@ -29,24 +29,25 @@ export const agentOf = Effect.fn('agentOf')(function* (
 
 const patience = '2 minutes';
 
+type Launch = {
+  readonly name: string;
+  readonly handOvers: ReadonlyArray<string>;
+  readonly program: string;
+};
+
 /**
  * Has a program start an agent that acts on what was handed over, with the
- * shoot's name and the ids of the hand-overs it is for. Goes on
- * as soon as the program runs; what comes of it is written down. When it
- * can't be started, `giveBack` runs first, so that another may take it.
+ * shoot's name and the ids of the hand-overs it is for. Goes on as soon as
+ * the program runs; what comes of it is written down. `isStarted` runs once
+ * the program said it started one, and `done` when it ended in any way.
  */
 export const startAgent = Effect.fn('startAgent')(function* <R>(
   files: ShootFiles,
-  {
-    name,
-    handOvers,
-    program,
-  }: {
-    readonly name: string;
-    readonly handOvers: ReadonlyArray<string>;
-    readonly program: string;
+  { name, handOvers, program }: Launch,
+  after: {
+    readonly isStarted: Effect.Effect<void, unknown, R>;
+    readonly done: Effect.Effect<void, never, R>;
   },
-  giveBack: Effect.Effect<void, unknown, R>,
 ) {
   const at = DateTime.formatIso(yield* DateTime.now);
   const note = (link: string | null, failed: string | null) =>
@@ -55,18 +56,22 @@ export const startAgent = Effect.fn('startAgent')(function* <R>(
   yield* toolText(program, [name, ...handOvers]).pipe(
     Effect.timeout(patience),
     Effect.matchEffect({
-      onFailure: ({ message }) =>
-        giveBack.pipe(Effect.ignore, Effect.andThen(note(null, message))),
+      onFailure: ({ message }) => note(null, message),
       onSuccess: (text) =>
-        note(
-          Option.match(Schema.decodeUnknownOption(Said)(text), {
-            onNone: () => null,
-            onSome: ({ link }) => link ?? null,
-          }),
-          null,
+        after.isStarted.pipe(
+          Effect.andThen(
+            note(
+              Option.match(Schema.decodeUnknownOption(Said)(text), {
+                onNone: () => null,
+                onSome: ({ link }) => link ?? null,
+              }),
+              null,
+            ),
+          ),
         ),
     }),
     Effect.ignore,
+    Effect.ensuring(after.done),
     Effect.forkDetach,
   );
 });

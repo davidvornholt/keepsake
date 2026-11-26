@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import {
   editLisbon,
   pickLisbon,
@@ -25,6 +25,18 @@ afterEach(tearDown);
 
 const serving = <A>(visit: (address: string) => Promise<A>) =>
   whileServing(visit, { agent: 'start-agent' });
+
+const since = '2026-05-02T10:00:00.000Z';
+
+/** The ids of what was handed over. */
+const handOverIds = () =>
+  readdirSync(shootFile('hand-overs'))
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => name.replace('.json', ''));
+
+/** Who took the one hand-over there is. */
+const claimOf = () =>
+  shootJson('hand-overs', `${handOverIds()[0] ?? ''}.claim`);
 
 const agentPath = (address: string) => `${address}/api/shoots/lisbon/agent`;
 
@@ -199,6 +211,57 @@ describe('the agent for a hand-over', () => {
       await settle();
     });
     expect(runsOfAgent()).toHaveLength(1);
+  });
+
+  it('is started for what the page took and never started one for', async () => {
+    fakeTools.programs = { 'start-agent': () => 'on it' };
+    // As a page that stopped after it took the hand-over.
+    await whileServing(handOverChange);
+    const [id = ''] = handOverIds();
+    await Bun.write(
+      shootFile('hand-overs', `${id}.claim`),
+      JSON.stringify({ by: 'page', at: since, isAcknowledged: false }),
+    );
+    await serving(async (address) => {
+      await statusOf(send('POST', agentPath(address)));
+      await eventually(
+        () => Promise.resolve(runsOfAgent()),
+        (runs) => runs.length > 0,
+      );
+    });
+    expect(runsOfAgent().map(({ args }) => args)).toEqual([['lisbon', id]]);
+  });
+
+  it('is started again for the same hand-over when no start was confirmed', async () => {
+    let tries = 0;
+    fakeTools.programs = {
+      'start-agent': () => {
+        tries += 1;
+        if (tries === 1) {
+          throw new Error('no answer');
+        }
+        return '{"link":"https://example.com/threads/4"}';
+      },
+    };
+    const claims = await serving(async (address) => {
+      await started(address);
+      const lost = await claimOf();
+      await statusOf(send('POST', agentPath(address)));
+      await eventually(
+        () => shootOf(address),
+        ({ agent }) => (agent.started?.link ?? null) !== null,
+      );
+      await statusOf(send('POST', agentPath(address)));
+      await settle();
+      return [lost, await claimOf()];
+    });
+    expect(claims).toMatchObject([
+      { by: 'page', isAcknowledged: false },
+      { by: 'page', isAcknowledged: true },
+    ]);
+    const [first, second, ...more] = runsOfAgent().map(({ args }) => args);
+    expect(second).toEqual(first);
+    expect(more).toEqual([]);
   });
 });
 

@@ -183,7 +183,7 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   const preparations = yield* makePreparations(keepsake);
   const folders = yield* makeFolders(photos);
   const routes = yield* routesOf(
-    { shoots, folders, preparations, workers, agent },
+    { shoots, folders, preparations, workers, agent, launching: new Set() },
     address,
   );
   yield* Effect.forkScoped(shoots.prepare);

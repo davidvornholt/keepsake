@@ -3,7 +3,7 @@ import { InvalidInput } from '../../shared/errors/errors.ts';
 import { SpendingRecord, totalDollars } from '../../shared/spending.ts';
 import type { Standings } from '../../shared/standing.ts';
 import { readJson, type ShootFiles } from '../../shared/store.ts';
-import { claim, readHandOvers, saveHandOver } from './handed.ts';
+import { claim, claimOn, readHandOvers, saveHandOver } from './handed.ts';
 import { isOpen, isWaiting, readMarks } from './marks.ts';
 import type { HandOver, HandOverRecord, Mark } from './schemas.ts';
 
@@ -89,19 +89,43 @@ export const orderAmong = Effect.fn('orderAmong')(function* (
 });
 
 /**
- * Takes for one agent what is still to be done and no agent took yet, so
- * that nothing handed over is acted on twice. Says what it took.
+ * Takes for an agent that waits what is still to be done and no agent took
+ * yet, so that nothing handed over is acted on twice. Says what it took.
  */
 export const claimUnsettled = Effect.fn('claimUnsettled')(function* (
   files: ShootFiles,
   known: Standings,
-  by: string,
 ) {
   const unsettled = yield* unsettledOf(files, known);
   const taken = yield* Effect.forEach(unsettled, ({ id }) =>
-    Effect.map(claim(files, id, by), (isTaken) => (isTaken ? [id] : [])),
+    Effect.map(claim(files, id, 'waiter'), (isTaken) => (isTaken ? [id] : [])),
   );
   return taken.flat();
+});
+
+/**
+ * What the page is to start an agent for: what is still to be done and that
+ * nobody took, or that the page took and no program said it started an agent
+ * for, unless one is being started for it now.
+ */
+export const toLaunch = Effect.fn('toLaunch')(function* (
+  files: ShootFiles,
+  known: Standings,
+  launching: ReadonlySet<string>,
+) {
+  const unsettled = yield* unsettledOf(files, known);
+  const found = yield* Effect.forEach(unsettled, ({ id }) =>
+    Effect.gen(function* () {
+      if (yield* claim(files, id, 'page')) {
+        return [id];
+      }
+      const taken = yield* claimOn(files, id);
+      const isUnstarted =
+        taken?.by === 'page' && !taken.isAcknowledged && !launching.has(id);
+      return isUnstarted ? [id] : [];
+    }),
+  );
+  return found.flat();
 });
 
 const spentOn = (files: ShootFiles) =>
