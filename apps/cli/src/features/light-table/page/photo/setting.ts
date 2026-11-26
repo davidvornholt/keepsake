@@ -19,6 +19,8 @@ export type Setting = {
   full: number;
   /** Whether a drag draws a box on the photo. */
   isDrawing: boolean;
+  /** Whether the owner writes about the photo, which turning the page or closing it would lose. */
+  isWriting: boolean;
   /** Where the divider between before and after is, across the finished photo from 0 to 1. */
   wipe: number;
 };
