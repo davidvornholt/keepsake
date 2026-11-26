@@ -15,6 +15,9 @@ import {
 import { fakeModels, verdictAnswer } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
+/** How long a failing answer waits for the others, in milliseconds. */
+const heldBack = 300;
+
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
@@ -215,6 +218,56 @@ describe('keepsake pick', () => {
     await runOk('pick', 'lisbon');
     await runOk('pick', 'lisbon');
     expect(asked('album')).toHaveLength(1);
+  });
+
+  it('asks nothing again that it was answered before it stopped', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    fakeModels.answers.motifs = {
+      motifs: [{ motif: 'a heron', photos: [1, 2] }],
+    };
+    fakeModels.answers.ranking = () =>
+      Response.json({ error: { message: 'limit' } }, { status: 400 });
+    const counts = () =>
+      (['album', 'motifs', 'motif'] as const).map((name) => asked(name).length);
+    await failureOf('pick', 'lisbon', '--maximum', '1');
+    expect(counts()).toEqual([1, 1, 1]);
+    await failureOf('pick', 'lisbon', '--maximum', '1');
+    expect(counts()).toEqual([1, 1, 1]);
+    await failureOf('pick', 'lisbon', '--maximum', '1', '--again');
+    expect(counts()).toEqual([2, 2, 2]);
+    fakeModels.answers.ranking = { bestFirst: [1] };
+    await runOk('pick', 'lisbon', '--maximum', '1');
+    expect(counts()).toEqual([2, 2, 2]);
+    expect(existsSync(shootFile('pick-answers'))).toBe(false);
+  });
+
+  it('counts each round of the ranking once after it stopped', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    // All three rounds ask about the same photos in the same order.
+    const answers = [
+      [1, 2, 3],
+      [3, 2, 1],
+      [2, 1, 3],
+    ];
+    const limit = async () => {
+      // Held back until the other rounds have kept their answers.
+      await Bun.sleep(heldBack);
+      return Response.json({ error: { message: 'limit' } }, { status: 400 });
+    };
+    fakeModels.answers.ranking = () => {
+      const round = asked('ranking').length;
+      return round === 3 ? limit() : { bestFirst: answers[round - 1] };
+    };
+    await failureOf('pick', 'lisbon', '--maximum', '1');
+    fakeModels.answers.ranking = { bestFirst: answers[2] };
+    const result = await runOk('pick', 'lisbon', '--maximum', '1');
+    expect(asked('ranking')).toHaveLength(4);
+    // B comes second, second and first: the most points of the three.
+    expect(result).toMatchObject({ picked: 1 });
+    const { picks } = await shootJson('picks.json');
+    expect(picks.map(({ photo }: { photo: string }) => photo)).toEqual(['B']);
   });
 
   it('needs verdicts first', async () => {

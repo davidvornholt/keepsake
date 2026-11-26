@@ -41,7 +41,8 @@ export const assessment = (version: number, overrides: object = {}) => ({
   ...overrides,
 });
 
-const usualAnswers = {
+/** What the fake models answer unless a test says otherwise. */
+export const usualAnswers = {
   judgement: verdictAnswer,
   shortlist: { best: [1] },
   check: {
@@ -120,7 +121,8 @@ const chat = async (request: Request): Promise<Response> => {
   };
   fakeModels.asked.push(asked);
   const chosen = fakeModels.answers[asked.name] ?? usualAnswers[asked.name];
-  const answer = typeof chosen === 'function' ? chosen(asked) : chosen;
+  // An answer may come later, to hold one question back behind others.
+  const answer = await (typeof chosen === 'function' ? chosen(asked) : chosen);
   if (answer instanceof Response) {
     return answer;
   }

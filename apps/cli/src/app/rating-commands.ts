@@ -5,12 +5,13 @@ import { judgeMoments } from '../features/cull/cull.ts';
 import { disputedBetween } from '../features/rating/disputed.ts';
 import { sampleOf } from '../features/rating/sample.ts';
 import { ratingLink } from '../shared/address.ts';
+import type { Moment } from '../shared/domain.ts';
 import { StepMissing } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { askToRate, readRatings } from '../shared/ratings.ts';
 import { Spending } from '../shared/spending.ts';
 import { type OpenShoot, openShoot } from '../shared/store.ts';
-import { verdicts } from '../shared/verdicts.ts';
+import { sameAs, verdicts } from '../shared/verdicts.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
 import {
@@ -107,6 +108,20 @@ export const rate = Command.make(
   ),
 );
 
+/**
+ * Where a benchmark keeps its verdict on a moment as it was rated. One that a
+ * later scan changed is kept apart, so it doesn't replace the cull's verdict
+ * on the moment as it is now.
+ */
+const ratedVerdictFile =
+  (open: OpenShoot) =>
+  (model: string, { id, photos }: Moment) => {
+    const now = open.moments.find((moment) => moment.id === id);
+    return now !== undefined && sameAs(now.photos, photos)
+      ? open.files.verdict(model, id)
+      : open.files.ratedVerdict(model, id);
+  };
+
 export const bench = Command.make(
   'bench',
   {
@@ -142,6 +157,7 @@ export const bench = Command.make(
                 open,
                 moments,
                 again,
+                ratedVerdictFile(open),
               ).pipe(Effect.provide(Vision.layer(model)));
               return { model, ...compareWithOwner(judged, ratings), failed };
             }),

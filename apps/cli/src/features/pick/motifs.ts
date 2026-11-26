@@ -1,9 +1,8 @@
 import { Effect, Schema } from 'effect';
 import type { LeftOut, Pick } from '../../shared/domain.ts';
-import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import type { OpenShoot } from '../../shared/store.ts';
-import { type Piece, Vision } from '../../shared/vision.ts';
+import { askOnce } from './asked.ts';
 
 /** How many photos are told apart at once. */
 const mostPhotos = 24;
@@ -47,9 +46,11 @@ type Motif = {
 };
 
 /** The photos that share a motif, as their descriptions tell. */
-const motifsOf = Effect.fn('motifsOf')(function* (picks: ReadonlyArray<Pick>) {
-  const vision = yield* Vision;
-  const { motifs } = yield* vision.ask({
+const motifsOf = Effect.fn('motifsOf')(function* (
+  open: OpenShoot,
+  picks: ReadonlyArray<Pick>,
+) {
+  const { motifs } = yield* askOnce(open, {
     role,
     name: 'motifs',
     schema: Motifs,
@@ -107,18 +108,15 @@ const dispensable = Effect.fn('dispensable')(function* (
   open: OpenShoot,
   { motif, picks }: Motif,
 ) {
-  const vision = yield* Vision;
-  const pictures = yield* Effect.forEach(picks, ({ photo }) =>
-    rendered(open.files.preview(photo), { longSide: pictureSide }),
-  );
-  const { keep, repeats } = yield* vision.ask({
+  const { keep, repeats } = yield* askOnce(open, {
     role,
     name: 'motif',
     schema: Answer,
     pieces: [
-      ...pictures.flatMap(
-        (picture, index): Array<Piece> => [`Photo ${index + 1}:`, picture],
-      ),
+      ...picks.flatMap(({ photo }, index) => [
+        `Photo ${index + 1}:`,
+        { photo, longSide: pictureSide },
+      ]),
       keepingQuestion(motif),
     ],
   });
@@ -149,7 +147,7 @@ export const withoutSameMotifs = Effect.fn('withoutSameMotifs')(function* (
   open: OpenShoot,
   picks: ReadonlyArray<Pick>,
 ) {
-  const motifs = picks.length < 2 ? [] : yield* motifsOf(picks);
+  const motifs = picks.length < 2 ? [] : yield* motifsOf(open, picks);
   const out = yield* inSteps(
     'motifs',
     motifs.flatMap(comparable(open)),

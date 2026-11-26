@@ -177,6 +177,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     photos: path.join(root, 'photos.json'),
     moments: path.join(root, 'moments.json'),
     picks: path.join(root, 'picks.json'),
+    /** What the models answered in a pick that hasn't ended yet. */
+    pickAnswers: path.join(root, 'pick-answers'),
     /** Why photos that could have been in the album aren't. */
     reasons: path.join(root, 'reasons.json'),
     ratings: path.join(root, 'ratings.json'),
@@ -207,6 +209,14 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
       path.join(
         root,
         'verdicts',
+        model.replaceAll('/', '--'),
+        `${moment}.json`,
+      ),
+    /** A benchmark's verdict on a moment as it was rated, not as it is now. */
+    ratedVerdict: (model: string, moment: string) =>
+      path.join(
+        root,
+        'rated-verdicts',
         model.replaceAll('/', '--'),
         `${moment}.json`,
       ),
