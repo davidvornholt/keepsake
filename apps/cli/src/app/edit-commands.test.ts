@@ -134,6 +134,14 @@ describe('keepsake edit, with named photos', () => {
     expect((await editLisbon('A2')).edited).toBe(1);
     expect(asked('description')).toHaveLength(1);
   });
+
+  it('edits a photo named twice once', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    const result = await editLisbon('B', 'B', '--again');
+    expect(result.edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(2);
+  });
 });
 
 describe('keepsake edit, with people', () => {
@@ -296,6 +304,20 @@ describe('keepsake edit, when something goes wrong', () => {
         reason: 'azure/gpt-image-2.5-sunburst answered 404: no such model',
       },
     ]);
+  });
+
+  it('lists a photo as failed when the image model answers with no image', async () => {
+    await pickLisbon();
+    fakeModels.editAnswer = () => Response.json({ data: [] });
+    const result = await editLisbon('B');
+    expect(result.failed).toEqual([
+      { photo: 'B', reason: expect.stringContaining('without an image') },
+    ]);
+    expect(result.keptFromCamera).toEqual([]);
+    expect(existsSync(shootFile('edits', 'B', 'B-keepsake.jpg'))).toBe(false);
+    fakeModels.editAnswer = undefined;
+    expect((await editLisbon('B')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(2);
   });
 
   it('refuses a photo nobody judged', async () => {

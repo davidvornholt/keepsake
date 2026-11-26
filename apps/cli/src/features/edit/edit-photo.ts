@@ -1,22 +1,25 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
 import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import { askReviewer } from '../../shared/review-vision.ts';
+import { askReviewer, ReviewVision } from '../../shared/review-vision.ts';
 import {
   atomically,
-  type EditFiles,
   exists,
   type OpenShoot,
   readJson,
   writeJson,
 } from '../../shared/store.ts';
 import { wishIn, writeWish } from '../../shared/wishes.ts';
+import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
+
 import { type CorrectionFiles, correct } from './correct/correct.ts';
-import { Change, findPlaces, type Place } from './correct/places.ts';
+import { Change, findPlaces, inMarked, type Place } from './correct/places.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
+import { keptOnFace, removalsOnFaces } from './keep-originals.ts';
 import { remembered } from './prepare.ts';
 import { sentence } from './prompt.ts';
 import { bothWishes, emptied } from './wishes.ts';
@@ -90,31 +93,59 @@ type ToChange = {
   readonly areas: ReadonlyArray<Box>;
 };
 
-/** Forgets an earlier change, but goes on with one that isn't over. */
+/** The models a change is made with, as what they make differs. */
+const Models = Schema.Struct({
+  imageModel: Schema.String,
+  reviewModel: Schema.String,
+});
+const sameModels = Schema.toEquivalence(Models);
+
+/**
+ * Forgets an earlier change, but goes on with one that isn't over and is made
+ * with the same models. One from before they were noted goes on, since what it
+ * made was paid for.
+ */
 const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
+  const models = {
+    imageModel: (yield* ImageModel).model,
+    reviewModel: (yield* ReviewVision).model,
+  };
+  const modelsFile = `${files.directory}/models.json`;
   const before = yield* wishIn(files.wish);
   const areasBefore = yield* readJson(Areas, files.areas);
+  const modelsBefore = yield* readJson(Models, modelsFile);
   const isSame =
     before === wish &&
     sameAreas(
       Option.getOrElse(areasBefore, () => []),
       areas,
-    );
+    ) &&
+    Option.match(modelsBefore, {
+      onNone: () => true,
+      onSome: (known) => sameModels(known, models),
+    });
   if (!isSame || (yield* exists(files.outcome))) {
     yield* emptied(files.directory, []);
     yield* writeJson(Areas, files.areas, areas);
     yield* writeWish(files.wish, wish);
   }
+  yield* writeJson(Models, modelsFile, models);
 });
 
 /** Changes single places of a finished photo. */
 const changePlaces = Effect.fn('changePlaces')(function* (
-  { job, former, files, wish }: ToChange,
+  { job, former, files, wish, areas }: ToChange,
   places: ReadonlyArray<Place>,
 ) {
   const image = yield* ImageModel;
   const { file, description, attempts, left } = yield* askReviewer(
-    correct({ open: job.open, versions: job.versions, files, places }),
+    correct({
+      open: job.open,
+      versions: job.versions,
+      files,
+      places,
+      areas: areas.length === 0 ? null : areas,
+    }),
   );
   const notDone = left.map(({ place, problem }) =>
     [...place.what, ...(problem === null ? [] : [problem])]
@@ -130,6 +161,8 @@ const changePlaces = Effect.fn('changePlaces')(function* (
   );
   const record: EditRecord = {
     ...former,
+    // Also where it was the camera's own picture before.
+    version: 'ai',
     model: image.model,
     review: [
       `Changed: ${sentence(wish)}`,
@@ -166,6 +199,17 @@ const moved = (from: EditFiles, to: EditFiles) =>
     ),
   );
 
+/** What was to be removed and stays in an edit, since it is on a face. */
+const keptOnFaces = ({
+  best,
+  prepared,
+}: Effect.Success<ReturnType<typeof bestEdit>>): ReadonlyArray<string> =>
+  best === null
+    ? []
+    : removalsOnFaces(prepared.originals, prepared.removed).map(
+        (what) => `${sentence(what)} ${sentence(keptOnFace)}`,
+      );
+
 /** Edits all of a photo anew. The edit it has stays until that is better. */
 const changeAll = Effect.fn('changeAll')(function* ({
   job,
@@ -187,20 +231,24 @@ const changeAll = Effect.fn('changeAll')(function* ({
   const record = yield* writeEdit(anew, made);
   yield* writeWish(files.wish, wanted);
   yield* moved(files, job.files);
-  return { record, notDone: [] } satisfies Edited;
+  return { record, notDone: keptOnFaces(made) } satisfies Edited;
 });
 
 /** Changes a finished photo, as little of it as the wish is about. */
 const change = Effect.fn('change')(function* (toChange: ToChange) {
   const { files, wish, areas } = toChange;
   yield* begin(toChange);
-  const { everywhere, places } = yield* remembered(
+  const found = yield* remembered(
     Change,
     files.places,
     askReviewer(findPlaces(files.final, wish, areas)),
   );
+  const { everywhere, places } = inMarked(found, areas);
   if (!everywhere && places.length === 0) {
-    const nothing = 'The photo shows nothing that the wish is about.';
+    const nothing =
+      areas.length === 0
+        ? 'The photo shows nothing that the wish is about.'
+        : 'Nothing that the wish is about can change inside the marked places alone.';
     return { record: toChange.former, notDone: [nothing] } satisfies Edited;
   }
   return everywhere
@@ -216,6 +264,8 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   open: OpenShoot,
   { pick, photo }: ToEdit,
   options: EditOptions,
+  /** The command that starts it over or edits it with a wish, if one does. */
+  anew: string | null,
 ) {
   const files = open.files.edit(photo.id);
   const jobFor = (wanted: string | null): Job => ({
@@ -233,8 +283,16 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   });
   const { wish, areas, again } = options;
   const former = Option.getOrNull(yield* editOf(open, photo.id));
-  yield* keepEarlier(files);
-  if (wish !== null && wish !== '' && !again && former?.version === 'ai') {
+  const isResumed = anew !== null && (yield* isGoingOn(files, anew));
+  const noted = (notDone: ReadonlyArray<string> | null) =>
+    noteProgress(files, anew, notDone);
+  if (!isResumed) {
+    yield* keepEarlier(files);
+  }
+  // Marked places change alone, also in the camera's own picture.
+  const isChange =
+    former !== null && (former.version === 'ai' || areas.length > 0);
+  if (wish !== null && wish !== '' && !again && isChange) {
     const { correction } = files;
     const changed = yield* change({
       job: jobFor(wish),
@@ -246,10 +304,18 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
     yield* writeJson(Outcome, correction.outcome, {
       notDone: changed.notDone,
     });
+    yield* noted(changed.notDone);
     return changed;
   }
-  yield* forget(files, options);
+  // What this command made before it stopped stays, since it cost money.
+  if (!isResumed) {
+    yield* forget(files, options);
+    yield* noted(null);
+  }
   const job = jobFor(yield* wishIn(files.wish));
-  const record = yield* writeEdit(job, yield* bestEdit(job));
-  return { record, notDone: [] } satisfies Edited;
+  const made = yield* bestEdit(job);
+  const record = yield* writeEdit(job, made);
+  const left = keptOnFaces(made);
+  yield* noted(left);
+  return { record, notDone: left } satisfies Edited;
 });

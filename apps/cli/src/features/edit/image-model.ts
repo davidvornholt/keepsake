@@ -224,6 +224,12 @@ export class ImageModel extends Context.Service<
               Effect.fail(new ModelFailed({ message })),
             ),
           );
+          // Also an answer without images, which is counted as paid for.
+          if (answer.data.length === 0) {
+            return yield* new ModelFailed({
+              message: `${model} answered without an image.`,
+            });
+          }
           return answer.data.map(({ b64_json: image }) => image);
         });
         return ImageModel.of({ model, edit });

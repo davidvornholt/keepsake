@@ -47,7 +47,7 @@ const Found = Schema.Struct({
 const margin = 0.15;
 
 /** What the user marked, with a little around it. */
-const withMargin = ({ left, top, right, bottom }: Box): Box => {
+export const withMargin = ({ left, top, right, bottom }: Box): Box => {
   const across = (right - left) * margin;
   const down = (bottom - top) * margin;
   return {
@@ -112,6 +112,58 @@ const withPlace = (
 export const apart = (places: ReadonlyArray<Place>): ReadonlyArray<Place> =>
   places.reduce<ReadonlyArray<Place>>(withPlace, []);
 
+const sameBox = (one: Box, other: Box): boolean =>
+  one.left === other.left &&
+  one.top === other.top &&
+  one.right === other.right &&
+  one.bottom === other.bottom;
+
+/** The part of a box inside another, if there is one. */
+const insideOf = (box: Box, area: Box): ReadonlyArray<Box> => {
+  const part = {
+    left: Math.max(box.left, area.left),
+    top: Math.max(box.top, area.top),
+    right: Math.min(box.right, area.right),
+    bottom: Math.min(box.bottom, area.bottom),
+  };
+  return part.right > part.left && part.bottom > part.top ? [part] : [];
+};
+
+/**
+ * The places as far as they are inside what the user marked, with the little
+ * around it that the model saw, since the marks are rough. Nothing else may
+ * change then, however much the wish is about.
+ */
+const inMarks = (
+  places: ReadonlyArray<Place>,
+  marks: ReadonlyArray<Box>,
+): ReadonlyArray<Place> =>
+  places.flatMap((place) => {
+    const parts = marks.flatMap((mark) => insideOf(place.box, mark));
+    // A place in marks that overlap is the same in each of them.
+    const distinct = parts.filter(
+      (part, index) =>
+        parts.findIndex((other) => sameBox(other, part)) === index,
+    );
+    return distinct.map((box) => ({ ...place, box }));
+  });
+
+/** What may change of a photo: the marks, with a little around each. */
+export const markedAreas = (areas: ReadonlyArray<Box>): ReadonlyArray<Box> =>
+  areas.map(withMargin);
+
+/**
+ * What has to change, kept to the marks if there are any, also when it was
+ * found before marks were kept to.
+ */
+export const inMarked = (
+  change: typeof Change.Type,
+  areas: ReadonlyArray<Box>,
+): typeof Change.Type =>
+  areas.length === 0
+    ? change
+    : { everywhere: false, places: inMarks(change.places, markedAreas(areas)) };
+
 /** Finds where a finished photo has to change for what the user wants. */
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
@@ -119,7 +171,7 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
   areas: ReadonlyArray<Box>,
 ) {
   const vision = yield* Vision;
-  const { parts, pieces } = yield* inParts(file, areas.map(withMargin));
+  const { parts, pieces } = yield* inParts(file, markedAreas(areas));
   const answer = yield* vision.ask({
     role,
     name: 'places',
@@ -135,6 +187,10 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
+  // Kept to the marks once they are read, also where they were found before.
+  if (areas.length > 0) {
+    return { everywhere: false, places };
+  }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage
     ? { everywhere: true, places: [] }

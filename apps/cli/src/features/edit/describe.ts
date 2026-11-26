@@ -1,8 +1,9 @@
 import { Effect, Option } from 'effect';
 import { Description, whatToDescribe } from '../../shared/describing.ts';
 import type { Box, Shoot } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import { rendered } from '../../shared/pictures.ts';
-import { type EditFiles, readJson, writeJson } from '../../shared/store.ts';
+import { readJson, writeJson } from '../../shared/store.ts';
 import { Vision } from '../../shared/vision.ts';
 import { edgesBeyond } from './beyond.ts';
 import { withoutRemoved } from './removals.ts';

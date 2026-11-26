@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { around, wholePicture } from '../../shared/boxes.ts';
+import { around, coverage, wholePicture } from '../../shared/boxes.ts';
 import type { Box, Outline, Person, Sign } from '../../shared/domain.ts';
 import {
   frameOf,
@@ -44,11 +44,48 @@ export type Originals = {
   readonly gone: ReadonlyArray<Box>;
 };
 
+/** What an inspection found wrong, where the edit shows it. */
+export type Mending = {
+  readonly patches: ReadonlyArray<Box>;
+  readonly textures: ReadonlyArray<Outline>;
+};
+
+const nothingToMend: Mending = { patches: [], textures: [] };
+
 const boundsOf = ({ face, outline }: Person): Box =>
   around([
     face,
     ...outline.map(({ x, y }) => ({ left: x, top: y, right: x, bottom: y })),
   ]);
+
+const half = 0.5;
+
+/**
+ * Whether most of what is to be removed is on someone's face. It stays then,
+ * since a face always comes back as the photo shows it.
+ */
+export const isOnFace = (people: ReadonlyArray<Person>, box: Box): boolean =>
+  people.some(({ face }) => {
+    const width =
+      Math.min(box.right, face.right) - Math.max(box.left, face.left);
+    const height =
+      Math.min(box.bottom, face.bottom) - Math.max(box.top, face.top);
+    return width > 0 && height > 0 && width * height > half * coverage(box);
+  });
+
+/** Why something on a face isn't removed. */
+export const keptOnFace =
+  'It is on someone’s face, which keepsake keeps as the photo shows it';
+
+/** What is to be removed and stays, since it is on someone's face. */
+export const removalsOnFaces = (
+  { people, gone }: Pick<Originals, 'people' | 'gone'>,
+  removed: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  removed.filter((_, index) => {
+    const box = gone[index];
+    return box !== undefined && isOnFace(people, box);
+  });
 
 /** The texts and logos on a person. */
 const writtenOn = (
@@ -71,20 +108,28 @@ const keepMoved = (
   {
     photoBox,
     placement,
-  }: { readonly photoBox: Box; readonly placement: Placement },
+    mending,
+  }: {
+    readonly photoBox: Box;
+    readonly placement: Placement;
+    readonly mending: Mending;
+  },
 ): void => {
   const photo = frameOf(photoBox, original);
   const moved = placed(original, edit, photo, placement);
   const inEdit = (box: Box) => placedBox(box, placement, original);
   const gone = originals.gone.map(inEdit);
-  const bystanders = originals.bystanders.map(inEdit);
+  const bystanders = [...originals.bystanders.map(inEdit), ...mending.patches];
   changeOutside(gone, edit, () => {
     keepTexture(
       moved,
       edit,
-      originals.textures.map((outline) =>
-        placedOutline(outline, placement, original),
-      ),
+      [
+        ...originals.textures.map((outline) =>
+          placedOutline(outline, placement, original),
+        ),
+        ...mending.textures,
+      ],
       inEdit(photoBox),
     );
     for (const box of bystanders) {
@@ -95,13 +140,23 @@ const keepMoved = (
     const rough = placedPerson(person, placement, original);
     const shift = shiftOf(moved, edit, frameOf(boundsOf(rough), original));
     const exact = movedOn(placement, shift);
-    keepPerson(
-      placed(original, edit, photo, exact),
+    const there = placedPerson(person, exact, original);
+    // Where something was removed, only their face comes back, since no
+    // face of an edit is let through.
+    changeOutside(
+      gone,
       edit,
-      placedPerson(person, exact, original),
-      writtenOn(person, originals.signs).map(
-        (sign) => placedSign(sign, exact, original).box,
-      ),
+      () => {
+        keepPerson(
+          placed(original, edit, photo, exact),
+          edit,
+          there,
+          writtenOn(person, originals.signs).map(
+            (sign) => placedSign(sign, exact, original).box,
+          ),
+        );
+      },
+      [there.face],
     );
   }
   const signs = signsApart(originals).map((sign) =>
@@ -124,7 +179,14 @@ export const putBack = (
   wanted: Originals,
   original: Raster,
   edit: Raster,
-  crop: Box,
+  {
+    crop,
+    mending = nothingToMend,
+  }: {
+    /** What the edit shows of the photo. */
+    readonly crop: Box;
+    readonly mending?: Mending;
+  },
 ): void => {
   const originals = {
     ...wanted,
@@ -136,22 +198,31 @@ export const putBack = (
     keepMoved(originals, original, edit, {
       photoBox,
       placement: placement ?? unmoved,
+      mending,
     });
     return;
   }
+  const bystanders = [...originals.bystanders, ...mending.patches];
   changeOutside(originals.gone, edit, () => {
-    keepTexture(original, edit, originals.textures);
-    for (const box of originals.bystanders) {
-      keepPatch(original, edit, box, originals.bystanders);
+    keepTexture(original, edit, [...originals.textures, ...mending.textures]);
+    for (const box of bystanders) {
+      keepPatch(original, edit, box, bystanders);
     }
   });
   for (const person of originals.people) {
     const written = writtenOn(person, originals.signs);
-    keepPerson(
-      original,
+    changeOutside(
+      originals.gone,
       edit,
-      person,
-      written.map(({ box }) => box),
+      () => {
+        keepPerson(
+          original,
+          edit,
+          person,
+          written.map(({ box }) => box),
+        );
+      },
+      [person.face],
     );
   }
   const signs = signsApart(originals);
@@ -174,10 +245,11 @@ export const keepOriginals = Effect.fn('keepOriginals')(function* (
     readonly version: string;
     readonly target: string;
   },
+  mending: Mending = nothingToMend,
 ) {
   const size = yield* sizeOf(files.original);
   const original = yield* rasterOf(files.original, size);
   const edit = yield* rasterOf(files.version, size);
-  putBack(originals, original, edit, crop);
+  putBack(originals, original, edit, { crop, mending });
   yield* writeRaster(files.target, edit);
 });

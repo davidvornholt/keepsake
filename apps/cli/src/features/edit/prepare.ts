@@ -10,11 +10,11 @@ import {
   Removal,
   Sign,
 } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import { renderExactly, type Size, sizeOf } from '../../shared/pictures.ts';
 import { askReviewer } from '../../shared/review-vision.ts';
 import {
   atomically,
-  type EditFiles,
   exists,
   type OpenShoot,
   readJson,

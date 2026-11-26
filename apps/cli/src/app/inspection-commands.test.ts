@@ -70,27 +70,28 @@ describe('keepsake edit, with animals', () => {
   });
 });
 
-describe('keepsake edit, looking closely', () => {
-  const fault = (overrides: object = {}) => ({
-    part: 1,
-    box: { left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 },
-    what: 'A face is melted.',
-    kind: 'people',
-    serious: true,
-    rightInOriginal: true,
-    ...overrides,
+const fault = (overrides: object = {}) => ({
+  part: 1,
+  box: { left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 },
+  what: 'A face is melted.',
+  kind: 'people',
+  serious: true,
+  rightInOriginal: true,
+  inOriginal: false,
+  ...overrides,
+});
+/** Answers with each of these in turn, and with the last one from then on. */
+const inTurn = (...answers: ReadonlyArray<ReadonlyArray<object>>) => {
+  fakeModels.answers.faults = () => ({
+    faults: answers[asked('faults').length - 1] ?? answers.at(-1),
   });
-  /** Answers with each of these in turn, and with the last one from then on. */
-  const inTurn = (...answers: ReadonlyArray<ReadonlyArray<object>>) => {
-    fakeModels.answers.faults = () => ({
-      faults: answers[asked('faults').length - 1] ?? answers.at(-1),
-    });
-  };
-  const finishedFrom = () =>
-    fakeTools.runs
-      .filter(({ command }) => command === 'magick')
-      .map(({ args }) => args[0]);
+};
+const finishedFrom = () =>
+  fakeTools.runs
+    .filter(({ command }) => command === 'magick')
+    .map(({ args }) => args[0]);
 
+describe('keepsake edit, looking closely', () => {
   it('puts back what few notice too', async () => {
     await pickLisbon();
     inTurn([fault({ serious: false })], [fault({ serious: false })]);
@@ -101,7 +102,9 @@ describe('keepsake edit, looking closely', () => {
 
   it('leaves alone what the original has wrong too', async () => {
     await pickLisbon();
-    inTurn([fault({ serious: false, rightInOriginal: false })]);
+    inTurn([
+      fault({ serious: false, rightInOriginal: false, inOriginal: true }),
+    ]);
     expect((await editLisbon('B')).edited).toBe(1);
     expect(asked('faults')).toHaveLength(1);
   });
@@ -176,11 +179,30 @@ describe('keepsake edit, looking closely', () => {
 
   it('takes a version whose fault the camera’s picture has as well', async () => {
     await pickLisbon();
-    inTurn([fault({ rightInOriginal: false, what: 'The face is dark.' })]);
+    inTurn([
+      fault({
+        rightInOriginal: false,
+        inOriginal: true,
+        what: 'The face is dark.',
+      }),
+    ]);
     const result = await editLisbon('B');
     expect(result.edited).toBe(1);
     expect(fakeModels.edits).toHaveLength(2);
     const { review } = await shootJson('edits', 'B', 'edit.json');
     expect(review).toBe('The face is dark.');
+  });
+});
+
+describe('keepsake edit, looking closely at what is left', () => {
+  it('keeps the camera’s own picture when what is left of a removal shows', async () => {
+    await pickLisbon();
+    const legs = 'Two legs of the chair float above the grass.';
+    inTurn([fault({ rightInOriginal: false, what: legs, kind: 'other' })]);
+    const result = await editLisbon('B');
+    expect(result.edited).toBe(0);
+    expect(result.keptFromCamera).toEqual([
+      { photo: 'B', reason: `${legs} ${legs}` },
+    ]);
   });
 });
