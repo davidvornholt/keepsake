@@ -1,6 +1,6 @@
 import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
-import { cull as cullShoot } from '../features/cull/cull.ts';
+import { cull as cullShoot, judgedTooFew } from '../features/cull/cull.ts';
 import { edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel, imageModelAccess } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
@@ -292,9 +292,6 @@ export const explain = Command.make(
   ),
 );
 
-/** How many of the moments may be missing before the choice means nothing. */
-const mostMissing = 0.05;
-
 /** Stops when a model couldn't judge many moments, such as at its limit. */
 const checkCulled = ({
   moments,
@@ -303,7 +300,7 @@ const checkCulled = ({
   readonly moments: number;
   readonly failed: ReadonlyArray<{ readonly reason: string }>;
 }) =>
-  failed.length > moments * mostMissing
+  judgedTooFew(moments, failed.length)
     ? Effect.fail(
         new ModelFailed({
           message: `${failed.length} of ${moments} moments couldn’t be judged. The first problem: ${failed[0]?.reason}`,
