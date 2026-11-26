@@ -95,6 +95,33 @@ describe('momentsOf', () => {
     ]);
   });
 
+  describe('when the clocks go back', () => {
+    const at = (id: string, clock: string, utcOffset: string | null) =>
+      photo(id, 0, { takenAt: `2026-10-25T${clock}.000`, utcOffset });
+
+    it('separates photos of the hour that comes twice', () => {
+      expect(
+        groups(at('A', '02:30:00', '+02:00'), at('B', '02:30:01', '+01:00')),
+      ).toEqual(['A', 'B']);
+    });
+
+    it('keeps a burst together across the change', () => {
+      expect(
+        groups(at('B', '02:00:00', '+01:00'), at('A', '02:59:59', '+02:00')),
+      ).toEqual(['A B']);
+    });
+
+    it('takes the usual offset for a photo that has none', () => {
+      expect(
+        groups(
+          at('A', '01:00:00', '+02:00'),
+          at('B', '01:00:01', null),
+          at('C', '01:00:02', '+02:00'),
+        ),
+      ).toEqual(['A B C']);
+    });
+  });
+
   it('names a moment after its first photo', () => {
     expect(momentsOf([photo('A', 0), photo('B', 1), photo('C', 500)])).toEqual([
       { id: 'A', photos: ['A', 'B'] },

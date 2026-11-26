@@ -97,9 +97,6 @@ type ScanOptions = {
 const Photos = Schema.Array(Photo);
 const Moments = Schema.Array(Moment);
 
-const oldestFirst = (left: Photo, right: Photo) =>
-  left.takenAt.localeCompare(right.takenAt) || left.id.localeCompare(right.id);
-
 /** How often what was found so far is noted, in milliseconds. */
 const noteEvery = 3000;
 
@@ -116,10 +113,7 @@ const makeNotes = Effect.fn('makeNotes')(function* (files: ShootFiles) {
   const looks = yield* Ref.make<ReadonlyMap<string, Look>>(new Map());
   const notedAt = yield* Ref.make(0);
   const write = Effect.fn('write')(function* (photos: ReadonlyArray<Photo>) {
-    const moments = momentsOf(
-      photos.toSorted(oldestFirst),
-      yield* Ref.get(looks),
-    );
+    const moments = momentsOf(photos, yield* Ref.get(looks));
     yield* writeJson(Photos, files.photos, photos);
     yield* writeJson(Moments, files.moments, moments);
     return moments;
