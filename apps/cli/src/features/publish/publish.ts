@@ -1,13 +1,12 @@
 import { createHash } from 'node:crypto';
-import { Effect, Option } from 'effect';
-import { readAlbum } from '../../shared/album.ts';
-import { Publication } from '../../shared/domain.ts';
+import { Effect, type Option } from 'effect';
+import { readAlbum, refreshAlbum } from '../../shared/album.ts';
+import { Publication, type PublishedPhoto } from '../../shared/domain.ts';
 import { StepMissing } from '../../shared/errors/errors.ts';
 import {
-  albumNamed,
-  albumWithId,
   createAlbum,
   ensureTag,
+  listAlbums,
   markFavorite,
   stackPhotos,
   tagPhoto,
@@ -15,23 +14,26 @@ import {
 } from '../../shared/immich.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
+import { albumsOf, assetsInUse } from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
   exists,
   type OpenShoot,
   readBytes,
-  readJson,
   readPicks,
   writeJson,
 } from '../../shared/store.ts';
+import {
+  giveRemovalsTheirAlbum,
+  knownPublication,
+  type Target,
+  targetOf,
+} from './target.ts';
 
 /** Marks every photo keepsake put into the library. */
 const tag = 'keepsake';
 
-type Published = Publication['photos'][number];
-
-/** The album to publish to, which has no id until it is created. */
-type Target = { readonly id: string | undefined; readonly name: string };
+type Published = PublishedPhoto;
 
 /** A photo that is finished but not published in this version. */
 type Job = {
@@ -47,42 +49,6 @@ const digestOf = (file: string) =>
     createHash('sha256').update(bytes).digest('hex'),
   );
 
-/**
- * The album keepsake published to before, unless another is named. Albums are
- * found by their id, so one renamed in Immich stays the album, and a name is
- * looked up only for an album keepsake hasn't published to yet.
- */
-const targetOf = Effect.fn('targetOf')(function* (
-  open: OpenShoot,
-  before: Publication | null,
-  chosen: Option.Option<string>,
-) {
-  const recorded =
-    before?.albumId === undefined
-      ? undefined
-      : yield* albumWithId(before.albumId);
-  if (
-    recorded !== undefined &&
-    Option.getOrElse(chosen, () => recorded.name) === recorded.name
-  ) {
-    return recorded satisfies Target;
-  }
-  const name = Option.getOrElse(
-    chosen,
-    () => before?.album ?? open.shoot.about ?? open.shoot.name,
-  );
-  const fresh: Target = { id: undefined, name };
-  return (yield* albumNamed(name)) ?? fresh;
-});
-
-/** Whether the publication is about this album. */
-const isAbout = (before: Publication | null, target: Target) =>
-  before !== null &&
-  target.id !== undefined &&
-  (before.albumId === undefined
-    ? before.album === target.name
-    : before.albumId === target.id);
-
 /** The photos named, or those that were picked and not taken out since. */
 const photosToSend = Effect.fn('photosToSend')(function* (
   open: OpenShoot,
@@ -97,7 +63,7 @@ const photosToSend = Effect.fn('photosToSend')(function* (
   }
   const { picks } = yield* readPicks(open.files, open.shoot.name);
   const removed = new Set(
-    (yield* readAllRemoved(open))
+    (yield* readAllRemoved(open, target.id))
       .filter(isOutOf(target.id))
       .map(({ photo }) => photo),
   );
@@ -175,27 +141,81 @@ const send = Effect.fn('send')(function* (
   } satisfies Published;
 });
 
+/**
+ * The upload of a photo that a new one replaced and that is a photo of no
+ * album keepsake knows of, as Immich gives a file that it has the same id.
+ */
+const outdatedOf = (publication: Publication) => {
+  const inUse = assetsInUse(publication);
+  return (publication.outdated ?? []).filter((asset) => !inUse.has(asset));
+};
+
 /** The publication with a photo's upload in it, and the one it replaced. */
 const withSent = (
   publication: Publication,
   done: Published,
   before: Published | undefined,
 ): Publication => {
-  const outdated = (publication.outdated ?? []).filter(
-    (asset) => asset !== done.asset,
-  );
-  return {
+  const sent = {
     ...publication,
     photos: [
       ...publication.photos.filter(({ photo }) => photo !== done.photo),
       done,
     ],
-    outdated:
-      before === undefined || before.asset === done.asset
-        ? outdated
-        : [...outdated, before.asset],
+  };
+  const isReplaced = before !== undefined && before.asset !== done.asset;
+  return {
+    ...sent,
+    outdated: outdatedOf({
+      ...sent,
+      outdated: [
+        ...(sent.outdated ?? []),
+        ...(isReplaced ? [before.asset] : []),
+      ],
+    }),
   };
 };
+
+/** The publication keepsake goes on with for the album it publishes to. */
+const publicationFor = (
+  before: Publication | null,
+  album: { readonly id: string; readonly name: string },
+): Publication => {
+  const records = albumsOf(before);
+  return {
+    album: album.name,
+    albumId: album.id,
+    photos: records.find(({ albumId }) => albumId === album.id)?.photos ?? [],
+    outdated: before?.outdated ?? [],
+    elsewhere: records.flatMap(({ album: name, albumId, photos }) =>
+      albumId === undefined || albumId === album.id
+        ? []
+        : [{ album: name, albumId, photos }],
+    ),
+  };
+};
+
+/**
+ * What keepsake published to the target album, if it did, and what the album
+ * has in Immich now.
+ */
+const albumNow = Effect.fn('albumNow')(function* (
+  open: OpenShoot,
+  before: Publication | null,
+  target: Target,
+) {
+  const records = albumsOf(before);
+  const record = records.find(
+    ({ albumId }) => albumId !== undefined && albumId === target.id,
+  );
+  return {
+    published: record?.photos ?? [],
+    there:
+      record === undefined
+        ? null
+        : yield* refreshAlbum(open, record, record === records[0]),
+  };
+});
 
 /** Uploads the picked photos, or those named, to an album in Immich. */
 export const publish = Effect.fn('publish')(function* (
@@ -204,21 +224,16 @@ export const publish = Effect.fn('publish')(function* (
   chosenAlbum: Option.Option<string>,
 ) {
   const { name } = open.shoot;
-  const before = Option.getOrNull(
-    yield* readJson(Publication, open.files.publication),
-  );
-  const target = yield* targetOf(open, before, chosenAlbum);
-  const isSame = isAbout(before, target);
-  const there = isSame ? yield* readAlbum(open) : null;
+  const albums = yield* listAlbums;
+  const before = yield* knownPublication(open, albums);
+  yield* giveRemovalsTheirAlbum(open, before?.albumId);
+  const target = yield* targetOf(open, before, chosenAlbum, albums);
+  const { published, there } = yield* albumNow(open, before, target);
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
   const favorites = new Set(
     there?.photos.flatMap(({ photo, favorite }) => (favorite ? [photo] : [])),
   );
-  const previous = isSame && before !== null ? before.photos : [];
-  const ready = yield* jobs(open, names, target, {
-    published: previous,
-    favorites,
-  });
+  const ready = yield* jobs(open, names, target, { published, favorites });
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
@@ -227,27 +242,21 @@ export const publish = Effect.fn('publish')(function* (
     target.id === undefined
       ? yield* createAlbum(target.name)
       : { id: target.id, name: target.name };
-  const albumId = album.id;
   yield* ensureTag(tag);
   // Replaced uploads stay noted until a publish has named them, also one that
   // fails half-way, so none is left in the album untold.
-  let publication: Publication = {
-    album: album.name,
-    albumId,
-    photos: previous,
-    outdated: before?.outdated ?? [],
-  };
+  let publication = publicationFor(before, album);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
-      const done = yield* send(open, job, albumId);
+      const done = yield* send(open, job, album.id);
       publication = withSent(publication, done, job.before);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;
     }),
   );
   yield* readAlbum(open);
-  const outdated = publication.outdated ?? [];
+  const outdated = outdatedOf(publication);
   // Named now, so the next publish doesn't name them again.
   yield* writeJson(Publication, open.files.publication, {
     ...publication,
@@ -255,7 +264,7 @@ export const publish = Effect.fn('publish')(function* (
   });
   return {
     shoot: name,
-    album: { id: albumId, name: album.name },
+    album: { id: album.id, name: album.name },
     published: sent.length,
     alreadyThere: ready.length - todo.length,
     /** Earlier versions, which keepsake leaves in the library. */

@@ -2,13 +2,14 @@ import { DateTime, Effect, Option, Schema } from 'effect';
 import { readAlbum } from '../../shared/album.ts';
 import {
   type Album,
+  type AlbumPhoto,
   PickList,
-  Publication,
   Removed,
 } from '../../shared/domain.ts';
 import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
 import { albumAssets, removeFromAlbum } from '../../shared/immich.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
+import { readPublication } from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 
@@ -30,7 +31,8 @@ const pickedOf = Effect.fn('pickedOf')(function* ({ files }: OpenShoot) {
 
 /**
  * Every upload of each photo that is in the album now, also those that were
- * replaced and wait there for the trash.
+ * replaced and wait there for the trash, and the uploads that are photos of
+ * the album now.
  */
 const versionsIn = Effect.fn('versionsIn')(function* (
   open: OpenShoot,
@@ -38,30 +40,53 @@ const versionsIn = Effect.fn('versionsIn')(function* (
 ) {
   const versions = new Map<string, ReadonlyArray<string>>();
   if (album === null) {
-    return versions;
+    return { versions, current: [] as ReadonlyArray<AlbumPhoto> };
   }
   const there = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
-  const published = yield* readJson(Publication, open.files.publication);
+  const published = (yield* readPublication(open))?.photos ?? [];
+  const current = [...album.photos, ...published];
   const known = [
     ...album.photos.map(({ photo, asset }) => ({ photo, assets: [asset] })),
-    ...Option.match(published, {
-      onNone: () => [],
-      onSome: ({ photos }) =>
-        photos.map(({ photo, asset, replaced }) => ({
-          photo,
-          assets: [asset, ...(replaced ?? [])],
-        })),
-    }),
+    ...published.map(({ photo, asset, replaced }) => ({
+      photo,
+      assets: [asset, ...(replaced ?? [])],
+    })),
   ];
   for (const { photo, assets } of known) {
-    const now = new Set([...(versions.get(photo) ?? []), ...assets]);
+    const all = new Set([...(versions.get(photo) ?? []), ...assets]);
     versions.set(
       photo,
-      [...now].filter((asset) => there.has(asset)),
+      [...all].filter((asset) => there.has(asset)),
     );
   }
-  return versions;
+  return { versions, current };
 });
+
+/**
+ * Fails for a photo whose upload is also that of a photo that stays in the
+ * album, as Immich has the same file only once.
+ */
+const sameAsStaying = (
+  album: Album | null,
+  current: ReadonlyArray<{ readonly photo: string; readonly asset: string }>,
+  leaving: ReadonlySet<string>,
+) => {
+  const shared = (album?.photos ?? []).flatMap(({ photo, asset }) => {
+    const other = current.find(
+      (one) => one.asset === asset && !leaving.has(one.photo),
+    );
+    return leaving.has(photo) && other !== undefined
+      ? [`${photo} is the same file in Immich as ${other.photo}`]
+      : [];
+  });
+  return shared.length === 0
+    ? Effect.void
+    : Effect.fail(
+        new InvalidInput({
+          message: `${shared.join(', ')}, so it can leave the album only together with it. Name both, or neither.`,
+        }),
+      );
+};
 
 /**
  * Takes photos out of the album, or out of those that are to be in it, or says
@@ -74,15 +99,23 @@ export const takeOut = Effect.fn('takeOut')(function* (
 ) {
   const { name } = open.shoot;
   const album = yield* readAlbum(open);
-  const all = yield* readAllRemoved(open);
+  const all = yield* readAllRemoved(open, album?.id);
   const before = all.filter(isOutOf(album?.id));
   const picked = yield* pickedOf(open);
-  const versions = yield* versionsIn(open, album);
+  const { versions, current } = yield* versionsIn(open, album);
   const photos = yield* Effect.forEach(names, (one) => photoNamed(open, one));
+  const leaving = new Set(photos.map(({ id }) => id));
+  yield* sameAsStaying(album, current, leaving);
+  // An earlier upload that another photo is now stays for that one.
+  const staying = new Set(
+    current.flatMap(({ photo, asset }) => (leaving.has(photo) ? [] : [asset])),
+  );
   const found = yield* Effect.forEach(photos, ({ id }) => {
     const there = album?.photos.find(({ photo }) => photo === id);
     const earlier = before.find(({ photo }) => photo === id);
-    const assets = versions.get(id) ?? [];
+    const assets = (versions.get(id) ?? []).filter(
+      (asset) => !staying.has(asset),
+    );
     return there === undefined &&
       assets.length === 0 &&
       earlier === undefined &&

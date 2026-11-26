@@ -25,12 +25,19 @@ const photos = Effect.fn('photos')(function* <S extends Schema.Constraint>(
 const Named = Schema.Struct({ id: Schema.String, name: Schema.String });
 const NamedList = Schema.Array(Named);
 
+export type NamedAlbum = typeof Named.Type;
+
+/** Every album, the owner's own and those shared with them. */
+export const listAlbums = photos(NamedList, ['albums', 'list']);
+
 /**
- * The album with this name, if there is one. Albums are told apart by their
- * id, so a name two albums share names none of them.
+ * The album of these with this name, if there is one. Albums are told apart
+ * by their id, so a name two albums share names none of them.
  */
-export const albumNamed = Effect.fn('albumNamed')(function* (name: string) {
-  const albums = yield* photos(NamedList, ['albums', 'list', '--name', name]);
+export const uniqueNamed = Effect.fn('uniqueNamed')(function* (
+  albums: ReadonlyArray<NamedAlbum>,
+  name: string,
+) {
   const same = albums.filter((candidate) => candidate.name === name);
   if (same.length > 1) {
     return yield* new InvalidInput({
@@ -40,10 +47,17 @@ export const albumNamed = Effect.fn('albumNamed')(function* (name: string) {
   return same[0];
 });
 
+/** The album with this name, if there is exactly one. */
+export const albumNamed = Effect.fn('albumNamed')(function* (name: string) {
+  return yield* uniqueNamed(
+    yield* photos(NamedList, ['albums', 'list', '--name', name]),
+    name,
+  );
+});
+
 /** The album with this id, under the name it has now, unless it is gone. */
 export const albumWithId = Effect.fn('albumWithId')(function* (id: string) {
-  const albums = yield* photos(NamedList, ['albums', 'list']);
-  return albums.find((candidate) => candidate.id === id);
+  return (yield* listAlbums).find((candidate) => candidate.id === id);
 });
 
 export const createAlbum = (name: string) =>

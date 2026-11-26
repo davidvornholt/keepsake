@@ -3,11 +3,11 @@ import {
   Album,
   type Moment,
   PickList,
-  Publication,
   Reason,
   Removed,
   type Verdict,
 } from './domain.ts';
+import { readPublication } from './publication.ts';
 import { type OpenShoot, readJson } from './store.ts';
 import { verdicts } from './verdicts.ts';
 
@@ -47,11 +47,27 @@ export const readReasons = (open: OpenShoot) =>
     Option.getOrElse((): ReadonlyArray<Reason> => []),
   );
 
-/** Every photo that was taken out, of whichever album. */
-export const readAllRemoved = (open: OpenShoot) =>
+/**
+ * Every photo that was taken out, of whichever album. Those that went missing
+ * before keepsake kept the album's id went missing from `legacyAlbum`.
+ */
+export const readAllRemoved = (
+  open: OpenShoot,
+  legacyAlbum: string | undefined,
+) =>
   Effect.map(
     readJson(Removals, open.files.removed),
-    Option.getOrElse((): ReadonlyArray<Removed> => []),
+    Option.match({
+      onNone: (): ReadonlyArray<Removed> => [],
+      onSome: (all) =>
+        all.map((one) =>
+          one.because === null &&
+          one.album === undefined &&
+          legacyAlbum !== undefined
+            ? { ...one, album: legacyAlbum }
+            : one,
+        ),
+    }),
   );
 
 /** Whether a photo that was taken out stays out of the album with this id. */
@@ -64,9 +80,8 @@ export const isOutOf =
 export const readRemoved = Effect.fn('readRemoved')(function* (
   open: OpenShoot,
 ) {
-  const published = yield* readJson(Publication, open.files.publication);
-  const album = Option.getOrUndefined(published)?.albumId;
-  return (yield* readAllRemoved(open)).filter(isOutOf(album));
+  const album = (yield* readPublication(open))?.albumId;
+  return (yield* readAllRemoved(open, album)).filter(isOutOf(album));
 });
 
 type Known = {

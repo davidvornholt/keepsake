@@ -243,25 +243,37 @@ export const EditRecord = Schema.Struct({
 });
 export type EditRecord = typeof EditRecord.Type;
 
+/** A photo keepsake uploaded to an album. */
+export const PublishedPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+  cameraAsset: Schema.String,
+  /** The SHA-256 of the file that was published. */
+  digest: Schema.String,
+  /** Earlier uploads of the photo, which may wait in the album for the trash. */
+  replaced: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+export type PublishedPhoto = typeof PublishedPhoto.Type;
+
+/** What keepsake published to an album it published to before the last. */
+export const EarlierAlbum = Schema.Struct({
+  album: Schema.String,
+  albumId: Schema.String,
+  photos: Schema.Array(PublishedPhoto),
+});
+export type EarlierAlbum = typeof EarlierAlbum.Type;
+
 export const Publication = Schema.Struct({
   /** The album's name when keepsake last published to it. */
   album: Schema.String,
   /** Missing only in records from before keepsake kept the album's id. */
   albumId: Schema.optionalKey(Schema.String),
   /** What was published to this album, and to no other. */
-  photos: Schema.Array(
-    Schema.Struct({
-      photo: Schema.String,
-      asset: Schema.String,
-      cameraAsset: Schema.String,
-      /** The SHA-256 of the file that was published. */
-      digest: Schema.String,
-      /** Earlier uploads of the photo, which may wait in the album for the trash. */
-      replaced: Schema.optionalKey(Schema.Array(Schema.String)),
-    }),
-  ),
+  photos: Schema.Array(PublishedPhoto),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
   outdated: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The other albums keepsake published to, by their id. */
+  elsewhere: Schema.optionalKey(Schema.Array(EarlierAlbum)),
 });
 export type Publication = typeof Publication.Type;
 
