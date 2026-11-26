@@ -1,8 +1,8 @@
 import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
-import { cull as cullShoot, judgedTooFew } from '../features/cull/cull.ts';
-import { checkPrices, edit as editShoot } from '../features/edit/edit.ts';
-import { ImageModel, imageModelAccess } from '../features/edit/image-model.ts';
+import { cull as cullShoot } from '../features/cull/cull.ts';
+import { edit as editShoot } from '../features/edit/edit.ts';
+import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
@@ -10,8 +10,7 @@ import {
   publish as publishShoot,
   tellOutdated,
 } from '../features/publish/publish.ts';
-import { scan } from '../features/scan/scan.ts';
-import { InvalidInput, ModelFailed } from '../shared/errors/errors.ts';
+import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
@@ -21,7 +20,6 @@ import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
 import {
   bounded,
-  fail,
   flag,
   optionalInt,
   optionalNumber,
@@ -30,7 +28,6 @@ import {
   visionModel,
 } from './command-inputs.ts';
 import { emit, emitWithCost } from './output.ts';
-import { folderArgument, scanFlags } from './shoot-commands.ts';
 
 const lowestScore = 1;
 const highestScore = 10;
@@ -49,7 +46,7 @@ const photosArgument = (description: string) =>
     Argument.variadic(),
   );
 
-const pickFlags = {
+export const pickFlags = {
   minimum: optionalInt(
     'minimum-score',
     `Pick photos from this score on, 1 to 10 (default ${defaultMinimum})`,
@@ -57,7 +54,7 @@ const pickFlags = {
   maximum: optionalInt('maximum', 'Pick at most this many, the best ones'),
 };
 
-const pickInput = (flags: {
+export const pickInput = (flags: {
   readonly minimum: Option.Option<number>;
   readonly maximum: Option.Option<number>;
 }) =>
@@ -80,7 +77,7 @@ const pickInput = (flags: {
     };
   });
 
-const editFlags = {
+export const editFlags = {
   budget: optionalNumber(
     'budget',
     `Spend at most this many dollars on the edits: a paid request is sent only when what is left covers the most it can cost (default ${defaultBudget})`,
@@ -100,10 +97,10 @@ const editFlags = {
 };
 
 /** The model that looks after the edits and explains the choice. */
-const reviewLayer = (asked: Option.Option<string>) =>
+export const reviewLayer = (asked: Option.Option<string>) =>
   ReviewVision.layer(Option.getOrElse(asked, () => defaultReviewModel));
 
-const editInput = (flags: {
+export const editInput = (flags: {
   readonly budget: Option.Option<number>;
   readonly versions: Option.Option<number>;
 }) =>
@@ -165,7 +162,7 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
   return { photos: [photo], wish, areas: boxes };
 });
 
-const imageModelOf = (asked: Option.Option<string>) =>
+export const imageModelOf = (asked: Option.Option<string>) =>
   Option.getOrElse(asked, () => defaultImageModel);
 
 /** The models that edit and that look after the edits. */
@@ -179,7 +176,7 @@ const editLayer = (flags: {
   );
 
 /** Runs steps with the vision model asked for, or the shoot's own. */
-const withVision =
+export const withVision =
   (shoot: string, asked: Option.Option<string>) =>
   <A, E, R>(steps: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
@@ -263,7 +260,7 @@ export const edit = Command.make(
   ),
 );
 
-const albumFlag = optionalString(
+export const albumFlag = optionalString(
   'album',
   'The name of the album (default: the one published to before, or what the shoot is about, or its name)',
 );
@@ -310,103 +307,5 @@ export const explain = Command.make(
 ).pipe(
   Command.withDescription(
     'Let a vision model say of every photo that isn’t in the album why that is: what speaks against it, or what the photo that shows the same does better. Photos it has explained before are kept unless the album has changed.',
-  ),
-);
-
-/** Stops when a model couldn't judge many moments, such as at its limit. */
-const checkCulled = ({
-  moments,
-  failed,
-}: {
-  readonly moments: number;
-  readonly failed: ReadonlyArray<{ readonly reason: string }>;
-}) =>
-  judgedTooFew(moments, failed.length)
-    ? Effect.fail(
-        new ModelFailed({
-          message: `${failed.length} of ${moments} moments couldn’t be judged. The first problem: ${failed[0]?.reason}`,
-        }),
-      )
-    : Effect.void;
-
-export const run = Command.make(
-  'run',
-  {
-    folder: folderArgument,
-    ...scanFlags,
-    model: visionModel,
-    ...pickFlags,
-    unedited: flag(
-      'unedited',
-      'Stop before the edits, which cost money, for the owner to look over the choice first',
-    ),
-    ...editFlags,
-    publish: flag('publish', 'Also upload the finished photos to Immich'),
-    album: albumFlag,
-  },
-  (flags) =>
-    Effect.gen(function* () {
-      const picking = yield* pickInput(flags);
-      const editing = yield* editInput(flags);
-      if (flags.unedited && flags.publish) {
-        return yield* fail('Give either --unedited or --publish.');
-      }
-      const imageModel = imageModelOf(flags.imageModel);
-      if (!flags.unedited) {
-        // Stops before the cull, which may cost money, when it couldn't edit.
-        yield* imageModelAccess(imageModel);
-      }
-      const scanned = yield* scan(flags);
-      const { shoot } = scanned;
-      yield* Effect.gen(function* () {
-        if (!flags.unedited) {
-          yield* checkPrices(imageModel);
-        }
-        const culled = yield* workOn(shoot, (open) => cullShoot(open, false));
-        yield* checkCulled(culled);
-        const picked = yield* workOn(shoot, (open) =>
-          pickShoot(open, { ...picking, again: false }),
-        );
-        // Only the edits need the image model, so --unedited needs no key.
-        const edited = flags.unedited
-          ? null
-          : yield* workOn(shoot, (open) =>
-              editShoot(open, [], {
-                ...editing,
-                again: false,
-                wish: null,
-                areas: [],
-              }),
-            ).pipe(Effect.provide(ImageModel.layer(imageModel)));
-        const published = flags.publish
-          ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
-          : null;
-        const explained = yield* workOn(shoot, (open) =>
-          askReviewer(explainShoot(open, false)),
-        );
-        const tell = (outdated: ReadonlyArray<string>) =>
-          emitWithCost({
-            scanned,
-            culled,
-            picked,
-            edited,
-            published: published && { ...published, outdated },
-            explained,
-          });
-        // The lock was let go after publishing, so another publish may have
-        // brought a replaced upload back; it is held again until it told.
-        yield* published === null
-          ? tell([])
-          : workOn(shoot, (open) =>
-              tellOutdated(open, published.outdated, tell),
-            );
-      }).pipe(
-        Effect.provide(reviewLayer(flags.reviewModel)),
-        withVision(shoot, flags.model),
-      );
-    }).pipe(Effect.provide(Spending.layer)),
-).pipe(
-  Command.withDescription(
-    'Do everything with a folder of photos: scan, cull, pick and edit, publish if asked, and explain why the other photos were left out. Running it again goes on where it stopped.',
   ),
 );

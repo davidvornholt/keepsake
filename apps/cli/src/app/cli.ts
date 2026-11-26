@@ -8,8 +8,9 @@ import { serve } from './light-table-commands.ts';
 import { answer, marks, takeOut } from './mark-commands.ts';
 import { report } from './output.ts';
 import { bench, rate } from './rating-commands.ts';
+import { run } from './run-command.ts';
 import { scan, shoots, show } from './shoot-commands.ts';
-import { cull, edit, explain, pick, publish, run } from './step-commands.ts';
+import { cull, edit, explain, pick, publish } from './step-commands.ts';
 
 export const keepsake = Command.make('keepsake').pipe(
   Command.withDescription(
