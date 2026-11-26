@@ -3,6 +3,7 @@ import { type RefObject, useEffect, useId, useRef, useState } from 'react';
 import type { Place } from '../app/route.ts';
 import { go, goBack } from '../app/router.ts';
 import { useShootContext } from '../app/shoot-context.ts';
+import type { Index } from '../data/derive.ts';
 import { count, dollarsOf } from '../data/format.ts';
 import { drawingTime } from '../marks/wax.ts';
 import type { Engine } from '../sheet/engine.ts';
@@ -37,6 +38,12 @@ type Going = {
   readonly stagger: number;
 };
 
+/** The chosen photos that ordering the album is about. */
+const pickedOf = ({ shoot }: Index): ReadonlyArray<string> =>
+  shoot.photos
+    .filter(({ standing }) => standing.kind === 'picked')
+    .map(({ id }) => id);
+
 /** The marks, and handing them over while the agent's pencil goes around each. */
 const useLedger = () => {
   const { index, store } = useShootContext();
@@ -62,7 +69,11 @@ const useLedger = () => {
         stagger,
       });
       Promise.all([
-        store.handOver({ dollars: ledger.dollars, album: ledger.ordersAlbum }),
+        store.handOver({
+          dollars: ledger.dollars,
+          marks: ledger.open.map(({ mark }) => mark.id),
+          album: ledger.ordersAlbum ? pickedOf(index) : null,
+        }),
         new Promise((done) => setTimeout(done, drawn)),
       ])
         .then(([many]) => {

@@ -10,10 +10,10 @@ export const Answer = Schema.Struct({
 });
 
 /**
- * What the owner wants to be done with a photo. A photo has at most one mark
- * that isn't handed over.
+ * What the owner wants to be done with a photo, as it is saved. A photo has at
+ * most one mark that isn't handed over.
  */
-export const Mark = Schema.Struct({
+export const SavedMark = Schema.Struct({
   id: Schema.String,
   photo: Schema.String,
   kind: Schema.Literals(markKinds),
@@ -23,10 +23,16 @@ export const Mark = Schema.Struct({
   /** The photo of the album that a swap takes out. */
   other: Schema.NullOr(Schema.String),
   madeAt: Schema.String,
-  handedOverAt: Schema.NullOr(Schema.String),
   answer: Schema.NullOr(Answer),
   /** When the owner looked at what came of it. */
   seenAt: Schema.NullOr(Schema.String),
+});
+export type SavedMark = typeof SavedMark.Type;
+
+/** A mark, with when it was handed over, which only a hand-over says. */
+export const Mark = Schema.Struct({
+  ...SavedMark.fields,
+  handedOverAt: Schema.NullOr(Schema.String),
 });
 export type Mark = typeof Mark.Type;
 
@@ -58,16 +64,32 @@ export type Favorite = typeof Favorite.Type;
 export const HandOver = Schema.Struct({
   /** What the edits cost at most, as the owner was told. */
   dollars: Schema.Finite,
-  /** Whether the chosen photos are to be edited and put into an album. */
-  album: Schema.Boolean,
+  /** The ids of the marks the owner looked over, all that aren't handed over. */
+  marks: Schema.Array(Schema.String),
+  /**
+   * The chosen photos the owner ordered edited and put into an album, or null
+   * when they ordered none.
+   */
+  album: Schema.NullOr(Schema.Array(Schema.String)),
 });
 export type HandOver = typeof HandOver.Type;
 
-/** That the owner handed something over. */
+/**
+ * What the owner handed over at once. It is saved in one go, so that whoever
+ * reads it finds all of it or nothing.
+ */
 export const HandOverRecord = Schema.Struct({
+  id: Schema.String,
   at: Schema.String,
-  ...HandOver.fields,
+  dollars: Schema.Finite,
+  /** What had been spent on the shoot until then. */
+  spentBefore: Schema.Finite,
+  marks: Schema.Array(Schema.String),
+  album: Schema.NullOr(Schema.Array(Schema.String)),
+  /** When none of the ordered photos waited to be put into the album any more. */
+  fulfilledAt: Schema.NullOr(Schema.String),
 });
+export type HandOverRecord = typeof HandOverRecord.Type;
 
 /** What the page sends to make an album of a folder: POST /api/shoots */
 export const NewShoot = Schema.Struct({

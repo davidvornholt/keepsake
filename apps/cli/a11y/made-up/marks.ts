@@ -2,7 +2,7 @@
 import type { Mark } from '../../src/features/light-table/schemas.ts';
 
 const made = '2026-05-10T18:00:00.000Z';
-const handed = '2026-05-10T19:00:00.000Z';
+export const handed = '2026-05-10T19:00:00.000Z';
 const answered = '2026-05-10T20:00:00.000Z';
 
 const mark = (id: string, photo: string, rest: Partial<Mark>): Mark => ({

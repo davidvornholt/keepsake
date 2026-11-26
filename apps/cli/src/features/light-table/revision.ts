@@ -25,9 +25,12 @@ export const revisionOf = Effect.fn('revisionOf')(function* (
     const { record, final } = files.edit(photo);
     return [record, final];
   });
-  const marks = yield* fs
-    .readDirectory(files.marks)
-    .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+  const namesIn = (directory: string) =>
+    fs
+      .readDirectory(directory)
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+  const marks = yield* namesIn(files.marks);
+  const handOvers = yield* namesIn(files.handOvers);
   const states = yield* Effect.forEach(
     [
       files.shoot,
@@ -41,19 +44,19 @@ export const revisionOf = Effect.fn('revisionOf')(function* (
       files.album,
       files.removed,
       files.labels,
-      files.handOvers,
       files.preparation,
       files.agent,
       files.spending,
       files.verdicts(model),
       ...marks.map((name) => `${files.marks}/${name}`),
+      ...handOvers.map((name) => `${files.handOvers}/${name}`),
       ...edits,
     ],
     state,
     { concurrency: 'unbounded' },
   );
   return createHash('sha256')
-    .update(JSON.stringify([marks, states]))
+    .update(JSON.stringify([marks, handOvers, states]))
     .digest('hex')
     .slice(0, length);
 });

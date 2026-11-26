@@ -15,6 +15,14 @@ export type Draft = {
 
 const iconSize = 20;
 
+const boxesSay = ({ note, boxes }: Draft): string => {
+  if (boxes.length === 0) {
+    return 'Drag on the photo to show where.';
+  }
+  const said = `${count(boxes.length, 'box', 'boxes')}. Drag one to move it, its corners to change its size.`;
+  return note.trim() === '' ? `${said} Say what should change there.` : said;
+};
+
 type Props = {
   readonly draft: Draft;
   /** Whether a change was written down before, which can be taken back. */
@@ -39,10 +47,11 @@ export const Composer = ({
   onRemove,
 }: Props) => {
   const noteRef = useRef<HTMLTextAreaElement>(null);
-  const isEmpty = draft.note.trim() === '' && draft.boxes.length === 0;
+  // Boxes show only where; an agent needs the words to know what.
+  const hasNoNote = draft.note.trim() === '';
 
   const save = useEffectEvent(() => {
-    if (!isEmpty) {
+    if (!hasNoNote) {
       onSave();
     }
   });
@@ -81,9 +90,7 @@ export const Composer = ({
       !event.nativeEvent.isComposing
     ) {
       event.preventDefault();
-      if (!isEmpty) {
-        onSave();
-      }
+      save();
     }
   };
 
@@ -93,7 +100,7 @@ export const Composer = ({
       className="mx-auto flex w-full max-w-[44rem] flex-col gap-1 px-3"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave();
+        save();
       }}
     >
       <div className="flex items-end gap-2">
@@ -111,7 +118,7 @@ export const Composer = ({
         <button
           aria-label="Mark the change"
           className={`${mainButton} h-11 shrink-0 max-sm:w-11 max-sm:justify-center max-sm:px-0`}
-          disabled={isEmpty}
+          disabled={hasNoNote}
           type="submit"
         >
           <Check aria-hidden="true" className="sm:hidden" size={iconSize} />
@@ -120,9 +127,7 @@ export const Composer = ({
       </div>
       <div className="flex flex-wrap items-center gap-x-4">
         <p className="mr-auto flex min-h-9 flex-wrap items-center gap-x-3 text-quiet text-sm">
-          {draft.boxes.length === 0
-            ? 'Drag on the photo to show where.'
-            : `${count(draft.boxes.length, 'box', 'boxes')}. Drag one to move it, its corners to change its size.`}
+          {boxesSay(draft)}
         </p>
         {canUndo ? (
           <button
