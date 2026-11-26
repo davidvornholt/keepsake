@@ -190,47 +190,6 @@ describe('the agent for a hand-over', () => {
     expect(runsOfAgent()).toEqual([]);
   });
 
-  it('is started again for what the page took, while an agent waits', async () => {
-    let tries = 0;
-    fakeTools.programs = {
-      'start-agent': () => {
-        tries += 1;
-        if (tries === 1) {
-          throw new Error('not signed in');
-        }
-        return '{"link":"https://example.com/threads/7"}';
-      },
-    };
-    const { first, listed } = await serving(async (address) => {
-      await started(address);
-      const [taken = ''] = handOverIds();
-      const waiting = runOk('marks', 'lisbon', '--wait');
-      await eventually(
-        () => Promise.resolve(existsSync(shootFile('waiting.json'))),
-        Boolean,
-      );
-      await statusOf(send('POST', agentPath(address)));
-      await eventually(
-        () => shootOf(address),
-        ({ agent }) => (agent.started?.link ?? null) !== null,
-      );
-      // What is handed over now is the waiting agent's.
-      await send('PUT', `${address}/api/shoots/lisbon/marks`, {
-        ...change,
-        photo: 'A1',
-      });
-      await handOver(address);
-      return { first: taken, listed: await waiting };
-    });
-    expect(runsOfAgent().map(({ args }) => args)).toEqual([
-      ['lisbon', first],
-      ['lisbon', first],
-    ]);
-    expect(listed.handOvers).toHaveLength(1);
-    expect(listed.handOvers).not.toContain(first);
-    expect(listed.marks).toMatchObject([{ photo: 'A1' }]);
-  });
-
   it('is started once when it is asked for twice at once', async () => {
     let tries = 0;
     fakeTools.programs = {
@@ -271,6 +230,51 @@ describe('the agent for a hand-over', () => {
       await settle();
     });
     expect(runsOfAgent()).toHaveLength(1);
+  });
+});
+
+describe('an agent no program said it started', () => {
+  beforeEach(pickLisbon);
+
+  it('is started again for what the page took, while an agent waits', async () => {
+    let tries = 0;
+    fakeTools.programs = {
+      'start-agent': () => {
+        tries += 1;
+        if (tries === 1) {
+          throw new Error('not signed in');
+        }
+        return '{"link":"https://example.com/threads/7"}';
+      },
+    };
+    const { first, listed } = await serving(async (address) => {
+      await started(address);
+      const [taken = ''] = handOverIds();
+      const waiting = runOk('marks', 'lisbon', '--wait');
+      await eventually(
+        () => Promise.resolve(existsSync(shootFile('waiting.json'))),
+        Boolean,
+      );
+      await statusOf(send('POST', agentPath(address)));
+      await eventually(
+        () => shootOf(address),
+        ({ agent }) => (agent.started?.link ?? null) !== null,
+      );
+      // What is handed over now is the waiting agent's.
+      await send('PUT', `${address}/api/shoots/lisbon/marks`, {
+        ...change,
+        photo: 'A1',
+      });
+      await handOver(address);
+      return { first: taken, listed: await waiting };
+    });
+    expect(runsOfAgent().map(({ args }) => args)).toEqual([
+      ['lisbon', first],
+      ['lisbon', first],
+    ]);
+    expect(listed.handOvers).toHaveLength(1);
+    expect(listed.handOvers).not.toContain(first);
+    expect(listed.marks).toMatchObject([{ photo: 'A1' }]);
   });
 
   it('is started for what the page took and never started one for', async () => {
