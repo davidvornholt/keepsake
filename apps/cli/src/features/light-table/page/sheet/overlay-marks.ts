@@ -1,7 +1,8 @@
 import { glyphOf, seedOf } from '../marks/glyphs.ts';
 import { lookOf, seedTextOf } from '../marks/kinds.ts';
+import { markOnFrame, type Square } from '../marks/place.ts';
 import { sketchWax, stampWax } from '../marks/wax.ts';
-import { clamp, mix } from '../motion/spring.ts';
+import { clamp } from '../motion/spring.ts';
 import { colorOf } from '../ui/theme.ts';
 import type { Rect } from './layout.ts';
 import { stampSign } from './overlay-signs.ts';
@@ -12,35 +13,6 @@ import type { Frame } from './table.ts';
 
 /** How long the hand takes to draw a mark, in milliseconds. */
 const drawingTime = 340;
-
-const markShare = 0.74;
-/** From this size on a mark grows more slowly than its frame. */
-const markSteady = 64;
-const markGrowth = 0.22;
-const leastMark = 9;
-/** Over this many pixels a mark moves from the middle to a corner. */
-const cornerRange = 140;
-const cornerInset = 0.06;
-
-type Square = { readonly x: number; readonly y: number; readonly size: number };
-
-/** Where a mark goes: all over a small frame, in the corner of a large one. */
-const markPlace = ({ x, y, w, h }: Rect): Square => {
-  const side = Math.min(w, h);
-  const size = Math.max(
-    leastMark,
-    side < markSteady
-      ? side * markShare
-      : markSteady * markShare + (side - markSteady) * markGrowth,
-  );
-  const toCorner = clamp((side - markSteady) / cornerRange, 0, 1);
-  const inset = side * cornerInset;
-  return {
-    x: mix(x + (w - size) / 2, x + inset, toCorner),
-    y: mix(y + (h - size) / 2, y + h - size - inset, toCorner),
-    size,
-  };
-};
 
 const heartShare = 0.2;
 const leastHeart = 7;
@@ -133,7 +105,7 @@ const drawMark = (
   const look = lookOf[kind];
   const key = seedTextOf(shown.photo, kind);
   const stamp = { shape: look.shape, seed: seedOf(key), wax: look.wax };
-  const place = markPlace(rect);
+  const place = markOnFrame(rect);
   if (shown.state === 'news') {
     drawBlue({ pencil, ceiling }, rect, true);
     return false;
@@ -163,7 +135,7 @@ export const drawMarks = (drawn: Drawn, frame: Frame, rect: Rect): boolean => {
     // The marks of the photos behind lie beside the one of the photo in front.
     const beside = {
       ...rect,
-      x: rect.x + at * markPlace(rect).size * besideShare,
+      x: rect.x + at * markOnFrame(rect).size * besideShare,
     };
     isDrawing =
       drawMark(drawn, beside, { ...shown, photo: shown.mark.photo }) ||

@@ -84,11 +84,16 @@ type Props = {
   readonly onOffset: (offset: number) => void;
 };
 
-const viewOnto = (plane: Plane, frame: FrameOnTable): View =>
-  cover(
-    frame.shows === 'camera' ? plane.camera : (plane.edit ?? plane.camera),
-    frame.rect,
-  );
+/** Where a frame of the table is, and the part of the plane it shows. */
+const onTable = (plane: Plane, { rect, shows }: FrameOnTable) => ({
+  rect,
+  part: shows === 'camera' ? plane.camera : (plane.edit ?? plane.camera),
+});
+
+const viewOnto = (plane: Plane, frame: FrameOnTable): View => {
+  const { rect, part } = onTable(plane, frame);
+  return cover(part, rect);
+};
 
 const cameraShown = (setting: Setting): number =>
   setting.look === 'edit' && setting.plane.edit !== null ? 0 : 1;
@@ -241,6 +246,7 @@ const useFollowing = (
     setting.full = fullOf(photo, setting.plane);
     live.hasArrived = true;
     if (isNew) {
+      live.frame = from === null ? null : onTable(setting.plane, from);
       arrive(machine, setting, { from, entry });
     } else {
       machine.control.rest(false, wasClose);
@@ -267,7 +273,12 @@ const useFollowing = (
       }
       machine.control.leave(() => {
         const frame = to();
-        return frame === null ? null : viewOnto(live.setting.plane, frame);
+        if (frame === null) {
+          return null;
+        }
+        // The frame the photo goes back to is followed, wherever it is now.
+        live.frame = onTable(live.setting.plane, frame);
+        return cover(live.frame.part, live.frame.rect);
       }, then);
     },
     still: () => {
@@ -313,6 +324,7 @@ export const Stage = (props: Props) => {
       wipe: 0.5,
     },
     ink: { ...props.ink, draft: null },
+    frame: null,
     onPixels: () => undefined,
     hasArrived: false,
     isClose: false,
