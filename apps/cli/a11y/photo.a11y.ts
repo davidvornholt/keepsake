@@ -202,6 +202,49 @@ test('gives back a change that keepsake didn’t get', async ({ page }) => {
   await expect(boxes).toHaveCount(drawn);
 });
 
+test('gives back a wish that keepsake didn’t get with its put-in', async ({
+  page,
+}) => {
+  // Saving fails until both the put-in and the wish were sent.
+  const sent = Promise.withResolvers<void>();
+  let isFailing = true;
+  await page.route(portoMarks, async (route) => {
+    if (isFailing) {
+      await sent.promise;
+      await route.abort();
+    } else {
+      await route.continue();
+    }
+  });
+  await open(page, '/porto/photos/D50');
+  await expect(standing(page)).toContainText('Left out');
+  await expect(marks(page)).toHaveText([putIn]);
+  await page.keyboard.press('p');
+  await expect(pressed(page, putIn)).toBeVisible();
+  await page.keyboard.press('c');
+  const note = page.getByRole('textbox', {
+    name: 'What do you want of the edit?',
+  });
+  await note.fill('Warmer light.');
+  await note.press('Enter');
+  await expect(note).toBeHidden();
+  const failed = page.waitForEvent('requestfailed');
+  sent.resolve();
+  await failed;
+
+  // The put-in is lost too, so the wish brings the photo in again.
+  await expect(pressed(page, putIn)).toBeHidden();
+  await expect(note).toHaveValue('Warmer light.');
+  await expect(large(page).locator('[data-boxes]')).toHaveCount(0);
+  isFailing = false;
+  await note.press('Enter');
+  const said = large(page).getByText('To be put in: Warmer light.').first();
+  await expect(said).toBeVisible();
+  await expect(pressed(page, putIn)).toBeVisible();
+  await page.reload();
+  await expect(said).toBeVisible();
+});
+
 test('labels a photo', async ({ page }) => {
   await open(page, '/porto/photos/D121');
   await page.keyboard.press('t');

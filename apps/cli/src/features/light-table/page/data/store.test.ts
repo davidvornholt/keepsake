@@ -81,9 +81,7 @@ describe('a change that keepsake didn’t get', () => {
     (await next('PUT')).answer(new Error('offline'));
     await answerWith('GET', shootWith());
     await Bun.sleep(1);
-    expect(store.get().unsaved).toEqual({
-      a: { note: 'Warmer', boxes: [box] },
-    });
+    expect(store.get().unsaved).toEqual({ a: { ...wish, boxes: [box] } });
     store.forgetUnsaved('a');
     expect(store.get().unsaved).toEqual({});
   });

@@ -1,8 +1,8 @@
 import type {
   Activity,
   Agent,
-  Box,
   Mark,
+  NewMark,
   Preparation,
   ShootView,
 } from '../../contract.ts';
@@ -25,12 +25,7 @@ export type ShootState = {
   /** What Undo takes back or brings back, if anything. */
   readonly undoable: Undo | null;
   /** The changes and wishes keepsake didn't get, by photo, until they are written again. */
-  readonly unsaved: Readonly<Record<string, Unsaved>>;
-};
-
-export type Unsaved = {
-  readonly note: string;
-  readonly boxes: ReadonlyArray<Box>;
+  readonly unsaved: Readonly<Record<string, NewMark>>;
 };
 
 export type Undo =

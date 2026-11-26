@@ -94,11 +94,12 @@ const marking = (core: Core) => {
   /**
    * Keeps what was written for a change or a wish until it is written again, when
    * keepsake didn't get it, so that it isn't lost while another photo is
-   * shown.
+   * shown. The whole mark is kept, since a wish may have lost the put-in or
+   * swap it went with.
    */
-  const keepUnsaved = (id: string, { photo, note, boxes }: NewMark) => {
+  const keepUnsaved = (id: string, wanted: NewMark) => {
     // Only a change or a wish has words to lose.
-    if (note === '') {
+    if (wanted.note === '') {
       return;
     }
     core
@@ -106,7 +107,7 @@ const marking = (core: Core) => {
       .then((real) => {
         if (real === null) {
           const { unsaved } = core.get();
-          core.set({ unsaved: { ...unsaved, [photo]: { note, boxes } } });
+          core.set({ unsaved: { ...unsaved, [wanted.photo]: wanted } });
         }
       })
       .catch(() => undefined);
