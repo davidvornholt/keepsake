@@ -41,12 +41,12 @@ const shareAlbum = (name: string) => {
 };
 
 /** What keepsake wrote before it kept the album's id. */
-const makeLegacy = async () => {
+const makeLegacy = async (named?: string) => {
   const { album, photos } = await shootJson('publication.json');
   await Bun.write(
     shootFile('publication.json'),
     JSON.stringify({
-      album,
+      album: named ?? album,
       photos: photos.map(
         ({ replaced: _, ...photo }: Record<string, unknown>) => photo,
       ),
@@ -121,6 +121,20 @@ describe('keepsake publish, after the album changed in Immich', () => {
     const result = await runOk('publish', 'lisbon');
     expect(result).toMatchObject({ album: { id: 'album-1' }, published: 1 });
     expect(assetsOf('shared')).toEqual([]);
+  });
+
+  it('doesn’t take the id of another album from before ids were kept', async () => {
+    await pickLisbon();
+    await editLisbon();
+    shareAlbum('Shared');
+    await runOk('publish', 'lisbon', '--album', 'Shared');
+    // A switch to a private album failed half-way before ids were kept.
+    await makeLegacy('Private');
+    const before = assetsOf('shared');
+    await editAgain('B');
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({ album: { name: 'Private' } });
+    expect(assetsOf('shared')).toEqual(before);
   });
 
   it('remembers each album it published to', async () => {

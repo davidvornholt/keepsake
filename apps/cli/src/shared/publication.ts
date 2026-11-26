@@ -4,7 +4,9 @@ import { type OpenShoot, readJson } from './store.ts';
 
 /**
  * What keepsake published, with the album's id taken from what it last read
- * of the album where a record from before it kept ids has none.
+ * of the album where a record from before it kept ids has none. That read is
+ * of another album when a switch between albums stopped half-way, so its id
+ * counts only under the same name.
  */
 export const readPublication = Effect.fn('readPublication')(function* (
   open: OpenShoot,
@@ -16,7 +18,9 @@ export const readPublication = Effect.fn('readPublication')(function* (
     return published;
   }
   const album = Option.getOrNull(yield* readJson(Album, open.files.album));
-  return album === null ? published : { ...published, albumId: album.id };
+  return album === null || album.name !== published.album
+    ? published
+    : { ...published, albumId: album.id };
 });
 
 /** What keepsake published to one album. */
