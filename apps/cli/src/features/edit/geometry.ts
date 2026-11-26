@@ -12,7 +12,7 @@ const half = 2;
 /** The smallest long side of a crop, in pixels of the camera's picture. */
 const smallestLongSide = 1600;
 
-/** Arithmetic on fractions of a picture is never exact. */
+/** Allows for rounding when a kept span fits exactly. */
 const precision = 1e-9;
 
 type Span = readonly [number, number];
