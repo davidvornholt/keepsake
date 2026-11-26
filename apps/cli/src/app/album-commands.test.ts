@@ -5,6 +5,7 @@ import {
   judge,
   photosFolder,
   pickLisbon,
+  putPhotos,
   runOk,
   scanLisbon,
   setUp,
@@ -101,6 +102,7 @@ describe('keepsake publish, with an album that changed in Immich', () => {
       { file: 'one/B.ARW', second: 0 },
       { file: 'two/B.ARW', second: 600 },
     ];
+    await putPhotos();
     await runOk('scan', photosFolder(), '--name', 'lisbon');
     await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
     await runOk('cull', 'lisbon');

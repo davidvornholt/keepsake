@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from 'effect';
 import { type Publication, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { type NamedAlbum, uniqueNamed } from '../../shared/immich.ts';
+import { withAlbum } from '../../shared/lock.ts';
 import { albumsOf, readPublication } from '../../shared/publication.ts';
 import { readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
@@ -47,20 +48,26 @@ export const knownPublication = Effect.fn('knownPublication')(function* (
  * Notes the album of the photos that went missing before keepsake kept album
  * ids, which is the one it published to then, before it publishes elsewhere.
  */
-export const giveRemovalsTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(
-  function* (open: OpenShoot, album: string | undefined) {
-    const isLegacy = (yield* readAllRemoved(open, undefined)).some(
-      (one) => one.because === null && one.album === undefined,
+export const giveRemovalsTheirAlbum = (
+  open: OpenShoot,
+  album: string | undefined,
+) => giveTheirAlbum(open, album).pipe(withAlbum(open.files));
+
+const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
+  open: OpenShoot,
+  album: string | undefined,
+) {
+  const isLegacy = (yield* readAllRemoved(open, undefined)).some(
+    (one) => one.because === null && one.album === undefined,
+  );
+  if (album !== undefined && isLegacy) {
+    yield* writeJson(
+      Schema.Array(Removed),
+      open.files.removed,
+      yield* readAllRemoved(open, album),
     );
-    if (album !== undefined && isLegacy) {
-      yield* writeJson(
-        Schema.Array(Removed),
-        open.files.removed,
-        yield* readAllRemoved(open, album),
-      );
-    }
-  },
-);
+  }
+});
 
 /**
  * The album keepsake published to before, unless another is named. Albums are

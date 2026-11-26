@@ -2,7 +2,11 @@ import { Clock, Effect, FileSystem, Option, Path, Ref, Schema } from 'effect';
 import { noted } from '../../shared/activity.ts';
 import { developed } from '../../shared/develop.ts';
 import { Moment, Photo, Shoot } from '../../shared/domain.ts';
-import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
+import {
+  InvalidInput,
+  StoreFailed,
+  ToolFailed,
+} from '../../shared/errors/errors.ts';
 import { type FoundPhoto, findPhotos } from '../../shared/exif.ts';
 import { checkTimeZone } from '../../shared/local-time.ts';
 import { exclusively } from '../../shared/lock.ts';
@@ -142,14 +146,12 @@ const makeNotes = Effect.fn('makeNotes')(function* (files: ShootFiles) {
   };
 });
 
-/** What a shoot is called and where its photos are. */
-const shootOf = Effect.fn('shootOf')(function* (options: ScanOptions) {
-  const path = yield* Path.Path;
-  const source = yield* folderAt(options.folder);
-  const name = Option.getOrElse(options.name, () =>
-    nameFor(path.basename(source)),
-  );
-  const files = yield* shootFiles(name);
+/** What a shoot is about, which a scan of another folder can't change. */
+const shootOf = Effect.fn('shootOf')(function* (
+  options: ScanOptions,
+  { name, source }: Pick<Shoot, 'name' | 'source'>,
+  files: ShootFiles,
+) {
   const before = yield* readJson(Shoot, files.shoot);
   if (Option.isSome(before) && before.value.source !== source) {
     return yield* new InvalidInput({
@@ -159,23 +161,56 @@ const shootOf = Effect.fn('shootOf')(function* (options: ScanOptions) {
   const timeZone = Option.isSome(options.timeZone)
     ? yield* checkTimeZone(options.timeZone.value)
     : Option.getOrUndefined(before)?.timeZone;
-  const shoot: Shoot = {
+  return {
     name,
     source,
     ...(timeZone === undefined ? {} : { timeZone }),
     about: Option.getOrElse(options.about, () =>
       Option.isSome(before) ? before.value.about : null,
     ),
-  };
-  return { shoot, files };
+  } satisfies Shoot;
+});
+
+/**
+ * Removes what a scan made without noting its folder first, as keepsake did
+ * before, since it may be of another folder.
+ */
+const forgetStrays = Effect.fn('forgetStrays')(function* (files: ShootFiles) {
+  const fs = yield* FileSystem.FileSystem;
+  if (yield* exists(files.shoot)) {
+    return;
+  }
+  yield* Effect.forEach(
+    [files.previews, files.photos, files.moments],
+    (stray) =>
+      fs.remove(stray, { recursive: true, force: true }).pipe(
+        Effect.mapError(
+          ({ message }) =>
+            new StoreFailed({
+              message: `Could not use ${stray}: ${message}`,
+            }),
+        ),
+      ),
+    { discard: true },
+  );
 });
 
 /** Finds a folder's photos, makes previews and groups them into moments. */
 export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
-  const { shoot, files } = yield* shootOf(options);
-  const { name, source, about } = shoot;
+  const path = yield* Path.Path;
+  const source = yield* folderAt(options.folder);
+  const name = Option.getOrElse(options.name, () =>
+    nameFor(path.basename(source)),
+  );
+  const files = yield* shootFiles(name);
   return yield* Effect.gen(function* () {
+    yield* forgetStrays(files);
+    const shoot = yield* shootOf(options, { name, source }, files);
+    const { about } = shoot;
     const found = yield* findPhotos(source);
+    // Before any preview, so a scan of another folder can't take them for its
+    // own when this one stops half-way.
+    yield* writeJson(Shoot, files.shoot, shoot);
     const notes = yield* makeNotes(files);
     const results = yield* inSteps('scan', found, concurrency, (photo) =>
       preview(files, shoot, photo).pipe(
@@ -197,7 +232,6 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
         message: `None of the ${unreadable.length} photos could be read. The first problem: ${unreadable[0]?.reason}`,
       });
     }
-    yield* writeJson(Shoot, files.shoot, shoot);
     const moments = yield* notes.write(photos);
     return {
       shoot: name,

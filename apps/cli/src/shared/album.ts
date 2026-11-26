@@ -7,6 +7,7 @@ import {
   albumWithId,
   immichServer,
 } from './immich.ts';
+import { withAlbum } from './lock.ts';
 import { type AlbumRecord, readPublication } from './publication.ts';
 import { isOutOf, readAllRemoved } from './standing.ts';
 import { type OpenShoot, readJson, writeJson } from './store.ts';
@@ -117,12 +118,7 @@ const noteRemoved = Effect.fn('noteRemoved')(function* (
   }
 });
 
-/**
- * Reads what an album keepsake published to has in Immich now, whoever
- * changed it there. Photos that aren't in it any more are noted as taken out
- * of it. Only the album keepsake publishes to is kept in `album.json`.
- */
-export const refreshAlbum = Effect.fn('refreshAlbum')(function* (
+const refreshNow = Effect.fn('refreshAlbum')(function* (
   open: OpenShoot,
   record: AlbumRecord,
   isCurrent: boolean,
@@ -149,8 +145,22 @@ export const refreshAlbum = Effect.fn('refreshAlbum')(function* (
   return album;
 });
 
-/** Reads what the album keepsake publishes to has in Immich now. */
-export const readAlbum = Effect.fn('readAlbum')(function* (open: OpenShoot) {
+/**
+ * Reads what an album keepsake published to has in Immich now, whoever
+ * changed it there. Photos that aren't in it any more are noted as taken out
+ * of it. Only the album keepsake publishes to is kept in `album.json`.
+ */
+export const refreshAlbum = (
+  open: OpenShoot,
+  record: AlbumRecord,
+  isCurrent: boolean,
+) => refreshNow(open, record, isCurrent).pipe(withAlbum(open.files));
+
+const readNow = Effect.fn('readAlbum')(function* (open: OpenShoot) {
   const published = yield* readPublication(open);
-  return published === null ? null : yield* refreshAlbum(open, published, true);
+  return published === null ? null : yield* refreshNow(open, published, true);
 });
+
+/** Reads what the album keepsake publishes to has in Immich now. */
+export const readAlbum = (open: OpenShoot) =>
+  readNow(open).pipe(withAlbum(open.files));

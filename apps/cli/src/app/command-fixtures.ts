@@ -131,6 +131,13 @@ export const photosFolder = () => join(fake.home, 'photos');
 /** The model the test's shoot is judged by, which `fakeModels` stands in for. */
 export const judge = 'azure/gpt-6-astra';
 
+/** Puts the files of `fakeTools.files` into a folder, for a scan to find. */
+export const putPhotos = async (folder = photosFolder()) => {
+  await Promise.all(
+    fakeTools.files.map(({ file }) => Bun.write(join(folder, file), 'a photo')),
+  );
+};
+
 /** Scans four photos: a burst of two, and two more five minutes later each. */
 export const scanLisbon = async () => {
   fakeTools.files = [
@@ -139,6 +146,7 @@ export const scanLisbon = async () => {
     { file: 'B.ARW', second: 300 },
     { file: 'C.ARW', second: 600 },
   ];
+  await putPhotos();
   const scanned = await runOk(
     'scan',
     photosFolder(),

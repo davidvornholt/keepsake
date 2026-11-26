@@ -2,11 +2,15 @@ import { Effect, Option } from 'effect';
 import { Album } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { markFavorite } from '../../shared/immich.ts';
+import { withAlbum } from '../../shared/lock.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import type { Favorite } from './schemas.ts';
 
 /** Gives a photo of the album the favorite mark in Immich, or takes it away. */
-export const setFavorite = Effect.fn('setFavorite')(function* (
+export const setFavorite = (open: OpenShoot, wanted: Favorite) =>
+  favor(open, wanted).pipe(withAlbum(open.files));
+
+const favor = Effect.fn('setFavorite')(function* (
   { files }: OpenShoot,
   { photo, favorite }: Favorite,
 ) {

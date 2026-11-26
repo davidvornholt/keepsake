@@ -4,6 +4,7 @@ import { readAlbum, refreshAlbum } from '../../shared/album.ts';
 import { Publication, type PublishedPhoto } from '../../shared/domain.ts';
 import { StepMissing } from '../../shared/errors/errors.ts';
 import {
+  albumAssets,
   createAlbum,
   ensureTag,
   isOwnAlbum,
@@ -15,6 +16,7 @@ import {
   tagPhoto,
   uploadPhoto,
 } from '../../shared/immich.ts';
+import { withAlbum } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
 import {
@@ -47,8 +49,6 @@ type Job = {
   readonly photo: string;
   readonly digest: string;
   readonly before: Published | undefined;
-  /** Whether the upload it replaces is a favorite. */
-  readonly favorite: boolean;
 };
 
 const digestOf = (file: string) =>
@@ -91,12 +91,8 @@ const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   target: Target,
-  album: {
-    readonly published: ReadonlyArray<Published>;
-    readonly favorites: ReadonlySet<string>;
-  },
+  published: ReadonlyArray<Published>,
 ) {
-  const { published, favorites } = album;
   const photos = yield* photosToSend(open, names, target);
   const finished = yield* Effect.filter(photos, (photo) =>
     isFinished(open, photo),
@@ -115,11 +111,28 @@ const jobs = Effect.fn('jobs')(function* (
         photo,
         digest,
         before: published.find((earlier) => earlier.photo === photo),
-        favorite: favorites.has(photo),
       }),
     ),
   );
 });
+
+/**
+ * Gives a new upload the favorite mark of the one it replaces, as Immich has
+ * it now. Under the album's lock, so a favorite the page marks meanwhile
+ * counts.
+ */
+const carryFavorite = (
+  open: OpenShoot,
+  album: string,
+  earlier: string,
+  asset: string,
+) =>
+  Effect.gen(function* () {
+    const assets = yield* albumAssets(album);
+    if (assets.some(({ id, favorite }) => id === earlier && favorite)) {
+      yield* markFavorite(asset, true);
+    }
+  }).pipe(withAlbum(open.files));
 
 const send = Effect.fn('send')(function* (
   open: OpenShoot,
@@ -133,8 +146,8 @@ const send = Effect.fn('send')(function* (
   yield* stackPhotos(asset, cameraAsset);
   yield* tagPhoto(tag, asset);
   const isReplaced = before !== undefined && before.asset !== asset;
-  if (isReplaced && job.favorite) {
-    yield* markFavorite(asset, true);
+  if (isReplaced) {
+    yield* carryFavorite(open, album, before.asset, asset);
   }
   const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
   return {
@@ -315,10 +328,7 @@ export const publish = Effect.fn('publish')(function* (
   const target = yield* targetOf(open, before, chosenAlbum, albums);
   const { published, there } = yield* albumNow(open, before, target);
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
-  const favorites = new Set(
-    there?.photos.flatMap(({ photo, favorite }) => (favorite ? [photo] : [])),
-  );
-  const ready = yield* jobs(open, names, target, { published, favorites });
+  const ready = yield* jobs(open, names, target, published);
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),

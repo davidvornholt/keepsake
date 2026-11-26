@@ -8,6 +8,7 @@ import {
 } from '../../shared/domain.ts';
 import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
 import { albumAssets, removeFromAlbum } from '../../shared/immich.ts';
+import { withAlbum } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { readPublication } from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
@@ -88,11 +89,7 @@ const sameAsStaying = (
       );
 };
 
-/**
- * Takes photos out of the album, or out of those that are to be in it, or says
- * why they were taken out before. They stay in the library.
- */
-export const takeOut = Effect.fn('takeOut')(function* (
+const takeOutNow = Effect.fn('takeOut')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   because: string,
@@ -159,3 +156,13 @@ export const takeOut = Effect.fn('takeOut')(function* (
     inAlbum: after?.photos.length ?? 0,
   };
 });
+
+/**
+ * Takes photos out of the album, or out of those that are to be in it, or says
+ * why they were taken out before. They stay in the library.
+ */
+export const takeOut = (
+  open: OpenShoot,
+  names: ReadonlyArray<string>,
+  because: string,
+) => takeOutNow(open, names, because).pipe(withAlbum(open.files));

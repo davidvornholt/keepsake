@@ -1,16 +1,10 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
 
-import { createHash } from 'node:crypto';
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Effect, Layer, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
+import { answerPhotos, type FakeAlbum } from './fake-photos.ts';
 
 /** A program that was run. */
 type Run = {
@@ -20,22 +14,6 @@ type Run = {
   readonly input: string;
   /** The environment variables that were set or removed for it. */
   readonly env: Readonly<Record<string, unknown>>;
-};
-
-type FakeAsset = {
-  readonly id: string;
-  readonly fileName: string;
-  readonly favorite: boolean;
-  readonly trashed: boolean;
-};
-
-type FakeAlbum = {
-  readonly id: string;
-  /** Changes when the owner renames the album in Immich. */
-  name: string;
-  /** Whose album it is, when it is not the owner's own but shared with them. */
-  readonly owner?: string;
-  assets: ReadonlyArray<FakeAsset>;
 };
 
 const greyPixels = 72;
@@ -74,7 +52,7 @@ const tagsOf = (file: string, taken: string) => ({
  */
 export const fakeTools = {
   runs: [] as Array<Run>,
-  /** The RAW files in the folder that is scanned, by the second each was taken. */
+  /** The RAW files in the folder that is scanned, by the second each was taken; `putPhotos` puts them there. */
   files: [] as Array<{ readonly file: string; readonly second: number }>,
   /** Files the photos command has sent to Immich, in the order it got them. */
   uploads: [] as Array<string>,
@@ -84,7 +62,7 @@ export const fakeTools = {
   albums: [] as Array<FakeAlbum>,
   /** Assets Immich refuses to put into an album or take out of one. */
   refused: new Set<string>(),
-  /** RAW files ImageMagick can't read. */
+  /** RAW files whose pictures can't be read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
   isSubscribed: false,
@@ -92,6 +70,10 @@ export const fakeTools = {
   assistant: undefined as ((run: Run) => string) | undefined,
   /** Other programs, which print something or fail with an error. */
   programs: {} as Record<string, (run: Run) => string>,
+  /** Holds a program up until the promise settles; one that rejects stops keepsake. */
+  pause: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
+  /** Holds back what a program answered, as it was when it ran, until the promise settles. */
+  late: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
 };
 
 export const resetTools = () => {
@@ -105,6 +87,8 @@ export const resetTools = () => {
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
   fakeTools.programs = {};
+  fakeTools.pause = undefined;
+  fakeTools.late = undefined;
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
@@ -123,11 +107,12 @@ const exiftool = (args: ReadonlyArray<string>): string => {
   }
   const places = args.filter((arg) => arg.startsWith('/'));
   return JSON.stringify(
-    args.includes('-r')
-      ? fakeTools.files.map(({ file, second }) =>
-          tagsOf(`${places[0]}/${file}`, takenAt(second)),
-        )
-      : places.map((file, second) => tagsOf(file, takenAt(second))),
+    places.map((path, index) => {
+      const second =
+        fakeTools.files.find(({ file }) => path.endsWith(`/${file}`))?.second ??
+        index;
+      return tagsOf(path, takenAt(second));
+    }),
   );
 };
 
@@ -160,150 +145,8 @@ const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
   return '';
 };
 
-const baseOf = (file: string) => file.slice(file.lastIndexOf('/') + 1);
-
 /** The assets of the album keepsake made first. */
 export const firstAlbum = () => fakeTools.albums[0]?.assets;
-
-const albumOf = (id: string) => {
-  const found = fakeTools.albums.find((album) => album.id === id);
-  if (found === undefined) {
-    throw new Error(`No album ${id}`);
-  }
-  return found;
-};
-
-/** The account the photos command is signed in to. */
-const user = 'Owner';
-
-const named = ({ id, name, owner }: FakeAlbum) => ({
-  id,
-  name,
-  owner: owner ?? user,
-});
-
-/** Immich's answer for each asset, as `photos` passes it on. */
-const bulk = (
-  ids: ReadonlyArray<string>,
-  change: (id: string) => string | undefined,
-) => {
-  const results = ids.map((id) => ({
-    id,
-    reason: fakeTools.refused.has(id) ? 'no_permission' : change(id),
-  }));
-  return {
-    changed: results.flatMap(({ id, reason }) =>
-      reason === undefined ? [id] : [],
-    ),
-    unchanged: results.flatMap(({ id, reason }) =>
-      reason === undefined ? [] : [{ id, reason }],
-    ),
-  };
-};
-
-const addAssets = (album: FakeAlbum, ids: ReadonlyArray<string>) => {
-  const { changed, unchanged } = bulk(ids, (id) =>
-    album.assets.some((asset) => asset.id === id) ? 'duplicate' : undefined,
-  );
-  album.assets = [
-    ...album.assets,
-    ...changed.map((id) => ({
-      id,
-      fileName: baseOf(
-        fakeTools.library.find((asset) => asset.id === id)?.file ?? id,
-      ),
-      favorite: false,
-      trashed: false,
-    })),
-  ];
-  return { album: named(album), added: changed, unchanged };
-};
-
-const removeAssets = (album: FakeAlbum, ids: ReadonlyArray<string>) => {
-  const { changed, unchanged } = bulk(ids, (id) =>
-    album.assets.some((asset) => asset.id === id) ? undefined : 'not_found',
-  );
-  album.assets = album.assets.filter(({ id }) => !changed.includes(id));
-  return { album: named(album), removed: changed, unchanged };
-};
-
-/** Immich knows a file again by its checksum, wherever the file is. */
-const assetFor = (file: string) => {
-  const checksum = createHash('sha1')
-    .update(existsSync(file) ? readFileSync(file) : file)
-    .digest('hex');
-  const known = fakeTools.library.find((asset) => asset.checksum === checksum);
-  if (known !== undefined) {
-    return { status: 'duplicate', assetId: known.id, trashed: false };
-  }
-  fakeTools.uploads.push(file);
-  const id = `asset-${fakeTools.uploads.length}`;
-  fakeTools.library.push({ id, file, checksum });
-  return { status: 'created', assetId: id };
-};
-
-const upload = ([, file = '', flag, albumId = '']: ReadonlyArray<string>) => {
-  const result = assetFor(file);
-  return {
-    files: [{ file, ...result }],
-    ...(flag === '--album'
-      ? { album: addAssets(albumOf(albumId), [result.assetId]) }
-      : {}),
-  };
-};
-
-const createAlbum = (name: string) => {
-  const album = {
-    id: `album-${fakeTools.albums.length + 1}`,
-    name,
-    assets: [],
-  };
-  fakeTools.albums.push(album);
-  return named(album);
-};
-
-const listAlbums = (args: ReadonlyArray<string>) => {
-  const part = args[2] === '--name' ? (args[3] ?? '').toLowerCase() : '';
-  return fakeTools.albums
-    .filter(({ name }) => name.toLowerCase().includes(part))
-    .map(named);
-};
-
-const markFavorite = ([, id, flag]: ReadonlyArray<string>) => {
-  for (const album of fakeTools.albums) {
-    album.assets = album.assets.map((asset) =>
-      asset.id === id ? { ...asset, favorite: flag === '--favorite' } : asset,
-    );
-  }
-  return {};
-};
-
-const photos = (args: ReadonlyArray<string>): unknown => {
-  const [, , albumId = '', ...assets] = args;
-  switch (`${args[0]} ${args[1]}`) {
-    case 'albums list':
-      return listAlbums(args);
-    case 'albums create':
-      return createAlbum(albumId);
-    case 'albums show':
-      return {
-        album: named(albumOf(albumId)),
-        assets: albumOf(albumId).assets,
-        nextCursor: null,
-      };
-    case 'albums remove':
-      return removeAssets(albumOf(albumId), assets);
-    case 'tags list':
-      return [];
-    case 'status undefined':
-      return { server: 'https://photos.example.com', user };
-    default:
-      if (args[0] === 'update') {
-        return markFavorite(args);
-      }
-      return args[0] === 'upload' ? upload(args) : {};
-  }
-};
 
 const claudeStatus = () =>
   JSON.stringify({
@@ -330,7 +173,7 @@ const answer = (run: Run): string | Uint8Array => {
     case 'magick':
       return magick(args);
     case 'photos':
-      return JSON.stringify(photos(args));
+      return JSON.stringify(answerPhotos(fakeTools, args));
     default:
       return fakeTools.programs[command]?.(run) ?? '';
   }
@@ -338,9 +181,13 @@ const answer = (run: Run): string | Uint8Array => {
 
 /** What a program prints, or why it fails. */
 const outcomeOf = (run: Run) => {
-  const isBroken = run.args.some((arg) =>
-    [...fakeTools.broken].some((file) => arg.endsWith(file)),
-  );
+  // exiftool lists a broken file with the others, as it is.
+  const isListing = run.command === 'exiftool' && run.args.includes('-json');
+  const isBroken =
+    !isListing &&
+    run.args.some((arg) =>
+      [...fakeTools.broken].some((file) => arg.endsWith(file)),
+    );
   if (isBroken) {
     return { output: '', error: 'unreadable file' };
   }
@@ -372,7 +219,15 @@ const spawner = ChildProcessSpawner.make((spawned) =>
         }
       : { command: '', args: [], input: '', env: {} };
     fakeTools.runs.push(run);
+    const paused = fakeTools.pause?.(run);
+    if (paused !== undefined) {
+      yield* Effect.promise(() => paused);
+    }
     const { output, error } = outcomeOf(run);
+    const late = fakeTools.late?.(run);
+    if (late !== undefined) {
+      yield* Effect.promise(() => late);
+    }
     const stdout = Stream.make(
       typeof output === 'string' ? new TextEncoder().encode(output) : output,
     );
