@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -10,6 +11,7 @@ import {
 import { join, relative } from 'node:path';
 import {
   editLisbon,
+  failureOf,
   judge,
   photosFolder,
   runOk,
@@ -111,6 +113,69 @@ describe('keepsake edit, moving edits out of another photo’s', () => {
     expect(after).toEqual(before);
     expect(existsSync(shootFile('edits', 'A', 'B'))).toBe(false);
     expect(existsSync(shootFile('flat-edits'))).toBe(true);
+  });
+});
+
+/** A/B, and A~sB/C, whose folder is where A/B's edits go. */
+const editBesideFolder = async () => {
+  fakeTools.files = [
+    { file: 'A/B.ARW', second: 0 },
+    { file: 'A~sB/C.ARW', second: 300 },
+  ];
+  await runOk('scan', photosFolder(), '--name', 'lisbon');
+  await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
+  await runOk('cull', 'lisbon');
+  const photos = ['A/B', 'A~sB/C'];
+  await editLisbon(...photos);
+  const before = await contentsOfAll(photos);
+  rmSync(shootFile('flat-edits'));
+  return { photos, before };
+};
+
+/** As a command that stopped after it moved both out of the way left them. */
+const stoppedWhileMoving = () => {
+  mkdirSync(shootFile('unnesting'));
+  renameSync(shootFile('edits', 'A~sB'), shootFile('unnesting', 'A~sB'));
+  renameSync(
+    shootFile('edits', 'A~~sB~sC'),
+    shootFile('unnesting', 'A~~sB~sC'),
+  );
+  // The folders they were kept in before.
+  mkdirSync(shootFile('edits', 'A'));
+  mkdirSync(shootFile('edits', 'A~sB'));
+};
+
+describe('keepsake edit, moving edits out of a folder where others go', () => {
+  it('moves them where they were kept before', async () => {
+    const { photos, before } = await editBesideFolder();
+    renameSync(shootFile('edits', 'A~sB'), shootFile('edits', 'A~sB-'));
+    mkdirSync(shootFile('edits', 'A'));
+    renameSync(shootFile('edits', 'A~sB-'), shootFile('edits', 'A', 'B'));
+    mkdirSync(shootFile('edits', 'A~sB'));
+    renameSync(shootFile('edits', 'A~~sB~sC'), shootFile('edits', 'A~sB', 'C'));
+    expect(await contentsOfAll(photos)).toEqual(before);
+    expect(existsSync(shootFile('unnesting'))).toBe(false);
+    expect(existsSync(shootFile('edits', 'A'))).toBe(false);
+  });
+
+  it('goes on with them after it stopped while they moved', async () => {
+    const { photos, before } = await editBesideFolder();
+    stoppedWhileMoving();
+    expect(await contentsOfAll(photos)).toEqual(before);
+    expect(existsSync(shootFile('unnesting'))).toBe(false);
+    expect(existsSync(shootFile('flat-edits'))).toBe(true);
+  });
+
+  it('says so when other files are where one goes', async () => {
+    await editBesideFolder();
+    stoppedWhileMoving();
+    await Bun.write(shootFile('edits', 'A~sB', 'notes.txt'), 'mine');
+    const failure = await failureOf('show', 'lisbon', 'A/B');
+    expect(failure.message).toContain('notes.txt');
+    expect(readFileSync(shootFile('edits', 'A~sB', 'notes.txt'), 'utf8')).toBe(
+      'mine',
+    );
+    expect(existsSync(shootFile('unnesting', 'A~sB', 'B.jpg'))).toBe(true);
   });
 });
 

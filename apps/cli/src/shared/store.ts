@@ -306,32 +306,62 @@ const unnestEdits = Effect.fn('unnestEdits')(function* (
       }
     }
   });
-  /** Whether each is where it belongs now. */
+  /** The folders they were kept in, once nothing is left in them. */
+  const emptiedFolders = Effect.gen(function* () {
+    for (const photo of nested) {
+      let folder = path.dirname(path.join(files.edits, photo));
+      while (
+        folder !== files.edits &&
+        (yield* fs.exists(folder)) &&
+        (yield* fs.readDirectory(folder)).length === 0
+      ) {
+        // Empty, as just seen, and under the shoot's lock.
+        yield* fs.remove(folder, { recursive: true });
+        folder = path.dirname(folder);
+      }
+    }
+  });
+  /** Moves each where it belongs, and tells where other files are in the way. */
   const inPlace = Effect.gen(function* () {
-    let isDone = true;
+    const blocked: Array<{ photo: string; others: ReadonlyArray<string> }> = [];
     for (const photo of nested) {
       const { directory } = files.edit(photo);
       const isStaged = yield* fs.exists(staged(photo));
       if (isStaged && (yield* fs.exists(directory))) {
-        isDone = false;
+        const others = yield* fs.readDirectory(directory, { recursive: true });
+        blocked.push({ photo, others: others.toSorted() });
       } else if (isStaged) {
         yield* fs.rename(staged(photo), directory);
       }
     }
-    return isDone;
+    return blocked;
   });
   const moved = Effect.gen(function* () {
     yield* outOfTheWay;
+    yield* emptiedFolders;
+    const blocked = yield* inPlace;
     // Otherwise the next command goes on with it.
-    if (yield* inPlace) {
+    if (blocked.length === 0) {
       yield* fs.remove(files.unnesting, { recursive: true });
       yield* fs.writeFileString(files.flatEdits, '');
     }
+    return blocked;
   }).pipe(Effect.mapError(storeFailed(files.edits)));
   // While another command works on the shoot, they move the next time.
-  yield* exclusively(files)(moved).pipe(
-    Effect.catchTag('ShootBusy', () => Effect.void),
+  const blocked = yield* exclusively(files)(moved).pipe(
+    Effect.catchTag('ShootBusy', () => Effect.succeed([])),
   );
+  if (blocked.length > 0) {
+    const where = blocked
+      .map(
+        ({ photo, others }) =>
+          `${files.edit(photo).directory} (${others.join(', ')})`,
+      )
+      .join('; ');
+    return yield* new StoreFailed({
+      message: `keepsake keeps the edits of photos in folders apart now, but other files are where they go: ${where}. Move those files elsewhere and run keepsake again; until then the edits wait in ${files.unnesting}.`,
+    });
+  }
 });
 
 /** A scanned shoot with its photos and moments. */
