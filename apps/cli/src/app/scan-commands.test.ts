@@ -7,6 +7,7 @@ import {
   photosFolder,
   putPhotos,
   run,
+  runOk,
   setUp,
   shootFile,
   tearDown,
@@ -44,5 +45,17 @@ describe('a scan that stopped half-way', () => {
       _tag: 'Failure',
       failure: { _tag: 'InvalidInput' },
     });
+  });
+
+  it('makes previews again that an earlier version left without the folder', async () => {
+    fakeTools.files = [{ file: 'A.ARW', second: 0 }];
+    await putPhotos();
+    // A scan of another folder stopped there, before it noted which.
+    await Bun.write(shootFile('previews', 'A.jpg'), 'a photo of elsewhere');
+    await Bun.write(shootFile('photos.json'), '[]');
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    expect(await Bun.file(shootFile('previews', 'A.jpg')).text()).toBe(
+      'a picture',
+    );
   });
 });

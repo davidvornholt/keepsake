@@ -2,7 +2,11 @@ import { Clock, Effect, FileSystem, Option, Path, Ref, Schema } from 'effect';
 import { noted } from '../../shared/activity.ts';
 import { developed } from '../../shared/develop.ts';
 import { Moment, Photo, Shoot } from '../../shared/domain.ts';
-import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
+import {
+  InvalidInput,
+  StoreFailed,
+  ToolFailed,
+} from '../../shared/errors/errors.ts';
 import { type FoundPhoto, findPhotos } from '../../shared/exif.ts';
 import { checkTimeZone } from '../../shared/local-time.ts';
 import { exclusively } from '../../shared/lock.ts';
@@ -173,6 +177,32 @@ const shootOf = Effect.fn('shootOf')(function* (
   } satisfies Shoot;
 });
 
+/**
+ * Removes what a scan made without noting its folder first, as keepsake did
+ * before, since it may be of another folder.
+ */
+const forgetStrays = Effect.fn('forgetStrays')(function* (files: ShootFiles) {
+  const fs = yield* FileSystem.FileSystem;
+  if (yield* exists(files.shoot)) {
+    return;
+  }
+  yield* Effect.forEach(
+    [files.previews, files.photos, files.moments],
+    (stray) =>
+      fs
+        .remove(stray, { recursive: true, force: true })
+        .pipe(
+          Effect.mapError(
+            ({ message }) =>
+              new StoreFailed({
+                message: `Could not use ${stray}: ${message}`,
+              }),
+          ),
+        ),
+    { discard: true },
+  );
+});
+
 /** Finds a folder's photos, makes previews and groups them into moments. */
 export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
   const path = yield* Path.Path;
@@ -182,6 +212,7 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
   );
   const files = yield* shootFiles(name);
   return yield* Effect.gen(function* () {
+    yield* forgetStrays(files);
     const shoot = yield* shootOf(options, { name, source }, files);
     const { about } = shoot;
     const found = yield* findPhotos(source);

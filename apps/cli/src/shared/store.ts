@@ -191,6 +191,7 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     handOvers: path.join(root, 'hand-overs.json'),
     /** The program that gets the shoot ready for the owner. */
     preparation: path.join(root, 'preparation.json'),
+    previews: path.join(root, 'previews'),
     preview: (photo: string) => path.join(root, 'previews', `${photo}.jpg`),
     verdicts: (model: string) =>
       path.join(root, 'verdicts', model.replaceAll('/', '--')),
