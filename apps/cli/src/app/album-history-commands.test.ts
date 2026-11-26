@@ -3,9 +3,12 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import {
   editLisbon,
   failureOf,
+  holdOutput,
   judge,
   photosFolder,
   pickLisbon,
+  printed,
+  run,
   runOk,
   scanLisbon,
   setUp,
@@ -83,6 +86,24 @@ describe('keepsake publish, of an upload another album shows too', () => {
       asset: shared,
       favorite: false,
     });
+  });
+});
+
+describe('keepsake publish, to a slow reader', () => {
+  it('forgets a replaced upload only once the reader took the output', async () => {
+    await publishLisbon();
+    await editAgain('B');
+    const { written, release } = holdOutput();
+    const publishing = run('publish', 'lisbon');
+    await written;
+    // Long enough for anything that wouldn't wait for the reader.
+    await Bun.sleep(50);
+    const { outdated } = printed();
+    expect(outdated).toHaveLength(1);
+    expect((await shootJson('publication.json')).outdated).toEqual(outdated);
+    release();
+    await publishing;
+    expect((await shootJson('publication.json')).outdated).toEqual([]);
   });
 });
 

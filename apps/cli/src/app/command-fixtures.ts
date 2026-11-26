@@ -24,6 +24,42 @@ type Spy = ReturnType<typeof import('bun:test').spyOn>;
 const spies: Array<Spy> = [];
 let stdout: Spy | undefined;
 
+type Written = (error?: Error | null) => void;
+/** The callbacks of writes a slow reader hasn't taken yet, while it is slow. */
+let held: Array<Written> | undefined;
+let onHeld: () => void = () => undefined;
+
+/** Takes what is printed, or holds it back while the reader is slow. */
+const write = (_chunk: unknown, ...rest: ReadonlyArray<unknown>) => {
+  const done = rest.find((arg): arg is Written => typeof arg === 'function');
+  if (held === undefined) {
+    done?.();
+  } else {
+    held.push(done ?? (() => undefined));
+    onHeld();
+  }
+  return true;
+};
+
+/**
+ * Makes the reader of the output slow until it is released, and tells when
+ * something waits for it.
+ */
+export const holdOutput = () => {
+  held = [];
+  const written = new Promise<void>((resolve) => {
+    onHeld = resolve;
+  });
+  const release = () => {
+    const waiting = held ?? [];
+    held = undefined;
+    for (const done of waiting) {
+      done();
+    }
+  };
+  return { written, release };
+};
+
 export const printed = () =>
   JSON.parse(String(stdout?.mock.calls.at(-1)?.[0] ?? 'null'));
 
@@ -136,7 +172,8 @@ export const setUp = async (spyOn: typeof import('bun:test').spyOn) => {
     credentialsPath(),
     JSON.stringify({ azure: { endpoint, apiKey: fakeModels.key } }),
   );
-  stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+  held = undefined;
+  stdout = spyOn(process.stdout, 'write').mockImplementation(write);
   // Progress goes to stderr through the console.
   spies.push(
     stdout,
