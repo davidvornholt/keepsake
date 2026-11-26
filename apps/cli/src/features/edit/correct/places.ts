@@ -112,6 +112,12 @@ const withPlace = (
 export const apart = (places: ReadonlyArray<Place>): ReadonlyArray<Place> =>
   places.reduce<ReadonlyArray<Place>>(withPlace, []);
 
+const sameBox = (one: Box, other: Box): boolean =>
+  one.left === other.left &&
+  one.top === other.top &&
+  one.right === other.right &&
+  one.bottom === other.bottom;
+
 /** The part of a box inside another, if there is one. */
 const insideOf = (box: Box, area: Box): ReadonlyArray<Box> => {
   const part = {
@@ -132,11 +138,15 @@ const inMarks = (
   places: ReadonlyArray<Place>,
   marks: ReadonlyArray<Box>,
 ): ReadonlyArray<Place> =>
-  places.flatMap((place) =>
-    marks.flatMap((mark) =>
-      insideOf(place.box, mark).map((box) => ({ ...place, box })),
-    ),
-  );
+  places.flatMap((place) => {
+    const parts = marks.flatMap((mark) => insideOf(place.box, mark));
+    // A place in marks that overlap is the same in each of them.
+    const distinct = parts.filter(
+      (part, index) =>
+        parts.findIndex((other) => sameBox(other, part)) === index,
+    );
+    return distinct.map((box) => ({ ...place, box }));
+  });
 
 /** What may change of a photo: the marks, with a little around each. */
 export const markedAreas = (areas: ReadonlyArray<Box>): ReadonlyArray<Box> =>
@@ -177,8 +187,9 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
+  // Kept to the marks once they are read, also where they were found before.
   if (areas.length > 0) {
-    return inMarked({ everywhere: false, places }, areas);
+    return { everywhere: false, places };
   }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage

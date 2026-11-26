@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
+  asked,
   editLisbon,
   failureOf,
   pickLisbon,
@@ -52,11 +53,25 @@ const chairAt = (box: object) => {
 const isLocal = (prompt: string | undefined) =>
   prompt?.includes('Change only the following') === true;
 
-const isInMark = ({ box }: { box: typeof marked }) =>
-  box.left >= marked.left - 0.05 &&
-  box.top >= marked.top - 0.07 &&
-  box.right <= marked.right + 0.05 &&
-  box.bottom <= marked.bottom + 0.07;
+/** The pixels of a change beyond the mark and the little around it. */
+const outsideMark = (file: string): ReadonlyArray<number> => {
+  const pixels = readFileSync(file);
+  const width = 48;
+  const height = 32;
+  const across = (marked.right - marked.left) * 0.15;
+  const down = (marked.bottom - marked.top) * 0.15;
+  const isMarked = (x: number, y: number) =>
+    x + 0.5 > (marked.left - across) * width &&
+    x + 0.5 < (marked.right + across) * width &&
+    y + 0.5 > (marked.top - down) * height &&
+    y + 0.5 < (marked.bottom + down) * height;
+  return Array.from({ length: width * height }, (_, index) => index).flatMap(
+    (index) =>
+      isMarked(index % width, Math.floor(index / width))
+        ? []
+        : [pixels[index * 3] ?? 0],
+  );
+};
 
 describe('keepsake edit, with a mark at places of a finished photo', () => {
   it('changes a large thing only inside the mark', async () => {
@@ -64,18 +79,20 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
     await editLisbon('B');
     await markB();
     chairAt({ left: 0, top: 0, right: 0.9, bottom: 0.9 });
+    fakeTools.pictures = {
+      'B-keepsake.jpg': () => 100,
+      'correction/version-1.png': () => 200,
+      'correction/version-2.png': () => 200,
+    };
     const result = await editLisbon('--mark', 'one');
     expect(result.notDone).toEqual([]);
     expect(fakeModels.edits).toHaveLength(2);
     expect(isLocal(fakeModels.edits[1]?.prompt)).toBe(true);
-    const { places } = await shootJson(
-      'edits',
-      'B',
-      'correction',
-      'places.json',
+    const outside = outsideMark(
+      shootFile('edits', 'B', 'correction', 'result-1.png'),
     );
-    expect(places.length).toBeGreaterThan(0);
-    expect(places.every(isInMark)).toBe(true);
+    expect(outside.length).toBeGreaterThan(0);
+    expect(outside.filter((value) => value !== 100)).toEqual([]);
   });
 
   it('leaves every pixel outside the mark as it was', async () => {
@@ -93,28 +110,10 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
       'correction/version-2.png': version,
     };
     expect((await editLisbon('--mark', 'one')).notDone).toEqual([]);
-    const pixels = readFileSync(
-      shootFile('edits', 'B', 'correction', 'result-1.png'),
-    );
-    // The mark with the little around it that may change too, in pixels.
+    const result = shootFile('edits', 'B', 'correction', 'result-1.png');
+    expect(outsideMark(result).filter((value) => value !== 100)).toEqual([]);
+    const pixels = readFileSync(result);
     const width = 48;
-    const height = 32;
-    const across = (marked.right - marked.left) * 0.15;
-    const down = (marked.bottom - marked.top) * 0.15;
-    const isMarked = (x: number, y: number) =>
-      x + 0.5 > (marked.left - across) * width &&
-      x + 0.5 < (marked.right + across) * width &&
-      y + 0.5 > (marked.top - down) * height &&
-      y + 0.5 < (marked.bottom + down) * height;
-    const outside: Array<number> = [];
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (!isMarked(x, y)) {
-          outside.push(pixels[(y * width + x) * 3] ?? 0);
-        }
-      }
-    }
-    expect(outside.filter((value) => value !== 100)).toEqual([]);
     const row = Array.from(
       { length: 10 },
       (_, index) => pixels[(16 * width + 14 + index) * 3] ?? 0,
@@ -219,5 +218,33 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);
     expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
+  });
+});
+
+describe('keepsake edit, with marks that overlap', () => {
+  it('shows the reviewer a thing in both of them once', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    await Bun.write(
+      shootFile('marks', 'one.json'),
+      JSON.stringify({
+        id: 'one',
+        photo: 'B',
+        kind: 'change',
+        note: chair,
+        boxes: [marked, { ...marked, left: 0.2, right: 0.5 }],
+        other: null,
+        madeAt: '2026-04-01T10:00:00Z',
+        handedOverAt: '2026-04-01T11:00:00Z',
+        answer: null,
+        seenAt: null,
+      }),
+    );
+    chairAt({ left: 0.25, top: 0.4, right: 0.35, bottom: 0.6 });
+    expect((await editLisbon('--mark', 'one')).notDone).toEqual([]);
+    const shown = asked('choices').flatMap(({ texts }) =>
+      texts.filter((text) => text.includes(chair)),
+    );
+    expect(shown).toHaveLength(1);
   });
 });
