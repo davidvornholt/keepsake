@@ -138,6 +138,22 @@ const inMarks = (
     ),
   );
 
+/** What may change of a photo: the marks, with a little around each. */
+export const markedAreas = (areas: ReadonlyArray<Box>): ReadonlyArray<Box> =>
+  areas.map(withMargin);
+
+/**
+ * What has to change, kept to the marks if there are any, also when it was
+ * found before marks were kept to.
+ */
+export const inMarked = (
+  change: typeof Change.Type,
+  areas: ReadonlyArray<Box>,
+): typeof Change.Type =>
+  areas.length === 0
+    ? change
+    : { everywhere: false, places: inMarks(change.places, markedAreas(areas)) };
+
 /** Finds where a finished photo has to change for what the user wants. */
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
@@ -145,8 +161,7 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
   areas: ReadonlyArray<Box>,
 ) {
   const vision = yield* Vision;
-  const marks = areas.map(withMargin);
-  const { parts, pieces } = yield* inParts(file, marks);
+  const { parts, pieces } = yield* inParts(file, markedAreas(areas));
   const answer = yield* vision.ask({
     role,
     name: 'places',
@@ -162,8 +177,8 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
-  if (marks.length > 0) {
-    return { everywhere: false, places: inMarks(places, marks) };
+  if (areas.length > 0) {
+    return inMarked({ everywhere: false, places }, areas);
   }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage

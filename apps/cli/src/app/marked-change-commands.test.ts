@@ -88,6 +88,26 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
     expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
   });
 
+  it('keeps to the mark where places were found before that', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    await Bun.write(finalFile(), 'the former edit');
+    await markB();
+    // What a change that stopped left behind, before marks were kept to.
+    const correction = (name: string, value: object) =>
+      Bun.write(
+        shootFile('edits', 'B', 'correction', name),
+        JSON.stringify(value),
+      );
+    await correction('wish.json', { wish: chair });
+    await correction('areas.json', [marked]);
+    await correction('places.json', { everywhere: true, places: [] });
+    const result = await editLisbon('--mark', 'one');
+    expect(result.notDone).toHaveLength(1);
+    expect(fakeModels.edits).toHaveLength(1);
+    expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
+  });
+
   it('changes the camera’s own picture only inside the mark', async () => {
     await pickLisbon();
     fakeModels.answers.assessment = {

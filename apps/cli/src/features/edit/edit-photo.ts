@@ -14,7 +14,7 @@ import { wishIn, writeWish } from '../../shared/wishes.ts';
 import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
 import { type CorrectionFiles, correct } from './correct/correct.ts';
-import { Change, findPlaces, type Place } from './correct/places.ts';
+import { Change, findPlaces, inMarked, type Place } from './correct/places.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
@@ -197,11 +197,12 @@ const changeAll = Effect.fn('changeAll')(function* ({
 const change = Effect.fn('change')(function* (toChange: ToChange) {
   const { files, wish, areas } = toChange;
   yield* begin(toChange);
-  const { everywhere, places } = yield* remembered(
+  const found = yield* remembered(
     Change,
     files.places,
     askReviewer(findPlaces(files.final, wish, areas)),
   );
+  const { everywhere, places } = inMarked(found, areas);
   if (!everywhere && places.length === 0) {
     const nothing =
       areas.length === 0
