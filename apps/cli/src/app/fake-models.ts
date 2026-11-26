@@ -7,6 +7,8 @@ export type Asked = {
   readonly host: string;
   readonly texts: ReadonlyArray<string>;
   readonly images: number;
+  /** The most output tokens the answer may use, if any. */
+  readonly outputLimit?: number;
 };
 
 /** An edit that was asked of the image model. */
@@ -113,6 +115,7 @@ type ChatRequest = {
   readonly response_format: {
     readonly json_schema: { readonly name: AnswerName };
   };
+  readonly max_completion_tokens?: number;
 };
 
 const chat = async (request: Request): Promise<Response> => {
@@ -126,6 +129,7 @@ const chat = async (request: Request): Promise<Response> => {
     host: new URL(request.url).host,
     texts: parts.flatMap(({ text }) => (text === undefined ? [] : [text])),
     images: parts.filter(({ type }) => type === 'image_url').length,
+    outputLimit: body.max_completion_tokens,
   };
   fakeModels.asked.push(asked);
   const chosen = fakeModels.answers[asked.name] ?? usualAnswers[asked.name];

@@ -9,6 +9,7 @@ import {
   readCredentials,
 } from './credentials.ts';
 import { InvalidInput, NotSignedIn } from './errors/errors.ts';
+import { outputLimitOf } from './prices.ts';
 import { claude } from './subscriptions/claude.ts';
 import { codex } from './subscriptions/codex.ts';
 import { programModelLayer } from './subscriptions/program-model.ts';
@@ -113,7 +114,16 @@ const apiLayer = (provider: Provider, model: string) =>
           Layer.provide(AnthropicClient.layer({ apiKey })),
         );
       }
-      return OpenAiLanguageModel.layer({ model }).pipe(
+      // A paid model may answer only as much as the budget counted on.
+      const limit = outputLimitOf(`${provider}/${model}`);
+      return OpenAiLanguageModel.layer({
+        model,
+        config:
+          limit === undefined
+            ? undefined
+            : // biome-ignore lint/style/useNamingConvention: the API's name
+              { max_completion_tokens: limit },
+      }).pipe(
         Layer.provide(
           OpenAiClient.layer({ apiKey, apiUrl: openAiUrl(provider, access) }),
         ),

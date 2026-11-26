@@ -21,6 +21,8 @@ const imageModel = 'azure/gpt-image-2.5-sunburst';
 const oneRequest = 0.432;
 /** What the fake vision model's usual answer costs. */
 const oneQuestion = 0.15;
+/** What a vision model is sent as the most it may answer. */
+const outputLimit = 6000;
 /**
  * Three versions make an image request cost more at its most than the
  * review of them, so a budget can cover the review but not another attempt.
@@ -123,6 +125,14 @@ describe('keepsake edit, with a budget', () => {
     const result = await editLisbon('B', '--wish', wish, '--budget', '2');
     expect(result.overBudget).toEqual(['B']);
     expect(fakeModels.edits).toHaveLength(0);
+  });
+
+  it('tells a vision model how much it may answer', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    expect(fakeModels.asked.map((question) => question.outputLimit)).toEqual(
+      fakeModels.asked.map(() => outputLimit),
+    );
   });
 });
 
