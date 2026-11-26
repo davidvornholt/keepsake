@@ -18,15 +18,29 @@ type Found = {
 };
 type InRoot = Found & { readonly root: string };
 
+/** Photos by the folder they are right in. */
+export const byFolder = (
+  path: Path.Path,
+  photos: ReadonlyArray<PhotoFile>,
+): ReadonlyMap<string, ReadonlyArray<PhotoFile>> => {
+  const grouped = new Map<string, Array<PhotoFile>>();
+  for (const photo of photos) {
+    const folder = path.dirname(photo.file);
+    const before = grouped.get(folder);
+    if (before === undefined) {
+      grouped.set(folder, [photo]);
+    } else {
+      before.push(photo);
+    }
+  }
+  return grouped;
+};
+
 /** Every folder with photos right in it. */
 const foldersIn = Effect.fn('foldersIn')(function* (root: string) {
   const path = yield* Path.Path;
-  const byFolder = new Map<string, Array<PhotoFile>>();
-  for (const photo of yield* photoFilesIn(root)) {
-    const folder = path.dirname(photo.file);
-    byFolder.set(folder, [...(byFolder.get(folder) ?? []), photo]);
-  }
-  return [...byFolder].map(([folder, photos]): Found => {
+  const grouped = byFolder(path, yield* photoFilesIn(root));
+  return [...grouped].map(([folder, photos]): Found => {
     const times = photos.map(({ modified }) => modified);
     return {
       path: folder,
