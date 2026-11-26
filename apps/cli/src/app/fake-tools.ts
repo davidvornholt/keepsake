@@ -71,6 +71,8 @@ export const fakeTools = {
   assistant: undefined as ((run: Run) => string) | undefined,
   /** Other programs, which print something or fail with an error. */
   programs: {} as Record<string, (run: Run) => string>,
+  /** Holds a program up until the promise settles; one that rejects stops keepsake. */
+  pause: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
 };
 
 export const resetTools = () => {
@@ -82,6 +84,7 @@ export const resetTools = () => {
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
   fakeTools.programs = {};
+  fakeTools.pause = undefined;
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
@@ -235,6 +238,10 @@ const spawner = ChildProcessSpawner.make((spawned) =>
         }
       : { command: '', args: [], input: '', env: {} };
     fakeTools.runs.push(run);
+    const paused = fakeTools.pause?.(run);
+    if (paused !== undefined) {
+      yield* Effect.promise(() => paused);
+    }
     const { output, error } = outcomeOf(run);
     const stdout = Stream.make(
       typeof output === 'string' ? new TextEncoder().encode(output) : output,

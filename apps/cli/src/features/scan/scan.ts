@@ -185,6 +185,9 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
     const shoot = yield* shootOf(options, { name, source }, files);
     const { about } = shoot;
     const found = yield* findPhotos(source);
+    // Before any preview, so a scan of another folder can't take them for its
+    // own when this one stops half-way.
+    yield* writeJson(Shoot, files.shoot, shoot);
     const notes = yield* makeNotes(files);
     const results = yield* inSteps('scan', found, concurrency, (photo) =>
       preview(files, shoot, photo).pipe(
@@ -206,7 +209,6 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
         message: `None of the ${unreadable.length} photos could be read. The first problem: ${unreadable[0]?.reason}`,
       });
     }
-    yield* writeJson(Shoot, files.shoot, shoot);
     const moments = yield* notes.write(photos);
     return {
       shoot: name,
