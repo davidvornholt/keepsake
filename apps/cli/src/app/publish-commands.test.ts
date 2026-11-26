@@ -60,6 +60,15 @@ describe('keepsake publish', () => {
     const named = await failureOf('publish', 'lisbon', 'B');
     expect(named.message).toContain('keepsake edit lisbon B');
   });
+
+  it('names every photo that isn’t finished and publishes none', async () => {
+    await pickLisbon();
+    await editLisbon('A1');
+    const failure = await failureOf('publish', 'lisbon', 'A1', 'B');
+    expect(failure.message).toContain('B isn’t finished');
+    expect(failure.message).toContain('keepsake edit lisbon B');
+    expect(fakeTools.uploads).toEqual([]);
+  });
 });
 
 const editAgain = (photo: string) =>
@@ -115,6 +124,7 @@ describe('keepsake publish, to the album it published to', () => {
       photos.map(({ photo }: { readonly photo: string }) => photo),
     ).toEqual(['A1', 'B', 'C']);
   });
+
   it('keeps the favorite of the upload it replaces', async () => {
     await publishLisbon();
     for (const album of fakeTools.albums) {

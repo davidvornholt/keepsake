@@ -104,6 +104,16 @@ const photosToSend = Effect.fn('photosToSend')(function* (
   return picks.map(({ photo }) => photo).filter((photo) => !removed.has(photo));
 });
 
+const isFinished = (open: OpenShoot, photo: string) =>
+  Effect.gen(function* () {
+    const files = open.files.edit(photo);
+    return (yield* exists(files.record)) && (yield* exists(files.final));
+  });
+
+/**
+ * The finished photos to publish. Photos named must all be finished, so
+ * nothing is published of a list that can't be published whole.
+ */
 const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
@@ -115,21 +125,27 @@ const jobs = Effect.fn('jobs')(function* (
 ) {
   const { published, favorites } = album;
   const photos = yield* photosToSend(open, names, target);
-  const found = yield* Effect.forEach(photos, (photo) =>
-    Effect.gen(function* () {
-      const files = open.files.edit(photo);
-      const isFinished =
-        (yield* exists(files.record)) && (yield* exists(files.final));
-      if (!isFinished) {
-        return [];
-      }
-      const digest = yield* digestOf(files.final);
-      const before = published.find((earlier) => earlier.photo === photo);
-      const favorite = favorites.has(photo);
-      return [{ photo, digest, before, favorite } satisfies Job];
-    }),
+  const finished = yield* Effect.filter(photos, (photo) =>
+    isFinished(open, photo),
   );
-  return found.flat();
+  const unfinished = photos.filter((photo) => !finished.includes(photo));
+  const { name } = open.shoot;
+  if (finished.length === 0 || (names.length > 0 && unfinished.length > 0)) {
+    return yield* new StepMissing({
+      message: `${names.length === 0 ? `No photo of ${name} is` : `${unfinished.join(', ')} ${unfinished.length === 1 ? 'isn’t' : 'aren’t'}`} finished yet, so nothing was published. Run \`keepsake edit ${[name, ...(names.length > 0 ? unfinished : [])].join(' ')}\` first.`,
+    });
+  }
+  return yield* Effect.forEach(finished, (photo) =>
+    Effect.map(
+      digestOf(open.files.edit(photo).final),
+      (digest): Job => ({
+        photo,
+        digest,
+        before: published.find((earlier) => earlier.photo === photo),
+        favorite: favorites.has(photo),
+      }),
+    ),
+  );
 });
 
 const send = Effect.fn('send')(function* (
@@ -203,11 +219,6 @@ export const publish = Effect.fn('publish')(function* (
     published: previous,
     favorites,
   });
-  if (ready.length === 0) {
-    return yield* new StepMissing({
-      message: `${names.length === 0 ? `No photo of ${name} is` : 'None of these photos is'} finished yet. Run \`keepsake edit ${[name, ...names].join(' ')}\` first.`,
-    });
-  }
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
