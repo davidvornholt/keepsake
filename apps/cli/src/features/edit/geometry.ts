@@ -13,10 +13,36 @@ const half = 2;
 const smallestLongSide = 1600;
 
 /**
+ * Where a side of a crop of the given length starts, centred on the wanted
+ * span and inside the bounds, and covering what has to be kept if it can.
+ */
+const placed = (
+  [wantedStart, wantedEnd]: readonly [number, number],
+  length: number,
+  [low, boundsEnd]: readonly [number, number],
+  [keptStart, keptEnd]: readonly [number, number],
+): number => {
+  const high = boundsEnd - length;
+  const centred = (wantedStart + wantedEnd) / half - length / half;
+  const keepingLow = Math.max(low, keptEnd - length);
+  const keepingHigh = Math.min(high, keptStart);
+  return keepingLow <= keepingHigh
+    ? clamp(centred, keepingLow, keepingHigh)
+    : clamp(centred, low, high);
+};
+
+/**
  * The smallest crop of the wanted shape that shows the whole box, as large as
  * a crop has to be. It goes beyond the picture only as far as the box does.
+ * Where the shape makes it smaller than the box, it keeps what is to be kept,
+ * such as the subject and what belongs to it, and loses some of the rest.
  */
-export const fitAspect = (wanted: Box, size: Size, aspect: AspectName): Box => {
+export const fitAspect = (
+  wanted: Box,
+  size: Size,
+  aspect: AspectName,
+  kept: Box = wanted,
+): Box => {
   const ratio = ratioOf(aspect);
   const bounds = around([wholePicture, wanted]);
   const most = {
@@ -33,21 +59,23 @@ export const fitAspect = (wanted: Box, size: Size, aspect: AspectName): Box => {
     widest,
   );
   const height = width / ratio;
-  const left = clamp(
-    ((wanted.left + wanted.right) / half) * size.width - width / half,
-    bounds.left * size.width,
-    bounds.right * size.width - width,
+  const left = placed(
+    [wanted.left, wanted.right],
+    width / size.width,
+    [bounds.left, bounds.right],
+    [kept.left, kept.right],
   );
-  const top = clamp(
-    ((wanted.top + wanted.bottom) / half) * size.height - height / half,
-    bounds.top * size.height,
-    bounds.bottom * size.height - height,
+  const top = placed(
+    [wanted.top, wanted.bottom],
+    height / size.height,
+    [bounds.top, bounds.bottom],
+    [kept.top, kept.bottom],
   );
   return {
-    left: left / size.width,
-    top: top / size.height,
-    right: (left + width) / size.width,
-    bottom: (top + height) / size.height,
+    left,
+    top,
+    right: left + width / size.width,
+    bottom: top + height / size.height,
   };
 };
 

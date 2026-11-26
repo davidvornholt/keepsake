@@ -65,6 +65,33 @@ describe('fitAspect', () => {
   });
 });
 
+describe('fitAspect with what is to be kept', () => {
+  const portrait = { width: 2336, height: 3504 };
+
+  it('loses what reaches beyond rather than what is kept', () => {
+    const wanted = { left: -0.04, top: -0.06, right: 1, bottom: 1 };
+    const kept = { left: 0, top: 0.012, right: 0.9, bottom: 1 };
+    const crop = fitAspect(wanted, portrait, '2:3', kept);
+    expect(crop.top).toBeCloseTo(-0.04);
+    expect(crop.bottom).toBeCloseTo(1);
+  });
+
+  it('loses room around what is kept rather than what is kept', () => {
+    const wanted = { left: 0, top: -0.07, right: 0.913, bottom: 1 };
+    const kept = { left: 0, top: 0.012, right: 0.893, bottom: 1 };
+    const crop = fitAspect(wanted, portrait, '9:16', kept);
+    expect(crop.left).toBeCloseTo(0);
+    expect(crop.right).toBeGreaterThanOrEqual(0.893);
+  });
+
+  it('is centred as before when it can’t keep all of it', () => {
+    const wanted = { left: 0, top: 0, right: 1, bottom: 1 };
+    expect(fitAspect(wanted, camera, '1:1', wanted)).toEqual(
+      fitAspect(wanted, camera, '1:1'),
+    );
+  });
+});
+
 describe('closestAspect', () => {
   it.each([
     [7008, 4672, '3:2'],

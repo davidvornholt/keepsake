@@ -139,6 +139,7 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
             ]),
             size,
             aspect,
+            around([subject, ...belongings]),
           ),
           { subject, facing, held },
         ),
