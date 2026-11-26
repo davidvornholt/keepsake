@@ -36,6 +36,14 @@ describe('withOwnRoomFirst', () => {
     expect(framed(beyond, bee, 'neither', [flower])).toEqual([0, 0, 1, 1.2]);
   });
 
+  it('treats every edge alike when a belonging reaches it', () => {
+    const subject = { left: 0.4, top: 0.4, right: 0.6, bottom: 0.6 };
+    const belonging = { left: 0.01, top: 0.01, right: 0.99, bottom: 0.99 };
+    expect(framed(beyond, subject, 'neither', [belonging])).toEqual([
+      -0.2, -0.2, 1.2, 1.2,
+    ]);
+  });
+
   it('stays in the photo around what belongs to it and is whole', () => {
     const bee = { left: 0.45, top: 0.17, right: 0.62, bottom: 0.37 };
     const flower = { left: 0.15, top: 0.3, right: 0.7, bottom: 0.9 };

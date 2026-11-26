@@ -116,7 +116,11 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
   });
   const { facing } = proposals;
   const subject = tidyBox(proposals.subject);
-  const belongings = proposals.belongings.map(({ box }) => tidyBox(box));
+  // A belonging wholly outside the photo is a model's mistake, not something
+  // an edge cuts off.
+  const belongings = proposals.belongings
+    .map(({ box }) => tidyBox(box))
+    .filter((box) => coverage(box) > 0);
   const held = belongings.map((belonging) => widened(belonging, air));
   const crops = proposals.crops
     .slice(0, mostProposals)

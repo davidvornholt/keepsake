@@ -14,9 +14,9 @@ const missing = (own: number, extent: number, least: number): number =>
     ? Number.POSITIVE_INFINITY
     : Math.max(0, extent * least - own);
 
-/** How far beyond the photo a frame may reach to complete what an edge cuts off. */
-const completing = (own: number): number =>
-  own <= closeToEdge ? Number.POSITIVE_INFINITY : 0;
+/** Whether an edge of the photo cuts off what is at a position beside it. */
+const cutOff = (position: number, edge: 0 | 1): boolean =>
+  edge === 0 ? position <= closeToEdge : position >= 1 - closeToEdge;
 
 /**
  * A frame that uses the room its photo has. It reaches beyond an edge only
@@ -32,37 +32,33 @@ export const withOwnRoomFirst = (
   const width = subject.right - subject.left;
   const height = subject.bottom - subject.top;
   const sideways = (side: Side) => (side === facing ? inFront : beside);
-  const reach = (forSubject: number, gaps: ReadonlyArray<number>): number =>
-    Math.max(forSubject, ...gaps.map(completing));
+  /** The subject's own room, or no limit where a belonging is cut off. */
+  const reach = (forSubject: number, cut: (belonging: Box) => boolean) =>
+    belongings.some(cut) ? Number.POSITIVE_INFINITY : forSubject;
   return {
     left: Math.max(
       frame.left,
-      -reach(
-        missing(subject.left, width, sideways('left')),
-        belongings.map(({ left }) => left),
+      -reach(missing(subject.left, width, sideways('left')), ({ left }) =>
+        cutOff(left, 0),
       ),
     ),
     top: Math.max(
       frame.top,
-      -reach(
-        missing(subject.top, height, beside),
-        belongings.map(({ top }) => top),
-      ),
+      -reach(missing(subject.top, height, beside), ({ top }) => cutOff(top, 0)),
     ),
     right: Math.min(
       frame.right,
       1 +
         reach(
           missing(1 - subject.right, width, sideways('right')),
-          belongings.map(({ right }) => 1 - right),
+          ({ right }) => cutOff(right, 1),
         ),
     ),
     bottom: Math.min(
       frame.bottom,
       1 +
-        reach(
-          missing(1 - subject.bottom, height, beside),
-          belongings.map(({ bottom }) => 1 - bottom),
+        reach(missing(1 - subject.bottom, height, beside), ({ bottom }) =>
+          cutOff(bottom, 1),
         ),
     ),
   };
