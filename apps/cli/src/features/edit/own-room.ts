@@ -14,28 +14,52 @@ const missing = (own: number, extent: number, least: number): number =>
     ? Number.POSITIVE_INFINITY
     : Math.max(0, extent * least - own);
 
+/** Whether an edge of the photo cuts off what is at a position beside it. */
+const cutOff = (position: number, edge: 0 | 1): boolean =>
+  edge === 0 ? position <= closeToEdge : position >= 1 - closeToEdge;
+
 /**
  * A frame that uses the room its photo has. It reaches beyond an edge only
- * where that cuts off the subject, or leaves too little room beside it.
+ * where that cuts off the subject or something that belongs to the photo, or
+ * leaves too little room beside the subject.
  */
 export const withOwnRoomFirst = (
   frame: Box,
   subject: Box,
   facing: Side,
+  belongings: ReadonlyArray<Box>,
 ): Box => {
   const width = subject.right - subject.left;
   const height = subject.bottom - subject.top;
   const sideways = (side: Side) => (side === facing ? inFront : beside);
+  /** The subject's own room, or no limit where a belonging is cut off. */
+  const reach = (forSubject: number, cut: (belonging: Box) => boolean) =>
+    belongings.some(cut) ? Number.POSITIVE_INFINITY : forSubject;
   return {
-    left: Math.max(frame.left, -missing(subject.left, width, sideways('left'))),
-    top: Math.max(frame.top, -missing(subject.top, height, beside)),
+    left: Math.max(
+      frame.left,
+      -reach(missing(subject.left, width, sideways('left')), ({ left }) =>
+        cutOff(left, 0),
+      ),
+    ),
+    top: Math.max(
+      frame.top,
+      -reach(missing(subject.top, height, beside), ({ top }) => cutOff(top, 0)),
+    ),
     right: Math.min(
       frame.right,
-      1 + missing(1 - subject.right, width, sideways('right')),
+      1 +
+        reach(
+          missing(1 - subject.right, width, sideways('right')),
+          ({ right }) => cutOff(right, 1),
+        ),
     ),
     bottom: Math.min(
       frame.bottom,
-      1 + missing(1 - subject.bottom, height, beside),
+      1 +
+        reach(missing(1 - subject.bottom, height, beside), ({ bottom }) =>
+          cutOff(bottom, 1),
+        ),
     ),
   };
 };

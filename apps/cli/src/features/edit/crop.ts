@@ -16,7 +16,7 @@ import {
 } from '../../shared/domain.ts';
 import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
-import { frameBox, isMostlyPhoto } from './beyond.ts';
+import { edgesBeyond, frameBox, isMostlyPhoto } from './beyond.ts';
 import { closestAspect, fitAspect, within } from './geometry.ts';
 import { withOwnRoomFirst } from './own-room.ts';
 import { sides, withRoomAhead } from './room-ahead.ts';
@@ -40,7 +40,7 @@ const role = `You frame the photos of a private trip for an album. Look for an i
 
 Take away only what adds nothing: plain sky or water without a purpose, dark edges, clutter, strangers at the edge, or a feeder or a fence around an animal. Go close only where the surroundings add nothing, or where a face, a gesture or a detail is what counts. Keep what shows where the photo was taken, what makes it funny or tells its story, all of a group, a row or a pattern, and whatever else would be missed by someone who was there, even out of focus. Never cut off a part of the subject that is in the frame, such as feet, a tail, wing tips, a reflection, the top of a building, or a person's hands, unless you go clearly and deliberately close, as in a portrait of a head.
 
-The image model that edits the photo afterwards can also continue the scene beyond the edges of the photo and complete what they cut off, such as the tip of a wing or the top of a tower, as long as anyone could guess what is there. So a frame may reach beyond the photo, by up to a quarter of its width or height on each side: its box then has numbers below 0 or above 1. Do this only where it makes the photo clearly stronger, because the photo cuts off the subject or has too little room beside it. Use the room that the photo has first, and never do it where it would have to make up a person or a text.`;
+The image model that edits the photo afterwards can also continue the scene beyond the edges of the photo and complete what they cut off, such as the tip of a wing or the top of a tower, as long as anyone could guess what is there. So a frame may reach beyond the photo, by up to a quarter of its width or height on each side: its box then has numbers below 0 or above 1. Do this only where it makes the photo clearly stronger, because the photo cuts off the subject or something that belongs to it, such as the flower a bee flies to, or has too little room beside the subject. Use the room that the photo has first, and never do it where it would have to make up a person or a text.`;
 
 const Proposals = Schema.Struct({
   subject: Box,
@@ -58,7 +58,7 @@ const Proposals = Schema.Struct({
   ),
 });
 
-const proposalQuestion = `First give a box around the main subject, all of it, or around what the eye goes to when there is no single subject, and say which side it faces. Then list what else belongs to the photo, each with a box around all of it that is in the frame; the list is empty when only the subject counts. Then propose up to ${mostProposals} frames that could make this a stronger photo, as different from each other as the photo allows, such as the scene with little taken away, a closer one, or another shape. Each must show everything you listed. Propose none if the whole photo is the best composition. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each frame should have.`;
+const proposalQuestion = `First give a box around the main subject, all of it, or around what the eye goes to when there is no single subject, and say which side it faces. Then list what else belongs to the photo, such as the flower an insect visits or the branch a bird sits on, each with a box around all of it that is in the frame; the list is empty when only the subject counts. Then propose up to ${mostProposals} frames that could make this a stronger photo, as different from each other as the photo allows, such as the scene with little taken away, a closer one, or another shape. Each must show everything you listed. Propose none if the whole photo is the best composition. All boxes are fractions of the photo's width and height from its top left corner. Choose the shape each frame should have.`;
 
 const Choice = Schema.Struct({
   best: Schema.Int,
@@ -84,9 +84,17 @@ const wholePhoto = (size: Size): Candidate => {
 };
 
 /** Whether a frame shows almost all of the photo and nothing beyond it. */
-const isWhole = (box: Box): boolean =>
+export const isWhole = (box: Box): boolean =>
+  edgesBeyond(box) === null &&
   coverage(tidyBox(box)) >= almostEverything &&
   coverage(box) <= 1 / almostEverything;
+
+/**
+ * The part of each box that is in the photo. A box wholly outside it is a
+ * model's mistake, not something an edge cuts off.
+ */
+export const inPhoto = (boxes: ReadonlyArray<Box>): ReadonlyArray<Box> =>
+  boxes.map(tidyBox).filter((box) => coverage(box) > 0);
 
 /** Finds the framing that makes the strongest photo. */
 export const chooseCrop = Effect.fn('chooseCrop')(function* (
@@ -116,7 +124,7 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
   });
   const { facing } = proposals;
   const subject = tidyBox(proposals.subject);
-  const belongings = proposals.belongings.map(({ box }) => tidyBox(box));
+  const belongings = inPhoto(proposals.belongings.map(({ box }) => box));
   const held = belongings.map((belonging) => widened(belonging, air));
   const crops = proposals.crops
     .slice(0, mostProposals)
@@ -125,7 +133,10 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
         // However tight the proposal is, what belongs to the photo stays.
         box: withRoomAhead(
           fitAspect(
-            around([frameBox(withOwnRoomFirst(box, subject, facing)), ...held]),
+            around([
+              frameBox(withOwnRoomFirst(box, subject, facing, belongings)),
+              ...held,
+            ]),
             size,
             aspect,
           ),
