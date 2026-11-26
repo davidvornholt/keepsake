@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { Mark, ShootView } from '../../contract.ts';
 import { unreachable } from './api.ts';
-import { samplePhoto, sampleShoot } from './sample.ts';
+import { sampleMark, samplePhoto, sampleShoot } from './sample.ts';
 import { makeShootStore } from './store.ts';
 
 /** A request the page sent, which waits for the test to answer it. */
@@ -72,5 +72,28 @@ describe('a change that keepsake didn’t get', () => {
     await answerWith('GET', shootWith());
     expect(await store.isSaved(draft?.id ?? '')).toBe(false);
     expect(store.get().problem).toBe(unreachable);
+  });
+});
+
+describe('undo', () => {
+  it('takes back a mark it brought back', async () => {
+    const store = await loaded();
+    store.make(wish);
+    const first = sampleMark('first', wish);
+    await answerWith('PUT', first);
+    await answerWith('GET', shootWith([first]));
+    const takingBack = store.takeBack(first);
+    (await next('DELETE')).answer(new Response(null, { status: 204 }));
+    await answerWith('GET', shootWith());
+    await takingBack;
+    // Brings it back, under another id.
+    const back = store.undo();
+    const again = sampleMark('again', wish);
+    await answerWith('PUT', again);
+    await answerWith('GET', shootWith([again]));
+    await back;
+    // Takes back what made it in the first place.
+    store.undo().catch(() => undefined);
+    expect((await next('DELETE')).path).toEndWith('/marks/again');
   });
 });

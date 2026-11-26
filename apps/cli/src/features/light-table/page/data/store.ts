@@ -28,9 +28,31 @@ import {
   withSeen,
 } from './changes.ts';
 import { type Core, makeCore } from './store-core.ts';
+import type { Undo } from './store-state.ts';
 
 // The shoot as the page knows it. A change shows at once and is sent to
 // keepsake; what keepsake then says replaces it.
+
+/** The undos as they are once the mark with this id is known as `mark`. */
+const renamed = (
+  undos: ReadonlyArray<Undo>,
+  id: string,
+  mark: Mark,
+): ReadonlyArray<Undo> => {
+  const swap = (one: Mark): Mark => (one.id === id ? mark : one);
+  return undos.map((undo) => {
+    if (undo.did === 'favorite') {
+      return undo;
+    }
+    return undo.did === 'made'
+      ? {
+          ...undo,
+          mark: swap(undo.mark),
+          replaced: undo.replaced === null ? null : swap(undo.replaced),
+        }
+      : { ...undo, mark: swap(undo.mark) };
+  });
+};
 
 const marking = (core: Core) => {
   let drafts = 0;
@@ -53,6 +75,7 @@ const marking = (core: Core) => {
     sending.then((mark) => {
       if (mark !== null) {
         core.setMarks((marks) => withSaved(marks, id, mark));
+        core.setUndos(renamed(core.undos(), id, mark));
       }
     });
     return draft;
@@ -113,8 +136,10 @@ const marking = (core: Core) => {
         await remove(last.mark.id);
       }
       const back = last.did === 'made' ? last.replaced : last.mark;
-      if (back !== null) {
-        put(wantedOf(back));
+      const again = back === null ? null : put(wantedOf(back));
+      if (back !== null && again !== null) {
+        // What is done before refers to the mark as it is now.
+        core.setUndos(renamed(core.undos(), back.id, again));
       }
     },
   };
