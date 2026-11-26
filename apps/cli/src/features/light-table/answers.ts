@@ -13,7 +13,7 @@ import { release } from './handed.ts';
 import { saveLabels } from './labels.ts';
 import { makeMark, seeMark, takeBack } from './marks.ts';
 import { forgetShoot, makeShoot } from './new-shoot.ts';
-import { fullSize, smaller } from './pictures.ts';
+import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
 import { Favorite, HandOver, NewLabels, NewMark, NewShoot } from './schemas.ts';
 import type { Shoots } from './shoots.ts';
@@ -59,12 +59,13 @@ type Named = {
   readonly shoot: string;
   readonly photo: string;
   readonly kind: string;
+  readonly version: string;
 };
 
 /** A picture in full size, or a smaller copy of it. */
 const pictureAnswer = Effect.fn('pictureAnswer')(function* (
   shoots: Shoots,
-  { shoot, photo, kind }: Named,
+  { shoot, photo, kind, version }: Named,
   request: Request,
 ) {
   const gallery = yield* shoots.galleryOf(shoot);
@@ -82,7 +83,12 @@ const pictureAnswer = Effect.fn('pictureAnswer')(function* (
   // Stands in for a photo that can't be read now, so it isn't kept.
   const isStandIn =
     width === undefined && kind === 'preview' && typeof found === 'string';
-  const headers = { 'cache-control': isStandIn ? 'no-store' : forever };
+  // A newer picture took the place of the one asked for, so it isn't kept
+  // under the old one's address.
+  const isOther = !(yield* isCurrent(gallery, photo, kind, version));
+  const headers = {
+    'cache-control': isStandIn || isOther ? 'no-store' : forever,
+  };
   return typeof found === 'string'
     ? new Response(Bun.file(found), { headers })
     : new Response(found, {

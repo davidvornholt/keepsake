@@ -196,6 +196,29 @@ describe('the pictures of the light table', () => {
     expect(other?.full.src).toBe(other?.picture.src);
   });
 
+  it('are not kept under the address of one they replaced', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    const cacheOf = async (address: string) => {
+      const { photos } = await shootOf(address);
+      const { edit } = photos.find(({ id }: { id: string }) => id === 'B');
+      return edit.picture.src;
+    };
+    const caches = await whileServing(async (address) => {
+      const before = await cacheOf(address);
+      await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'a newer one');
+      const after = await cacheOf(address);
+      return Promise.all(
+        [before, after].map(async (src) => {
+          const response = await fetch(`${address}${src}`);
+          return [await response.text(), response.headers.get('cache-control')];
+        }),
+      );
+    });
+    expect(caches[0]).toEqual(['a newer one', 'no-store']);
+    expect(caches[1]?.[1]).toContain('immutable');
+  });
+
   it('are not kept where they only stand in for the photo', async () => {
     await pickLisbon();
     fakeTools.broken = new Set(['embedded.jpg']);

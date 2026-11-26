@@ -151,6 +151,22 @@ export const pictureOf = Effect.fn('pictureOf')(function* (
   } satisfies Picture;
 });
 
+/** Whether a picture's file is still the version that was asked for. */
+export const isCurrent = Effect.fn('isCurrent')(function* (
+  { open }: Gallery,
+  photo: string,
+  kind: string,
+  version: string,
+) {
+  const file = fileOf(open, photo, kind);
+  return file === undefined
+    ? false
+    : yield* versionOf(file).pipe(
+        Effect.map((current) => current === version),
+        Effect.orElseSucceed(() => false),
+      );
+});
+
 const smallQuality = '82';
 
 /** A smaller copy of a picture, which is made the first time. */
