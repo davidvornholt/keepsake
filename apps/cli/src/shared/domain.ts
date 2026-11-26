@@ -256,6 +256,8 @@ export const Publication = Schema.Struct({
       cameraAsset: Schema.String,
       /** The SHA-256 of the file that was published. */
       digest: Schema.String,
+      /** Earlier uploads of the photo, which may wait in the album for the trash. */
+      replaced: Schema.optionalKey(Schema.Array(Schema.String)),
     }),
   ),
 });

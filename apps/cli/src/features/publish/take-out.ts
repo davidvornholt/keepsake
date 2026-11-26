@@ -1,8 +1,13 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
 import { readAlbum } from '../../shared/album.ts';
-import { PickList, Removed } from '../../shared/domain.ts';
+import {
+  type Album,
+  PickList,
+  Publication,
+  Removed,
+} from '../../shared/domain.ts';
 import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
-import { removeFromAlbum } from '../../shared/immich.ts';
+import { albumAssets, removeFromAlbum } from '../../shared/immich.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
@@ -24,6 +29,41 @@ const pickedOf = Effect.fn('pickedOf')(function* ({ files }: OpenShoot) {
 });
 
 /**
+ * Every upload of each photo that is in the album now, also those that were
+ * replaced and wait there for the trash.
+ */
+const versionsIn = Effect.fn('versionsIn')(function* (
+  open: OpenShoot,
+  album: Album | null,
+) {
+  const versions = new Map<string, ReadonlyArray<string>>();
+  if (album === null) {
+    return versions;
+  }
+  const there = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
+  const published = yield* readJson(Publication, open.files.publication);
+  const known = [
+    ...album.photos.map(({ photo, asset }) => ({ photo, assets: [asset] })),
+    ...Option.match(published, {
+      onNone: () => [],
+      onSome: ({ photos }) =>
+        photos.map(({ photo, asset, replaced }) => ({
+          photo,
+          assets: [asset, ...(replaced ?? [])],
+        })),
+    }),
+  ];
+  for (const { photo, assets } of known) {
+    const now = new Set([...(versions.get(photo) ?? []), ...assets]);
+    versions.set(
+      photo,
+      [...now].filter((asset) => there.has(asset)),
+    );
+  }
+  return versions;
+});
+
+/**
  * Takes photos out of the album, or out of those that are to be in it, or says
  * why they were taken out before. They stay in the library.
  */
@@ -37,22 +77,22 @@ export const takeOut = Effect.fn('takeOut')(function* (
   const all = yield* readAllRemoved(open);
   const before = all.filter(isOutOf(album?.id));
   const picked = yield* pickedOf(open);
+  const versions = yield* versionsIn(open, album);
   const photos = yield* Effect.forEach(names, (one) => photoNamed(open, one));
   const found = yield* Effect.forEach(photos, ({ id }) => {
     const there = album?.photos.find(({ photo }) => photo === id);
     const earlier = before.find(({ photo }) => photo === id);
-    return there === undefined && earlier === undefined && !picked.has(id)
+    const assets = versions.get(id) ?? [];
+    return there === undefined &&
+      assets.length === 0 &&
+      earlier === undefined &&
+      !picked.has(id)
       ? Effect.fail(
           new InvalidInput({
             message: `${id} isn’t in the album, isn’t to be in it, and never was taken out of it.`,
           }),
         )
-      : Effect.succeed({
-          id,
-          asset: there?.asset,
-          assets: there === undefined ? [] : [there.asset],
-          at: earlier?.at,
-        });
+      : Effect.succeed({ id, asset: there?.asset, assets, at: earlier?.at });
   });
   const assets = found.flatMap((one) => one.assets);
   const refused =

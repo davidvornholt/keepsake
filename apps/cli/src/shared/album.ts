@@ -26,6 +26,16 @@ export const publishedAlbum = (published: Publication) =>
     ? albumNamed(published.album)
     : albumWithId(published.albumId);
 
+/** The photos of the shoot by the last part of their id, for names to match. */
+const photosByBase = (open: OpenShoot) => {
+  const byBase = new Map<string, Array<string>>();
+  for (const id of open.photos.keys()) {
+    const base = id.slice(id.lastIndexOf('/') + 1);
+    byBase.set(base, [...(byBase.get(base) ?? []), id]);
+  }
+  return byBase;
+};
+
 /** Which photo of the shoot each asset of the album is, where that is known. */
 const photosIn = (
   open: OpenShoot,
@@ -35,15 +45,18 @@ const photosIn = (
   const photoOf = new Map(
     published.photos.map(({ asset, photo }) => [asset, photo] as const),
   );
-  const byBase = new Map(
-    [...open.photos.keys()].map(
-      (id) => [id.slice(id.lastIndexOf('/') + 1), id] as const,
-    ),
+  const replaced = new Set(
+    published.photos.flatMap((one) => one.replaced ?? []),
   );
+  const byBase = photosByBase(open);
   const inAlbum = new Map<string, AlbumPhoto>();
   for (const { id, fileName, favorite } of assets) {
     const base = finishedName.exec(fileName)?.groups?.base ?? '';
-    const photo = photoOf.get(id) ?? byBase.get(base);
+    const [match, ...others] = byBase.get(base) ?? [];
+    // An upload keepsake doesn't know is the photo of its name, unless that
+    // names several or keepsake replaced the upload since.
+    const named = replaced.has(id) || others.length > 0 ? undefined : match;
+    const photo = photoOf.get(id) ?? named;
     // An outdated version may be there too until it is trashed.
     const isOutdated = !photoOf.has(id) && inAlbum.has(photo ?? '');
     if (photo !== undefined && !isOutdated) {

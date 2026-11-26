@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
   editLisbon,
   failureOf,
+  judge,
+  photosFolder,
   pickLisbon,
   runOk,
   scanLisbon,
@@ -92,6 +94,29 @@ describe('keepsake publish, with an album that changed in Immich', () => {
     });
     expect(await inAlbum()).toEqual(['A1', 'B', 'C']);
     expect(fakeTools.albums[0]?.assets).toHaveLength(3);
+  });
+
+  it('knows a photo only by a name that no other photo has', async () => {
+    fakeTools.files = [
+      { file: 'one/B.ARW', second: 0 },
+      { file: 'two/B.ARW', second: 600 },
+    ];
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
+    await runOk('cull', 'lisbon');
+    await runOk('pick', 'lisbon');
+    await editLisbon('one/B');
+    await runOk('publish', 'lisbon', 'one/B');
+    const [album] = fakeTools.albums;
+    if (album !== undefined) {
+      const stranger = { id: 'asset-9', fileName: 'B-keepsake.jpg' };
+      album.assets = [
+        ...album.assets,
+        { ...stranger, favorite: false, trashed: false },
+      ];
+    }
+    await runOk('publish', 'lisbon', 'one/B');
+    expect(await inAlbum()).toEqual(['one/B']);
   });
 
   it('takes the newer of two versions until the older is trashed', async () => {
@@ -202,6 +227,20 @@ describe('keepsake take-out', () => {
 });
 
 describe('keepsake take-out, with what Immich does', () => {
+  it('takes out the upload of a photo that waits for the trash', async () => {
+    await publishLisbon();
+    await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');
+    await runOk('publish', 'lisbon');
+    const because = ['--because', 'It is blurred.'];
+    await runOk('take-out', 'lisbon', 'B', ...because);
+    expect(firstAlbum()?.map(({ id }) => id)).toEqual(['asset-1', 'asset-5']);
+    const { standing } = await runOk('show', 'lisbon', 'B');
+    expect(standing).toMatchObject({
+      kind: 'taken-out',
+      because: 'It is blurred.',
+    });
+  });
+
   it('notes only what Immich took out', async () => {
     await publishLisbon();
     fakeTools.refused.add('asset-3');

@@ -129,17 +129,22 @@ const send = Effect.fn('send')(function* (
   job: Job,
   album: string,
 ) {
-  const { photo, digest } = job;
+  const { photo, digest, before } = job;
   const files = open.files.edit(photo);
   const asset = yield* uploadPhoto(files.final, album);
   const cameraAsset = yield* uploadPhoto(files.camera, null);
   yield* stackPhotos(asset, cameraAsset);
   yield* tagPhoto(tag, asset);
+  const isReplaced = before !== undefined && before.asset !== asset;
+  const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
   return {
     photo,
     asset,
     cameraAsset,
     digest,
+    replaced: isReplaced
+      ? [...replaced.filter((one) => one !== asset), before.asset]
+      : replaced,
   } satisfies Published;
 });
 
