@@ -24,6 +24,31 @@ const claimOf = (files: ShootFiles, id: string) =>
 
 const idLength = 8;
 
+/**
+ * Puts a file of the hand-overs in place whole, unless one is there already.
+ * It is written beside first and linked to where it is found, so that what
+ * stops on the way leaves nothing anyone takes for it. Says whether it is
+ * this one that is there.
+ */
+const publish = Effect.fn('publish')(function* (
+  files: ShootFiles,
+  name: string,
+  text: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const draft = `${files.handOvers}/.${name}.${crypto.randomUUID()}`;
+  const removeDraft = fs.remove(draft, { force: true }).pipe(Effect.ignore);
+  return yield* fs.writeFileString(draft, `${text}\n`).pipe(
+    Effect.andThen(fs.link(draft, `${files.handOvers}/${name}`)),
+    Effect.as(true),
+    Effect.catchReason('PlatformError', 'AlreadyExists', () =>
+      Effect.succeed(false),
+    ),
+    Effect.mapError(storeFailed),
+    Effect.ensuring(removeDraft),
+  );
+});
+
 /** What was spent on the shoot so far. */
 export const spentOn = (files: ShootFiles) =>
   Effect.map(readJson(SpendingRecord, files.spending), (record) =>
@@ -172,7 +197,6 @@ export const claim = Effect.fn('claim')(function* (
   id: string,
   by: Claim['by'],
 ) {
-  const fs = yield* FileSystem.FileSystem;
   const taken: Claim = {
     by,
     at: DateTime.formatIso(yield* DateTime.now),
@@ -181,15 +205,7 @@ export const claim = Effect.fn('claim')(function* (
   const text = yield* Schema.encodeEffect(Schema.fromJsonString(Claim))(
     taken,
   ).pipe(Effect.mapError(storeFailed));
-  return yield* fs
-    .writeFileString(claimOf(files, id), `${text}\n`, { flag: 'wx' })
-    .pipe(
-      Effect.as(true),
-      Effect.catchReason('PlatformError', 'AlreadyExists', () =>
-        Effect.succeed(false),
-      ),
-      Effect.mapError(storeFailed),
-    );
+  return yield* publish(files, `${id}${claimed}`, text);
 });
 
 export const claimOn = (files: ShootFiles, id: string) =>
