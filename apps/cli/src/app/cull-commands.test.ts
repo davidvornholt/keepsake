@@ -217,6 +217,25 @@ describe('keepsake pick', () => {
     expect(asked('album')).toHaveLength(1);
   });
 
+  it('asks nothing again that it was answered before it stopped', async () => {
+    await scanLisbon();
+    await runOk('cull', 'lisbon');
+    fakeModels.answers.motifs = {
+      motifs: [{ motif: 'a heron', photos: [1, 2] }],
+    };
+    fakeModels.answers.ranking = () =>
+      Response.json({ error: { message: 'limit' } }, { status: 400 });
+    await failureOf('pick', 'lisbon', '--maximum', '1');
+    const counts = () =>
+      (['album', 'motifs', 'motif'] as const).map((name) => asked(name).length);
+    const before = counts();
+    expect(before).toEqual([1, 1, 1]);
+    fakeModels.answers.ranking = { bestFirst: [1] };
+    await runOk('pick', 'lisbon', '--maximum', '1');
+    expect(counts()).toEqual(before);
+    expect(existsSync(shootFile('pick-answers'))).toBe(false);
+  });
+
   it('needs verdicts first', async () => {
     await scanLisbon();
     const failure = await failureOf('pick', 'lisbon');

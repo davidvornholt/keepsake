@@ -6,11 +6,11 @@ import {
   type Verdict,
 } from '../../shared/domain.ts';
 import { StepMissing } from '../../shared/errors/errors.ts';
-import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
-import { type Piece, Vision } from '../../shared/vision.ts';
+import { Vision } from '../../shared/vision.ts';
+import { askOnce, forgetAnswers } from './asked.ts';
 import { withoutSameMotifs } from './motifs.ts';
 import { bestOf } from './ranking.ts';
 
@@ -80,7 +80,6 @@ const withoutRepeats = Effect.fn('withoutRepeats')(function* (
   open: OpenShoot,
   candidates: ReadonlyArray<Pick>,
 ) {
-  const vision = yield* Vision;
   const kept: Array<Pick> = [];
   const repeats: Array<LeftOut> = [];
   const rounds = Array.from(
@@ -97,23 +96,15 @@ const withoutRepeats = Effect.fn('withoutRepeats')(function* (
         kept.push(...round);
         return;
       }
-      const pictures = yield* Effect.forEach(
-        shown,
-        ({ photo }) =>
-          rendered(open.files.preview(photo), { longSide: pictureSide }),
-        { concurrency: 4 },
-      );
-      const answer = yield* vision.ask({
+      const answer = yield* askOnce(open, {
         role,
         name: 'album',
         schema: Answer,
         pieces: [
-          ...pictures.flatMap(
-            (picture, index): Array<Piece> => [
-              `Photo ${index + 1}, score ${shown[index]?.score}:`,
-              picture,
-            ],
-          ),
+          ...shown.flatMap(({ photo, score }, index) => [
+            `Photo ${index + 1}, score ${score}:`,
+            { photo, longSide: pictureSide },
+          ]),
           question(before.length, shown.length),
         ],
       });
@@ -188,6 +179,7 @@ export const pick = Effect.fn('pick')(function* (
         };
       });
   yield* writeJson(PickList, open.files.picks, list);
+  yield* forgetAnswers(open);
   return {
     shoot: name,
     candidates: candidates.length,

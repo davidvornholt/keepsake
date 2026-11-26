@@ -1,9 +1,8 @@
 import { Effect, Schema } from 'effect';
 import type { Pick } from '../../shared/domain.ts';
-import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import type { OpenShoot } from '../../shared/store.ts';
-import { type Piece, Vision } from '../../shared/vision.ts';
+import { askOnce } from './asked.ts';
 import { variedBest } from './varied.ts';
 
 /** How many photos are compared with each other at once. */
@@ -63,18 +62,15 @@ const compare = Effect.fn('compare')(function* (
   open: OpenShoot,
   group: ReadonlyArray<Pick>,
 ) {
-  const vision = yield* Vision;
-  const pictures = yield* Effect.forEach(group, ({ photo }) =>
-    rendered(open.files.preview(photo), { longSide: pictureSide }),
-  );
-  const { bestFirst } = yield* vision.ask({
+  const { bestFirst } = yield* askOnce(open, {
     role,
     name: 'ranking',
     schema: Ranking,
     pieces: [
-      ...pictures.flatMap(
-        (picture, index): Array<Piece> => [`Photo ${index + 1}:`, picture],
-      ),
+      ...group.flatMap(({ photo }, index) => [
+        `Photo ${index + 1}:`,
+        { photo, longSide: pictureSide },
+      ]),
       question,
     ],
   });
