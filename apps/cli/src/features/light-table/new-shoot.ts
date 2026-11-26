@@ -12,6 +12,7 @@ import {
   type ShootFiles,
   shootFiles,
   shootNames,
+  shootsDirectory,
   writeJson,
 } from '../../shared/store.ts';
 import { isSubscription } from '../../shared/subscriptions/subscriptions.ts';
@@ -100,6 +101,25 @@ const isWorthKeeping = Effect.fn('isWorthKeeping')(function* (
   );
 });
 
+const forgottenPrefix = '.forgotten-';
+
+/**
+ * Removes what is left of shoots that were forgotten, since removing one may
+ * have stopped half-way.
+ */
+export const removeForgotten = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const shoots = yield* shootsDirectory;
+  const names = yield* fs.readDirectory(shoots);
+  yield* Effect.forEach(
+    names.filter((name) => name.startsWith(forgottenPrefix)),
+    (name) =>
+      fs.remove(path.join(shoots, name), { recursive: true, force: true }),
+    { discard: true },
+  );
+}).pipe(Effect.ignore);
+
 /** Forgets a shoot that nothing was made from yet. The photos stay. */
 export const forgetShoot = Effect.fn('forgetShoot')(function* (name: string) {
   const fs = yield* FileSystem.FileSystem;
@@ -115,12 +135,13 @@ export const forgetShoot = Effect.fn('forgetShoot')(function* (name: string) {
     // Moved aside at once, so nothing finds half of it while it is removed.
     const aside = path.join(
       path.dirname(files.root),
-      `.forgotten-${crypto.randomUUID()}`,
+      `${forgottenPrefix}${crypto.randomUUID()}`,
     );
     yield* fs.rename(files.root, aside).pipe(Effect.mapError(storeFailed));
     yield* fs
-      .remove(aside, { recursive: true })
+      .remove(aside, { recursive: true, force: true })
       .pipe(Effect.mapError(storeFailed));
+    yield* removeForgotten;
   }).pipe(
     exclusively(files),
     Effect.catchTag('ShootBusy', () =>

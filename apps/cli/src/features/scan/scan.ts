@@ -189,16 +189,14 @@ const forgetStrays = Effect.fn('forgetStrays')(function* (files: ShootFiles) {
   yield* Effect.forEach(
     [files.previews, files.photos, files.moments],
     (stray) =>
-      fs
-        .remove(stray, { recursive: true, force: true })
-        .pipe(
-          Effect.mapError(
-            ({ message }) =>
-              new StoreFailed({
-                message: `Could not use ${stray}: ${message}`,
-              }),
-          ),
+      fs.remove(stray, { recursive: true, force: true }).pipe(
+        Effect.mapError(
+          ({ message }) =>
+            new StoreFailed({
+              message: `Could not use ${stray}: ${message}`,
+            }),
         ),
+      ),
     { discard: true },
   );
 });

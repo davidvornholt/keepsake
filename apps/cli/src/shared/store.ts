@@ -95,7 +95,8 @@ export const readBytes = (path: string) =>
     return yield* fs.readFile(path).pipe(Effect.mapError(storeFailed(path)));
   });
 
-const shootsDirectory = Effect.gen(function* () {
+/** Where every shoot has its folder. */
+export const shootsDirectory = Effect.gen(function* () {
   const path = yield* Path.Path;
   const data = yield* xdgDirectory('XDG_DATA_HOME', '.local/share');
   return path.join(data, 'keepsake', 'shoots');

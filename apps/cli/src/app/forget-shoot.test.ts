@@ -148,4 +148,17 @@ describe('forgetting a shoot', () => {
     expect(await forget()).toBe(204);
     expect(existsSync(shootFile())).toBe(false);
   });
+
+  it('leaves nothing of one whose removal stopped half-way', async () => {
+    const left = (name: string) =>
+      join(fake.home, 'data', 'keepsake', 'shoots', name);
+    await Bun.write(join(left('.forgotten-1'), 'shoot.json'), '{}');
+    await whileServing(async () => undefined);
+    expect(existsSync(left('.forgotten-1'))).toBe(false);
+    await Bun.write(join(left('.forgotten-2'), 'shoot.json'), '{}');
+    await scanLisbon();
+    await forget();
+    expect(existsSync(left('.forgotten-2'))).toBe(false);
+    expect(existsSync(left('lisbon'))).toBe(false);
+  });
 });
