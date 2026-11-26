@@ -54,7 +54,7 @@ export const askOnce = Effect.fn('askOnce')(function* <S extends AnswerSchema>(
   return answer;
 });
 
-/** Forgets the answers of a pick that is done. */
+/** Forgets the answers of a pick that is done or starts over. */
 export const forgetAnswers = (open: OpenShoot) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

@@ -141,6 +141,10 @@ export const pick = Effect.fn('pick')(function* (
 ) {
   const { model } = yield* Vision;
   const { name } = open.shoot;
+  if (options.again) {
+    // Starting over means not taking the answers of a pick that stopped.
+    yield* forgetAnswers(open);
+  }
   const judged = yield* verdicts(open, model);
   if (judged.length === 0) {
     return yield* new StepMissing({

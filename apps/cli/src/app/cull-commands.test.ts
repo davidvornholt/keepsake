@@ -225,14 +225,17 @@ describe('keepsake pick', () => {
     };
     fakeModels.answers.ranking = () =>
       Response.json({ error: { message: 'limit' } }, { status: 400 });
-    await failureOf('pick', 'lisbon', '--maximum', '1');
     const counts = () =>
       (['album', 'motifs', 'motif'] as const).map((name) => asked(name).length);
-    const before = counts();
-    expect(before).toEqual([1, 1, 1]);
+    await failureOf('pick', 'lisbon', '--maximum', '1');
+    expect(counts()).toEqual([1, 1, 1]);
+    await failureOf('pick', 'lisbon', '--maximum', '1');
+    expect(counts()).toEqual([1, 1, 1]);
+    await failureOf('pick', 'lisbon', '--maximum', '1', '--again');
+    expect(counts()).toEqual([2, 2, 2]);
     fakeModels.answers.ranking = { bestFirst: [1] };
     await runOk('pick', 'lisbon', '--maximum', '1');
-    expect(counts()).toEqual(before);
+    expect(counts()).toEqual([2, 2, 2]);
     expect(existsSync(shootFile('pick-answers'))).toBe(false);
   });
 
