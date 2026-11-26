@@ -182,9 +182,7 @@ export const useComposing = (photo: PhotoView) => {
   return {
     draft,
     setDraft,
-    /** Whether it is a wish for a photo that comes in, which can't show where. */
     isWish: wished !== null,
-    /** Whether boxes are drawn on the photo, which only a change has. */
     canDraw: draft !== null && wished === null,
     isSaved: (saved?.note ?? '') !== '',
     selected,

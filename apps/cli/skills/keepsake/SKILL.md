@@ -46,7 +46,7 @@ When the user handed something over, or asks you to go through it:
    - `change`: `edit <shoot> --mark <id> --budget <what is left>`, which takes the note as the wish and changes only what is in the boxes, if there are any. Give `--wish` when the note needs to be clearer. Then `publish <shoot> <photo>`.
    - `put-in`: `edit <shoot> --mark <id> --budget <what is left>`, unless it has a `final` and the mark no note, then `publish <shoot> <photo>`.
    - `take-out`: `take-out <shoot> <photo> --because "<the note, or what the user said about it>"`.
-   - `swap`: put in `photo`, and take out `other` for it.
+   - `swap`: put in `photo` as for a `put-in`, whose note is the wish for its edit, and take out `other` with `--because "Replaced by <photo>"`.
 4. `answer <shoot> <id> --done "<what changed, in a sentence>"`, or `--not-done "<why>"`, right after each one is in the album or out of it. The page shows it to the user with the photo, so they know where to look again.
 5. With an `album`, go on with its `photos` after the marks, which may take some of them out: `edit <shoot> <photo...> --budget <what is left of agreedDollars>`, look at them, and `publish <shoot> <photo...>`. The order is done when all of them are in the album. Where the budget ends first, publish what is done and ask.
 6. `explain <shoot>` when the album changed.
