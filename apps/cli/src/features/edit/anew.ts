@@ -79,8 +79,23 @@ export const isGoingOn = (files: EditFiles, anew: string) =>
     Option.exists(progress, ({ notDone }) => notDone === null),
   );
 
-export const noteProgress = (
+/**
+ * Notes where the photo's edit is in the command. An edit outside one that
+ * finishes the photo retires the command that stopped there, so that command
+ * run again starts the photo over instead of taking what it made then.
+ */
+export const noteProgress = Effect.fn('noteProgress')(function* (
   files: EditFiles,
-  anew: string,
+  anew: string | null,
   notDone: ReadonlyArray<string> | null,
-) => writeJson(Progress, files.anew, { anew, notDone });
+) {
+  if (anew !== null) {
+    return yield* writeJson(Progress, files.anew, { anew, notDone });
+  }
+  if (notDone !== null) {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs
+      .remove(files.anew, { force: true })
+      .pipe(Effect.mapError(({ message }) => new StoreFailed({ message })));
+  }
+});

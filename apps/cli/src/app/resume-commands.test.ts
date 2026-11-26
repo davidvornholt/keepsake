@@ -88,6 +88,19 @@ describe('keepsake edit, starting over after it was stopped', () => {
     },
   );
 
+  it('starts anew once a plain edit finished what it left', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    fakeModels.answers.assessment = failing;
+    expect((await editLisbon('B', '--again')).failed).toHaveLength(1);
+    expect(fakeModels.edits).toHaveLength(2);
+    fakeModels.answers.assessment = undefined;
+    expect((await editLisbon('B')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(2);
+    expect((await editLisbon('B', '--again')).edited).toBe(1);
+    expect(fakeModels.edits).toHaveLength(3);
+  });
+
   it('goes on with a first edit with a wish', async () => {
     await pickLisbon();
     fakeModels.answers.assessment = failing;

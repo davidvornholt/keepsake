@@ -256,7 +256,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   const former = Option.getOrNull(yield* editOf(open, photo.id));
   const isResumed = anew !== null && (yield* isGoingOn(files, anew));
   const noted = (notDone: ReadonlyArray<string> | null) =>
-    anew === null ? Effect.void : noteProgress(files, anew, notDone);
+    noteProgress(files, anew, notDone);
   if (!isResumed) {
     yield* keepEarlier(files);
   }
