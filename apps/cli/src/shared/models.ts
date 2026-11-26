@@ -1,7 +1,7 @@
 import { AnthropicClient, AnthropicLanguageModel } from '@effect/ai-anthropic';
 import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai-compat';
-import { Effect, Layer, Redacted } from 'effect';
-import { FetchHttpClient } from 'effect/http';
+import { Context, Effect, Layer, Redacted } from 'effect';
+import { FetchHttpClient, HttpClient } from 'effect/http';
 import {
   type Access,
   type Provider,
@@ -87,6 +87,26 @@ export const accessTo = Effect.fn('accessTo')(function* (provider: Provider) {
 
 const trailingSlashes = /\/+$/u;
 
+/**
+ * Runs when a model's answer begins to arrive, before it is read: from then
+ * on the request is paid for, even if its answer can't be read.
+ */
+export const AnswerBegins = Context.Reference<Effect.Effect<void>>(
+  '@keepsake/cli/shared/AnswerBegins',
+  { defaultValue: () => Effect.void },
+);
+
+const okStatus = 200;
+
+const tellingWhenAnswered = (client: HttpClient.HttpClient) =>
+  HttpClient.tap(client, (response) =>
+    Effect.gen(function* () {
+      if (response.status === okStatus) {
+        yield* yield* AnswerBegins;
+      }
+    }),
+  );
+
 /** Where a provider's API that understands OpenAI's requests is. */
 export const openAiUrl = (
   provider: Exclude<Provider, 'anthropic'>,
@@ -125,7 +145,11 @@ const apiLayer = (provider: Provider, model: string) =>
               { max_completion_tokens: limit },
       }).pipe(
         Layer.provide(
-          OpenAiClient.layer({ apiKey, apiUrl: openAiUrl(provider, access) }),
+          OpenAiClient.layer({
+            apiKey,
+            apiUrl: openAiUrl(provider, access),
+            transformClient: tellingWhenAnswered,
+          }),
         ),
       );
     }),

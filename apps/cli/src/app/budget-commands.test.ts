@@ -42,12 +42,15 @@ const mostOfLastEdit = () =>
 
 const free = { prompt_tokens: 0, completion_tokens: 0 };
 
-const spentOn = (model: string) => {
+/** What `spending.json` holds for a model. */
+const recordOf = (model: string) => {
   const path = shootFile('spending.json');
   return existsSync(path)
-    ? (JSON.parse(readFileSync(path, 'utf8'))[model]?.dollars ?? 0)
-    : 0;
+    ? JSON.parse(readFileSync(path, 'utf8'))[model]
+    : undefined;
 };
+
+const spentOn = (model: string) => recordOf(model)?.dollars ?? 0;
 
 /** Every version fails its review, so another attempt is wanted. */
 const everyVersionFails = () => {
@@ -133,6 +136,24 @@ describe('keepsake edit, with a budget', () => {
     expect(fakeModels.asked.map((question) => question.outputLimit)).toEqual(
       fakeModels.asked.map(() => outputLimit),
     );
+  });
+});
+
+describe('keepsake edit, when a question’s answer breaks off', () => {
+  it('counts it as spent and doesn’t ask again', async () => {
+    await pickLisbon();
+    fakeModels.answers.crops = () =>
+      new Response('{"id":"answer","choices":[{"in', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const before = recordOf(judge);
+    // Covers one question about the crop at its most, not two.
+    const result = await editLisbon('B', '--budget', '0.5');
+    expect(asked('crops')).toHaveLength(1);
+    expect(result.failed[0].reason).toContain('counted as spent');
+    expect(recordOf(judge).calls).toBe(before.calls + 1);
+    expect(spentOn(judge) - before.dollars).toBeGreaterThan(oneQuestion);
   });
 });
 

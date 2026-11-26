@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schedule, type Schema } from 'effect';
+import { Context, Effect, Exit, Layer, Schedule, type Schema } from 'effect';
 import {
   AiError,
   LanguageModel,
@@ -11,7 +11,7 @@ import {
   type OverBudget,
   type StoreFailed,
 } from './errors/errors.ts';
-import { modelName, visionLayer } from './models.ts';
+import { AnswerBegins, modelName, visionLayer } from './models.ts';
 import { bytesOf, type RequestSize, type Usage } from './prices.ts';
 import { type Paid, Spending } from './spending.ts';
 
@@ -73,6 +73,69 @@ const sizeOf = ({ role, pieces }: Question<AnswerSchema>): RequestSize => ({
   versions: 1,
 });
 
+type Seen = { began: boolean; answered: boolean; usage?: Response.Usage };
+
+/**
+ * Watches a request: counts it at its most once its answer begins, and sees
+ * the answer before its shape is checked, so an answer of the wrong shape is
+ * counted as what it used. A write that fails when the answer begins is
+ * tried again, and reported, when the request settles or the step ends.
+ */
+const watching =
+  (paid: Paid, seen: Seen) =>
+  <A, E, R>(request: Effect.Effect<A, E, R>) =>
+    request.pipe(
+      Effect.provideService(
+        AnswerBegins,
+        Effect.sync(() => {
+          seen.began = true;
+        }).pipe(Effect.andThen(paid.answered), Effect.ignore),
+      ),
+      Effect.provideService(
+        Telemetry.CurrentSpanTransformer,
+        ({ response: pieces }) => {
+          seen.answered = true;
+          for (const piece of pieces) {
+            if (piece.type === 'finish') {
+              seen.usage = piece.usage;
+            }
+          }
+        },
+      ),
+    );
+
+/** Asks once, and counts what the answer cost however it ends. */
+const askOnce =
+  <S extends AnswerSchema>(
+    language: LanguageModel.LanguageModel,
+    model: string,
+    question: Question<S>,
+  ) =>
+  (paid: Paid) =>
+    Effect.gen(function* () {
+      const seen: Seen = { began: false, answered: false };
+      const exit = yield* language
+        .generateObject({
+          objectName: question.name,
+          schema: question.schema,
+          prompt: Prompt.make([
+            { role: 'system', content: question.role },
+            Prompt.userMessage({ content: question.pieces.map(part) }),
+          ]),
+        })
+        .pipe(watching(paid, seen), Effect.exit);
+      if (seen.answered) {
+        yield* paid.settle(
+          seen.usage === undefined ? undefined : usageOf(seen.usage),
+        );
+      } else if (seen.began && Exit.isFailure(exit)) {
+        return yield* new ModelFailed({
+          message: `${model} answered, but its answer couldn't be read. It may have cost up to $${paid.most.toFixed(2)}, which is counted as spent, so keepsake didn't ask again.`,
+        });
+      }
+      return yield* exit;
+    });
+
 export type VisionModel = {
   /** The model's name with its provider. */
   readonly model: string;
@@ -95,45 +158,8 @@ export class Vision extends Context.Service<Vision, VisionModel>()(
         const ask = Effect.fn('Vision.ask')(function* <S extends AnswerSchema>(
           question: Question<S>,
         ) {
-          const once = (paid: Paid) =>
-            Effect.gen(function* () {
-              const seen: { answered: boolean; usage?: Response.Usage } = {
-                answered: false,
-              };
-              const exit = yield* language
-                .generateObject({
-                  objectName: question.name,
-                  schema: question.schema,
-                  prompt: Prompt.make([
-                    { role: 'system', content: question.role },
-                    Prompt.userMessage({ content: question.pieces.map(part) }),
-                  ]),
-                })
-                .pipe(
-                  // Sees the answer before its shape is checked, so an answer
-                  // of the wrong shape is counted too.
-                  Effect.provideService(
-                    Telemetry.CurrentSpanTransformer,
-                    ({ response: pieces }) => {
-                      seen.answered = true;
-                      for (const piece of pieces) {
-                        if (piece.type === 'finish') {
-                          seen.usage = piece.usage;
-                        }
-                      }
-                    },
-                  ),
-                  Effect.exit,
-                );
-              if (seen.answered) {
-                yield* paid.settle(
-                  seen.usage === undefined ? undefined : usageOf(seen.usage),
-                );
-              }
-              return yield* exit;
-            });
           const response = yield* spending
-            .paying(model, sizeOf(question), once)
+            .paying(model, sizeOf(question), askOnce(language, model, question))
             .pipe(
               // An answer of the wrong shape is asked for again at once, and
               // a busy model later. Each try is paid for.
