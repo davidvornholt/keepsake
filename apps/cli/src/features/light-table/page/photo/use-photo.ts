@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Box, MarkKind, PhotoView, Picture } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { favoriteHint } from '../app/use-table.ts';
 import { isFavorite, markedIn, type Pile } from '../data/derive.ts';
+import type { Unsaved } from '../data/store-state.ts';
 import { actionFor, kindOfKey, offeredFor } from '../marks/act.ts';
 import type { Keys } from '../ui/keys.ts';
 import type { Version } from './compare.tsx';
@@ -92,18 +93,37 @@ type Boxes = Draft['boxes'];
 /** How many steps of drawing can be undone. */
 const remembered = 40;
 
+const draftOf = ({ note, boxes }: Unsaved): Draft => ({
+  note,
+  boxes: boxes.map((box) => ({ box, since: longAgo })),
+});
+
 /** The change that is being written, and what the owner does with it. */
 export const useComposing = (photo: PhotoView) => {
-  const { index, store } = useShootContext();
+  const { index, state, store } = useShootContext();
   const { open } = markedIn(index, photo.id);
   const saved = open?.kind === 'change' ? open : null;
-  const fresh = (): Draft => ({
-    note: saved?.note ?? '',
-    boxes: (saved?.boxes ?? []).map((box) => ({ box, since: longAgo })),
-  });
+  const unsaved = state.unsaved[photo.id] ?? null;
+  /** What is written when the change is begun: what wasn't saved, if any. */
+  const fresh = (): Draft =>
+    unsaved === null
+      ? {
+          note: saved?.note ?? '',
+          boxes: (saved?.boxes ?? []).map((box) => ({ box, since: longAgo })),
+        }
+      : draftOf(unsaved);
   const [draft, setDraft] = useState<Draft | null>(() =>
-    wasAskedToCompose(photo.id) ? fresh() : null,
+    wasAskedToCompose(photo.id) || unsaved !== null ? fresh() : null,
   );
+  // What was written comes back when keepsake didn't get it, also after
+  // another photo was shown meanwhile. It stays until it is saved again or
+  // let go of.
+  const isClosed = draft === null;
+  useEffect(() => {
+    if (unsaved !== null && isClosed) {
+      setDraft(draftOf(unsaved));
+    }
+  }, [unsaved, isClosed]);
   /** The boxes as they were before each thing done to them. */
   const [past, setPast] = useState<ReadonlyArray<Boxes>>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -118,7 +138,11 @@ export const useComposing = (photo: PhotoView) => {
     setDraft((now) =>
       now === null ? now : { ...now, boxes: change(now.boxes) },
     );
+  /** Closes the change, which lets go of what wasn't saved of it. */
   const end = () => {
+    if (unsaved !== null) {
+      store.forgetUnsaved(photo.id);
+    }
     setDraft(null);
     setPast([]);
     setSelected(null);

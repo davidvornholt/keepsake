@@ -6,10 +6,13 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
+import { fakeTools } from './fake-tools.ts';
 import {
   change,
   handOver,
   marksOf,
+  openMarksOf,
+  pickedOf,
   send,
   shootOf,
   statusOf,
@@ -105,6 +108,7 @@ describe('marks on the light table', () => {
     { ...change, kind: 'swap', other: 'D' },
     { ...change, other: 'C' },
     { ...change, boxes: [{ left: 0 }] },
+    { ...change, note: ' ' },
     'nonsense',
   ])('that make no sense are refused: %p', async (wanted) => {
     await pickLisbon();
@@ -114,6 +118,60 @@ describe('marks on the light table', () => {
       return { status, marks: await marksOf(address) };
     });
     expect(answer).toEqual({ status: 400, marks: [] });
+  });
+});
+
+describe('a hand-over on the light table', () => {
+  it('hands over only the marks that were looked over', async () => {
+    await pickLisbon();
+    const [status, marks] = await whileServing(
+      async (address) => {
+        const path = `${address}/api/shoots/lisbon/marks`;
+        await send('PUT', path, change);
+        const reviewed = await openMarksOf(address);
+        // Another tab puts something else in its place.
+        await send('PUT', path, { ...change, kind: 'take-out', note: '' });
+        const handed = handOver(address, { dollars: 0.75, marks: reviewed });
+        return [await statusOf(handed), await marksOf(address)];
+      },
+      { agent: 'start-agent' },
+    );
+    expect(status).toBe(409);
+    expect(
+      fakeTools.runs.filter(({ command }) => command === 'start-agent'),
+    ).toEqual([]);
+    expect(marks).toMatchObject([{ kind: 'take-out', handedOverAt: null }]);
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 0,
+      marks: [],
+    });
+  });
+
+  it('says the marks changed when the last one was taken back', async () => {
+    await pickLisbon();
+    const status = await whileServing(async (address) => {
+      const path = `${address}/api/shoots/lisbon/marks`;
+      const { id } = await (await send('PUT', path, change)).json();
+      const reviewed = await openMarksOf(address);
+      // Another tab takes it back.
+      await send('DELETE', `${path}/${id}`);
+      return statusOf(handOver(address, { dollars: 0.75, marks: reviewed }));
+    });
+    expect(status).toBe(409);
+  });
+
+  it('orders only the chosen photos that were looked over', async () => {
+    await pickLisbon();
+    const [stale, ordered] = await whileServing(async (address) => {
+      const picked = await pickedOf(address);
+      const first = await statusOf(
+        handOver(address, { dollars: 0.75, album: picked.slice(1) }),
+      );
+      await handOver(address, { dollars: 1.5, album: picked });
+      return [first, (await shootOf(address)).ordered];
+    });
+    expect(stale).toBe(409);
+    expect(ordered).toMatchObject({ dollars: 1.5 });
   });
 });
 

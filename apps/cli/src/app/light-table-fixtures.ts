@@ -71,10 +71,35 @@ export const marksOf = async (address: string) =>
 export const statusOf = (response: Promise<Response>) =>
   response.then(({ status }) => status);
 
-export const handOver = (address: string, body: object = {}) =>
+type Shown = {
+  readonly marks: ReadonlyArray<{
+    readonly id: string;
+    readonly handedOverAt: string | null;
+  }>;
+  readonly photos: ReadonlyArray<{
+    readonly id: string;
+    readonly standing: { readonly kind: string };
+  }>;
+};
+
+/** The open marks, as the page shows them to be looked over. */
+export const openMarksOf = async (address: string) =>
+  ((await shootOf(address)) as Shown).marks
+    .filter(({ handedOverAt }) => handedOverAt === null)
+    .map(({ id }) => id);
+
+/** The chosen photos, as the page orders them. */
+export const pickedOf = async (address: string) =>
+  ((await shootOf(address)) as Shown).photos
+    .filter(({ standing }) => standing.kind === 'picked')
+    .map(({ id }) => id);
+
+/** Hands over the open marks the page shows, unless `body` says otherwise. */
+export const handOver = async (address: string, body: object = {}) =>
   send('POST', `${address}/api/shoots/lisbon/hand-over`, {
     dollars: 0,
-    album: false,
+    marks: await openMarksOf(address),
+    album: null,
     ...body,
   });
 

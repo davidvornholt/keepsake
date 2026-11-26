@@ -17,6 +17,7 @@ import { useFocused } from '../ui/use-focused.ts';
 import { aboutOf, clockThere, maximumFor, timeZones } from './proposal.ts';
 import type { Folder } from './tree.ts';
 import { type Loaded, useLoaded } from './use-loaded.ts';
+import { useIsShown, whileShown } from './while-shown.ts';
 
 // The second step: what the album is about, whether the camera's clock was
 // right, and how many photos the album may have. Everything is proposed, so
@@ -244,6 +245,7 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
     most: String(maximumFor(folder.photos)),
   });
   const [isSending, setIsSending] = useState(false);
+  const isShown = useIsShown();
   const [problem, setProblem] = useState<string | null>(null);
   const about = typed ?? aboutOf(folder, from, to);
   const wanted = wantedOf(folder, about, clock, limit);
@@ -255,15 +257,16 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
     }
     setIsSending(true);
     setProblem(null);
-    makeShoot(wanted).then(
-      (shoot) => go({ screen: 'sheet', shoot, filters: everything }, 'replace'),
-      (error: unknown) => {
+    whileShown(makeShoot(wanted), isShown, {
+      onDone: (shoot) =>
+        go({ screen: 'sheet', shoot, filters: everything }, 'replace'),
+      onFailed: (error) => {
         setIsSending(false);
         setProblem(
           error instanceof Error ? error.message : 'Something went wrong.',
         );
       },
-    );
+    }).catch(() => undefined);
   };
 
   return (

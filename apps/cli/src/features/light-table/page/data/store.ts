@@ -28,9 +28,31 @@ import {
   withSeen,
 } from './changes.ts';
 import { type Core, makeCore } from './store-core.ts';
+import type { Undo } from './store-state.ts';
 
 // The shoot as the page knows it. A change shows at once and is sent to
 // keepsake; what keepsake then says replaces it.
+
+/** The undos as they are once the mark with this id is known as `mark`. */
+const renamed = (
+  undos: ReadonlyArray<Undo>,
+  id: string,
+  mark: Mark,
+): ReadonlyArray<Undo> => {
+  const swap = (one: Mark): Mark => (one.id === id ? mark : one);
+  return undos.map((undo) => {
+    if (undo.did === 'favorite') {
+      return undo;
+    }
+    return undo.did === 'made'
+      ? {
+          ...undo,
+          mark: swap(undo.mark),
+          replaced: undo.replaced === null ? null : swap(undo.replaced),
+        }
+      : { ...undo, mark: swap(undo.mark) };
+  });
+};
 
 const marking = (core: Core) => {
   let drafts = 0;
@@ -53,6 +75,7 @@ const marking = (core: Core) => {
     sending.then((mark) => {
       if (mark !== null) {
         core.setMarks((marks) => withSaved(marks, id, mark));
+        core.setUndos(renamed(core.undos(), id, mark));
       }
     });
     return draft;
@@ -66,6 +89,26 @@ const marking = (core: Core) => {
         await takeBackMark(core.name, real);
       }
     });
+  };
+
+  /**
+   * Keeps what was written for a change until it is written again, when
+   * keepsake didn't get it, so that it isn't lost while another photo is
+   * shown.
+   */
+  const keepUnsaved = (id: string, { photo, kind, note, boxes }: NewMark) => {
+    if (kind !== 'change') {
+      return;
+    }
+    core
+      .idOf(id)
+      .then((real) => {
+        if (real === null) {
+          const { unsaved } = core.get();
+          core.set({ unsaved: { ...unsaved, [photo]: { note, boxes } } });
+        }
+      })
+      .catch(() => undefined);
   };
 
   /** Sets the heart without remembering it for Undo. */
@@ -92,8 +135,14 @@ const marking = (core: Core) => {
       if (mark !== null) {
         const replaced = replacedBy(marks, mark);
         core.setUndos([...core.undos(), { did: 'made', mark, replaced }]);
+        keepUnsaved(mark.id, wanted);
       }
       return mark;
+    },
+    /** Lets go of a change that wasn't saved, once it is written again. */
+    forgetUnsaved: (photo: string) => {
+      const { [photo]: _, ...others } = core.get().unsaved;
+      core.set({ unsaved: others });
     },
     takeBack: async (mark: Mark) => {
       core.setUndos([...core.undos(), { did: 'took-back', mark }]);
@@ -113,12 +162,17 @@ const marking = (core: Core) => {
         await remove(last.mark.id);
       }
       const back = last.did === 'made' ? last.replaced : last.mark;
-      if (back !== null) {
-        put(wantedOf(back));
+      const again = back === null ? null : put(wantedOf(back));
+      if (back !== null && again !== null) {
+        // What is done before refers to the mark as it is now.
+        core.setUndos(renamed(core.undos(), back.id, again));
       }
     },
   };
 };
+
+const unsaved =
+  'A mark wasn’t saved, so nothing was handed over. Look them over and hand them over again.';
 
 const answering = (core: Core) => ({
   seen: async (id: string) => {
@@ -131,7 +185,16 @@ const answering = (core: Core) => ({
    */
   handOver: async (agreed: HandOver): Promise<number | null> => {
     core.setUndos([]);
-    const handed = await core.send(() => handOverMarks(core.name, agreed));
+    const handed = await core.send(async () => {
+      // A mark that is still being saved is handed over by the id it gets.
+      // One that isn't saved makes what was agreed to another hand-over.
+      const ids = await Promise.all(agreed.marks.map(core.idOf));
+      const marks = ids.filter((id) => id !== null);
+      if (marks.length < ids.length) {
+        throw new Error(unsaved);
+      }
+      return handOverMarks(core.name, { ...agreed, marks });
+    });
     return handed?.length ?? null;
   },
   /** Has an agent act on what was handed over before. */
@@ -227,7 +290,7 @@ export const makeShootStore = (name: string) => {
     subscribe: core.subscribe,
     get: core.get,
     reload: core.load,
-    dismissProblem: () => core.set({ problem: null }),
+    dismissProblem: core.dismissProblem,
     ...hinting(core),
     ...marking(core),
     ...answering(core),

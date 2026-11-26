@@ -1,16 +1,19 @@
-import { Effect, Schema, type Semaphore } from 'effect';
+import { Effect, Option, Schema, type Semaphore } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
+import { judgeOf } from '../../shared/judge.ts';
 import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
-import { openShoot, type ShootFiles } from '../../shared/store.ts';
+import { standings } from '../../shared/standing.ts';
+import { type OpenShoot, openShoot } from '../../shared/store.ts';
 import { startAgent } from './agent.ts';
 import { pictureWidths } from './contract.ts';
 import { setFavorite } from './favorites.ts';
 import { type Folders, lookAtFolder } from './folders.ts';
-import { handOver } from './hand-over.ts';
+import { handOver, toLaunch } from './hand-over.ts';
+import { acknowledge } from './handed.ts';
 import { saveLabels } from './labels.ts';
 import { makeMark, seeMark, takeBack } from './marks.ts';
 import { forgetShoot, makeShoot } from './new-shoot.ts';
-import { fullSize, smaller } from './pictures.ts';
+import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
 import { Favorite, HandOver, NewLabels, NewMark, NewShoot } from './schemas.ts';
 import type { Shoots } from './shoots.ts';
@@ -39,8 +42,8 @@ const shootAnswer = Effect.fn('shootAnswer')(function* (
   name: string,
   request: Request,
 ) {
-  const { json, revision } = yield* shoots.view(name);
-  const etag = `"${revision}"`;
+  const view = yield* shoots.view(name);
+  const etag = `"${view.etag}"`;
   const headers = {
     etag,
     'cache-control': 'private, no-cache',
@@ -49,19 +52,20 @@ const shootAnswer = Effect.fn('shootAnswer')(function* (
   };
   return request.headers.get('if-none-match') === etag
     ? new Response(null, { status: 304, headers })
-    : new Response(json, { headers });
+    : new Response(view.json, { headers });
 });
 
 type Named = {
   readonly shoot: string;
   readonly photo: string;
   readonly kind: string;
+  readonly version: string;
 };
 
 /** A picture in full size, or a smaller copy of it. */
 const pictureAnswer = Effect.fn('pictureAnswer')(function* (
   shoots: Shoots,
-  { shoot, photo, kind }: Named,
+  { shoot, photo, kind, version }: Named,
   request: Request,
 ) {
   const gallery = yield* shoots.galleryOf(shoot);
@@ -79,7 +83,12 @@ const pictureAnswer = Effect.fn('pictureAnswer')(function* (
   // Stands in for a photo that can't be read now, so it isn't kept.
   const isStandIn =
     width === undefined && kind === 'preview' && typeof found === 'string';
-  const headers = { 'cache-control': isStandIn ? 'no-store' : forever };
+  // A newer picture took the place of the one asked for, so it isn't kept
+  // under the old one's address.
+  const isOther = !(yield* isCurrent(gallery, photo, kind, version));
+  const headers = {
+    'cache-control': isStandIn || isOther ? 'no-store' : forever,
+  };
   return typeof found === 'string'
     ? new Response(Bun.file(found), { headers })
     : new Response(found, {
@@ -95,45 +104,83 @@ export type Has = {
   readonly workers: Semaphore.Semaphore;
   /** The program that starts an agent, if there is one. */
   readonly agent: string | undefined;
+  /** The hand-overs it is starting an agent for now. */
+  readonly launching: Set<string>;
 };
 
-/** Starts an agent when none waits for what is handed over. */
+const standingsOf = (open: OpenShoot) =>
+  Effect.flatMap(judgeOf(open, Option.none()), (model) =>
+    standings(open, model),
+  );
+
+/**
+ * Starts an agent for what is handed over, unless one waits for it, took it,
+ * or was started for it already. What the page took and no program said it
+ * started an agent for is started again, with the same ids, also while an
+ * agent waits, since that one can't take it.
+ */
 const callAgent = Effect.fn('callAgent')(function* (
-  files: ShootFiles,
-  name: string,
+  open: OpenShoot,
   program: string,
+  launching: Set<string>,
 ) {
-  if ((yield* agentWaitsSince(files)) === null) {
-    yield* startAgent(files, name, program);
+  const { files, shoot } = open;
+  const mayTake = (yield* agentWaitsSince(files)) === null;
+  const ids = yield* toLaunch(files, yield* standingsOf(open), {
+    launching,
+    mayTake,
+  });
+  if (ids.length === 0) {
+    return;
   }
+  const forget = Effect.sync(() => {
+    for (const id of ids) {
+      launching.delete(id);
+    }
+  });
+  for (const id of ids) {
+    launching.add(id);
+  }
+  yield* startAgent(
+    files,
+    { name: shoot.name, handOvers: ids, program },
+    {
+      isStarted: Effect.forEach(ids, (id) => acknowledge(files, id), {
+        discard: true,
+      }),
+      done: forget,
+    },
+  ).pipe(Effect.onError(() => forget));
 });
 
 /** Hands everything over, and has an agent act on it. */
 const handOverAnswer = Effect.fn('handOverAnswer')(function* (
-  { agent }: Has,
+  { agent, launching }: Has,
   name: string,
   request: Request,
 ) {
-  const { files } = yield* openShoot(name);
-  const handed = yield* handOver(files, yield* sent(HandOver, request));
+  const open = yield* openShoot(name);
+  const { files } = open;
+  const wanted = yield* sent(HandOver, request);
+  const handed = yield* handOver(files, yield* standingsOf(open), wanted);
   if (agent !== undefined) {
-    yield* callAgent(files, name, agent);
+    yield* callAgent(open, agent, launching);
   }
   return Response.json(handed);
 });
 
 /** Has an agent act on what was handed over before. */
 const agentAnswer = Effect.fn('agentAnswer')(function* (
-  { agent }: Has,
+  { agent, launching }: Has,
   name: string,
 ) {
-  const { files } = yield* openShoot(name);
+  const open = yield* openShoot(name);
   if (agent === undefined) {
     return yield* new InvalidInput({
       message: 'No agent can be started from here.',
     });
   }
-  yield* callAgent(files, name, agent);
+  yield* callAgent(open, agent, launching);
   return nothing();
 });
 

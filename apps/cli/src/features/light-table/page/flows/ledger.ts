@@ -60,10 +60,32 @@ const costsOf = ({ mark, photo }: Omit<Line, 'costs'>): boolean => {
   );
 };
 
-/** Whether a mark takes a photo out of those that would be edited for the album. */
-const sparesOf = ({ mark, photo, other }: Line): boolean =>
-  (mark.kind === 'take-out' && awaitsEdit(photo)) ||
-  (mark.kind === 'swap' && awaitsEdit(other));
+/**
+ * The photos that wait for their first edit once the open marks are acted on:
+ * the chosen ones when the album is ordered, without those taken out, and with
+ * those that come in.
+ */
+const toEditOf = (
+  { shoot }: Index,
+  open: ReadonlyArray<Line>,
+  ordersAlbum: boolean,
+): ReadonlySet<string> => {
+  const toEdit = new Set(
+    ordersAlbum ? shoot.photos.filter(awaitsEdit).map(({ id }) => id) : [],
+  );
+  for (const { mark, photo, other } of open) {
+    if (mark.kind === 'take-out' || mark.kind === 'swap') {
+      toEdit.delete(mark.kind === 'swap' ? (other?.id ?? '') : photo.id);
+    }
+    if (
+      (mark.kind === 'put-in' || mark.kind === 'swap') &&
+      photo.edit === null
+    ) {
+      toEdit.add(photo.id);
+    }
+  }
+  return toEdit;
+};
 
 const linesOf = (index: Index): ReadonlyArray<Line> => {
   const { shoot, byId, numberOf } = index;
@@ -101,10 +123,14 @@ export const ledgerOf = (
   const open = lines.filter(isOpen);
   const picked = shoot.photos.filter(isPicked).length;
   const ordersAlbum = picked > 0 && shoot.ordered === null;
-  const firstEdits = ordersAlbum
-    ? shoot.photos.filter(awaitsEdit).length - open.filter(sparesOf).length
-    : 0;
-  const edits = open.filter(({ costs }) => costs).length + firstEdits;
+  const toEdit = toEditOf(index, open, ordersAlbum);
+  const firstEdits = shoot.photos.filter(
+    (photo) => awaitsEdit(photo) && toEdit.has(photo.id),
+  ).length;
+  const changes = open.filter(
+    ({ mark, costs }) => mark.kind === 'change' && costs,
+  ).length;
+  const edits = toEdit.size + changes;
   return {
     open,
     waiting: lines.filter((line) => !isOpen(line)),

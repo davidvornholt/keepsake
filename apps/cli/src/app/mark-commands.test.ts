@@ -14,24 +14,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
-
-const mark = (id: string, overrides: object = {}) =>
-  Bun.write(
-    shootFile('marks', `${id}.json`),
-    JSON.stringify({
-      id,
-      photo: 'B',
-      kind: 'change',
-      note: 'Remove the chair',
-      boxes: [],
-      other: null,
-      madeAt: '2026-04-01T10:00:00Z',
-      handedOverAt: '2026-04-01T11:00:00Z',
-      answer: null,
-      seenAt: null,
-      ...overrides,
-    }),
-  );
+import { handedOver, mark, spentSoFar } from './mark-fixtures.ts';
 
 const until = async (isSo: () => boolean): Promise<void> => {
   if (!isSo()) {
@@ -111,15 +94,11 @@ describe('keepsake marks', () => {
   it('says that the album is ordered, until it is made', async () => {
     await pickLisbon();
     await editLisbon('A1');
-    await Bun.write(
-      shootFile('hand-overs.json'),
-      JSON.stringify([
-        { at: '2026-04-01T11:00:00Z', dollars: 2.25, album: true },
-      ]),
-    );
+    const photos = ['A1', 'B'];
+    await handedOver('order', { dollars: 2.25, album: photos });
     expect(await runOk('marks', 'lisbon')).toMatchObject({
       agreedDollars: 2.25,
-      album: { at: '2026-04-01T11:00:00Z', photos: 3, edited: 1 },
+      album: { at: '2026-04-01T11:00:00Z', photos, edited: 1 },
       marks: [],
     });
     await editLisbon();
@@ -133,7 +112,118 @@ describe('keepsake marks', () => {
   it('waits only for new ones', async () => {
     await pickLisbon();
     const failure = await failureOf('marks', 'lisbon', '--wait', '--all');
-    expect(failure.message).toBe('Give either --wait or --all.');
+    expect(failure.message).toBe(
+      'Give --wait alone, or --all and --hand-over.',
+    );
+  });
+});
+
+describe('a hand-over', () => {
+  it('waits for all of a hand-over, not for part of it', async () => {
+    await pickLisbon();
+    await mark('one', notHandedOver);
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    const waiting = runOk('marks', 'lisbon', '--wait');
+    await until(() => existsSync(shootFile('waiting.json')));
+    // As a writer that stopped after the first of its marks left them.
+    const one = shootFile('marks', 'one.json');
+    const handed = { handedOverAt: '2026-04-01T11:00:00Z' };
+    await Bun.write(
+      one,
+      JSON.stringify({ ...(await shootJson('marks', 'one.json')), ...handed }),
+    );
+    await handedOver('budget', { dollars: 1.5 });
+    await Bun.sleep(1500);
+    expect(existsSync(shootFile('waiting.json'))).toBe(true);
+    await handedOver('both', { dollars: 1.5, marks: ['one', 'two'] });
+    const listed = await waiting;
+    expect(new Set(idsOf(listed))).toEqual(new Set(['one', 'two']));
+    expect(listed.agreedDollars).toBe(1.5);
+  });
+
+  it('gives an agent that waits only what it took', async () => {
+    await pickLisbon();
+    await mark('one', notHandedOver);
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    await handedOver('first', { dollars: 0.75, marks: ['one'] });
+    const busy = await runOk('marks', 'lisbon', '--wait');
+    await handedOver('second', { dollars: 0.5, marks: ['two'] });
+    const other = await runOk('marks', 'lisbon', '--wait');
+    expect(busy).toMatchObject({ handOvers: ['first'], agreedDollars: 0.75 });
+    expect(idsOf(busy)).toEqual(['one']);
+    expect(other).toMatchObject({ handOvers: ['second'], agreedDollars: 0.5 });
+    expect(idsOf(other)).toEqual(['two']);
+    const named = await runOk('marks', 'lisbon', '--hand-over', 'second');
+    expect(idsOf(named)).toEqual(['two']);
+    expect(idsOf(await runOk('marks', 'lisbon'))).toEqual(['one', 'two']);
+  });
+
+  it('lists all of a hand-over that was named, also when it is done', async () => {
+    await pickLisbon();
+    await mark('one', { ...notHandedOver, ...answered });
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    await handedOver('first', { marks: ['one'] });
+    await handedOver('second', { marks: ['two'] });
+    const named = await runOk(
+      'marks',
+      'lisbon',
+      '--all',
+      '--hand-over',
+      'first',
+    );
+    expect(idsOf(named)).toEqual(['one']);
+  });
+
+  it('counts what was spent since against what was agreed', async () => {
+    await pickLisbon();
+    await handedOver('order', { dollars: 1.5, album: ['A1', 'B'] });
+    await editLisbon('A1');
+    const spent = await spentSoFar();
+    const { agreedDollars } = await runOk('marks', 'lisbon');
+    expect(agreedDollars).toBe(
+      Math.max(0, Math.round((1.5 - spent) * 100) / 100),
+    );
+    expect(agreedDollars).toBeLessThan(1.5);
+  });
+
+  it('counts what was spent only against what was agreed before', async () => {
+    await pickLisbon();
+    await mark('one', notHandedOver);
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    const spend = (dollars: number) =>
+      Bun.write(
+        shootFile('spending.json'),
+        JSON.stringify({
+          model: { calls: 1, inputTokens: 0, outputTokens: 0, dollars },
+        }),
+      );
+    await spend(0);
+    await handedOver('first', { dollars: 1, marks: ['one'] });
+    await spend(2);
+    await handedOver('second', {
+      at: '2026-04-01T12:00:00Z',
+      dollars: 1,
+      marks: ['two'],
+    });
+    const both = ['--hand-over', 'first', '--hand-over', 'second'];
+    expect(await runOk('marks', 'lisbon', ...both)).toMatchObject({
+      agreedDollars: 1,
+    });
+    expect(await runOk('marks', 'lisbon')).toMatchObject({ agreedDollars: 1 });
+  });
+
+  it('forgets an order once its photos are in the album', async () => {
+    await pickLisbon();
+    await runOk('pick', 'lisbon', '--maximum', '1');
+    const [first] = (await runOk('show', 'lisbon')).picked;
+    await handedOver('order', { dollars: 0.75, album: [first.photo] });
+    await editLisbon();
+    await runOk('publish', 'lisbon');
+    await runOk('pick', 'lisbon');
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 0,
+      album: null,
+    });
   });
 });
 

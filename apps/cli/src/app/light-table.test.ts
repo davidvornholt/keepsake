@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import process from 'node:process';
 import { BunServices } from '@effect/platform-bun';
 import { Effect } from 'effect';
 import { serveLightTable } from '../features/light-table/server.ts';
@@ -140,6 +142,26 @@ describe('the light table', () => {
   });
 });
 
+describe('what the light table is doing', () => {
+  it('says who waits for a hand-over, also when no file changed', async () => {
+    await pickLisbon();
+    const since = '2026-05-02T10:00:00.000Z';
+    const waiting = shootFile('waiting.json');
+    const seen = await whileServing(async (address) => {
+      const path = `${address}/api/shoots/lisbon`;
+      const first = await fetch(path);
+      const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
+      const waitsSince = async () => (await shootOf(address)).agent.waitsSince;
+      await Bun.write(waiting, JSON.stringify({ process: process.pid, since }));
+      const asked = await fetch(path, { headers });
+      const waits = await waitsSince();
+      await rm(waiting);
+      return [asked.status, waits, await waitsSince()];
+    });
+    expect(seen).toEqual([200, since, null]);
+  });
+});
+
 describe('the pictures of the light table', () => {
   it('are there in full size and smaller, for good', async () => {
     await pickLisbon();
@@ -172,6 +194,29 @@ describe('the pictures of the light table', () => {
     expect(edited?.full.src).toContain('/A1/camera/');
     expect(other?.full).toMatchObject(size);
     expect(other?.full.src).toBe(other?.picture.src);
+  });
+
+  it('are not kept under the address of one they replaced', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    const cacheOf = async (address: string) => {
+      const { photos } = await shootOf(address);
+      const { edit } = photos.find(({ id }: { id: string }) => id === 'B');
+      return edit.picture.src;
+    };
+    const caches = await whileServing(async (address) => {
+      const before = await cacheOf(address);
+      await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'a newer one');
+      const after = await cacheOf(address);
+      return Promise.all(
+        [before, after].map(async (src) => {
+          const response = await fetch(`${address}${src}`);
+          return [await response.text(), response.headers.get('cache-control')];
+        }),
+      );
+    });
+    expect(caches[0]).toEqual(['a newer one', 'no-store']);
+    expect(caches[1]?.[1]).toContain('immutable');
   });
 
   it('are not kept where they only stand in for the photo', async () => {

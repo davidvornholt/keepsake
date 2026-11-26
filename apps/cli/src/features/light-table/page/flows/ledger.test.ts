@@ -143,6 +143,27 @@ describe('an album that is ordered', () => {
     expect(ledger.firstEdits).toBe(3);
   });
 
+  it('counts each photo that comes in for the same one', () => {
+    const ledger = ledgerOf(
+      indexOf(
+        sampleShoot(
+          [
+            samplePhoto('a', picked),
+            sampleBehind('b', 'a'),
+            sampleBehind('c', 'a'),
+          ],
+          [
+            sampleMark('1', { photo: 'b', kind: 'swap', other: 'a' }),
+            sampleMark('2', { photo: 'c', kind: 'swap', other: 'a' }),
+          ],
+        ),
+      ),
+    );
+    // A is spared once, and both B and C are edited instead.
+    expect(ledger.edits).toBe(2);
+    expect(ledger.firstEdits).toBe(0);
+  });
+
   it('isn’t ordered a second time', () => {
     const shoot: ShootView = {
       ...sampleShoot(chosen),
