@@ -96,7 +96,7 @@ const drawWaxOn = (pencil: Pencil, scene: Scene, part: Rect, scale: number) => {
     const progress = (now - since) / drawingTime;
     isDrawing = isDrawing || progress < 1;
     const place = rectOf(box, part);
-    sketchWax(pencil, glyphOf('box', seed), place, {
+    sketchWax(pencil, glyphOf('frame', seed), place, {
       color,
       progress,
       weight: boxWeight(place),
@@ -106,7 +106,7 @@ const drawWaxOn = (pencil: Pencil, scene: Scene, part: Rect, scale: number) => {
   }
   if (ink.draft !== null) {
     const weight = boxWeight(ink.draft);
-    sketchWax(pencil, glyphOf('box', ink.nextBox), ink.draft, {
+    sketchWax(pencil, glyphOf('frame', ink.nextBox), ink.draft, {
       color,
       weight,
       scale,

@@ -27,6 +27,7 @@ export const shapes = [
   'swap',
   'no-star',
   'box',
+  'frame',
   'underline',
 ] as const;
 export type Shape = (typeof shapes)[number];
@@ -51,6 +52,8 @@ const drawings: Readonly<Record<Shape, string>> = {
   swap: '12,34 88,34 / 68,16 90,34 68,50 / 88,68 12,68 / 32,50 10,68 32,86',
   'no-star': '50,7 77,90 6,39 94,39 23,90 50,7 / 6,20 94,88',
   box: '2,6 99,1 97,98 1,95 3,0',
+  // Drawn along the edges of a part of a photo, so it shows where they are.
+  frame: '0,0 100,0 100,100 0,100 0,0',
   underline: '0,40 50,62 100,38',
 };
 
@@ -175,6 +178,18 @@ const wobble = 0.022;
 const tilt = 0.09;
 /** A box is drawn around something, so it leans less than a quick mark. */
 const boxTilt = 0.03;
+/**
+ * A frame marks the very edges of a part of a photo, so it doesn't lean and
+ * barely wavers: just enough to look drawn by hand.
+ */
+const frameWobble = 0.004;
+
+const tiltOf = (shape: Shape): number => {
+  if (shape === 'frame') {
+    return 0;
+  }
+  return shape === 'box' ? boxTilt : tilt;
+};
 const widthChange = 0.2;
 const flutter = 0.08;
 
@@ -182,7 +197,8 @@ const flutter = 0.08;
 export const glyphOf = (shape: Shape, seed: number): Glyph => {
   const random = randomFrom(seed);
   const between = (most: number) => (random() * 2 - 1) * most;
-  const angle = between(shape === 'box' ? boxTilt : tilt);
+  const angle = between(tiltOf(shape));
+  const bend = shape === 'frame' ? frameWobble : wobble;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const heavy = 1 + between(widthChange);
@@ -191,8 +207,8 @@ export const glyphOf = (shape: Shape, seed: number): Glyph => {
     // A slow wave along the stroke: the hand never draws a ruler's line.
     const waveX = random() * fullTurn;
     const waveY = random() * fullTurn;
-    const bendX = between(wobble);
-    const bendY = between(wobble);
+    const bendX = between(bend);
+    const bendY = between(bend);
     return dots.map(([x, y], index) => {
       const share = index / Math.max(1, dots.length - 1);
       const fromMiddleX =

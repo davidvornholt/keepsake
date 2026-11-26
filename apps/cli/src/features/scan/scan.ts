@@ -17,6 +17,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { toolBytes } from '../../shared/tools.ts';
+import { type Look, lookOf, lookSide } from './look.ts';
 import { hashOf, momentsOf } from './moments.ts';
 
 /** The longest side of the previews the models look at. */
@@ -38,7 +39,10 @@ const folderAt = Effect.fn('folderAt')(function* (folder: string) {
   return source;
 });
 
-/** Makes the photo's preview unless it is there already, and hashes it. */
+/** A photo and what it looks like, shrunk, if that could be told. */
+type Seen = { readonly photo: Photo; readonly look: Look | null };
+
+/** Makes the photo's preview unless it is there already, and looks at it. */
 const preview = Effect.fn('preview')(function* (
   files: ShootFiles,
   shoot: Shoot,
@@ -63,12 +67,25 @@ const preview = Effect.fn('preview')(function* (
     '8',
     'gray:-',
   ]);
-  return { ...found, hash: hashOf(pixels) } satisfies Photo;
+  const small = yield* toolBytes('magick', [
+    target,
+    '-resize',
+    `${lookSide}x${lookSide}`,
+    // A little blur, so a step of a pixel or two between two photos of the
+    // same thing changes little.
+    '-blur',
+    '0x0.7',
+    '-depth',
+    '8',
+    'ppm:-',
+  ]);
+  return {
+    photo: { ...found, hash: hashOf(pixels) } satisfies Photo,
+    look: lookOf(small),
+  } satisfies Seen;
 });
 
-type Outcome =
-  | { readonly photo: Photo }
-  | { readonly file: string; readonly reason: string };
+type Outcome = Seen | { readonly file: string; readonly reason: string };
 
 type ScanOptions = {
   readonly folder: string;
@@ -95,16 +112,27 @@ const makeNotes = Effect.fn('makeNotes')(function* (files: ShootFiles) {
   const found = yield* Ref.make<ReadonlyMap<string, Photo>>(
     new Map(before.map((photo) => [photo.id, photo])),
   );
+  // Only for the photos of this scan, since looks aren't kept.
+  const looks = yield* Ref.make<ReadonlyMap<string, Look>>(new Map());
   const notedAt = yield* Ref.make(0);
   const write = Effect.fn('write')(function* (photos: ReadonlyArray<Photo>) {
-    const moments = momentsOf(photos.toSorted(oldestFirst));
+    const moments = momentsOf(
+      photos.toSorted(oldestFirst),
+      yield* Ref.get(looks),
+    );
     yield* writeJson(Photos, files.photos, photos);
     yield* writeJson(Moments, files.moments, moments);
     return moments;
   });
   return {
     write,
-    add: Effect.fn('add')(function* (photo: Photo) {
+    add: Effect.fn('add')(function* ({ photo, look }: Seen) {
+      if (look !== null) {
+        yield* Ref.update(
+          looks,
+          (known) => new Map([...known, [photo.id, look]]),
+        );
+      }
       const now = yield* Clock.currentTimeMillis;
       const all = yield* Ref.updateAndGet(
         found,
@@ -158,7 +186,7 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
     const results = yield* inSteps('scan', found, concurrency, (photo) =>
       preview(files, shoot, photo).pipe(
         Effect.tap(notes.add),
-        Effect.map((read): Outcome => ({ photo: read })),
+        Effect.map((seen): Outcome => seen),
         Effect.catchTag('ToolFailed', ({ message }) =>
           Effect.succeed<Outcome>({ file: photo.file, reason: message }),
         ),

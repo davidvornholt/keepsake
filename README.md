@@ -4,7 +4,7 @@
 
 `keepsake` is a command-line tool that turns a folder of photos into a small album of beautiful ones. It is made for photographers who enjoy taking photos and not the evenings of sorting and editing that follow, and for the AI agents that run it for them.
 
-1. It groups the photos into moments, such as a burst of a bird taking off.
+1. It groups the photos into moments: a burst of a bird taking off, or photos of the same thing from about the same spot, also when the camera moved or zoomed a little between them.
 2. A vision model finds the best frames of each moment, checks their focus at full size, and scores them. It takes more than one of a moment where they show clearly different things, such as another pose.
 3. It leaves out repeats, keeps the most interesting of several photos that show the same thing again within a few minutes, and, when there are too many, compares the photos with each other and keeps the best, with a variety of places, people, animals and the rest.
 4. It crops each one to an interesting composition, with more room in front of an animal or a person than behind, and an image model edits it. The frame may reach a little beyond the photo where a subject is cut off or has no room, and the image model continues the scene there. The edit also takes away what only distracts, such as strangers who aren't part of the scene, a chair or a sign at the edge.

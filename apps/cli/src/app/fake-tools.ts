@@ -22,6 +22,9 @@ type FakeAsset = {
 };
 
 const greyPixels = 72;
+/** One pixel of middle grey, in red, green and blue. */
+const middleGrey = 128;
+const greyPixel = [middleGrey, middleGrey, middleGrey];
 const rgbaChannels = 4;
 const cameraSize = '7008 4672';
 /** Small, since pixels of it are computed with. */
@@ -112,6 +115,12 @@ const magick = (args: ReadonlyArray<string>): string | Uint8Array => {
   }
   if (target === 'gray:-') {
     return new Uint8Array(greyPixels);
+  }
+  if (target === 'ppm:-') {
+    return Uint8Array.from([
+      ...new TextEncoder().encode('P6\n1 1\n255\n'),
+      ...greyPixel,
+    ]);
   }
   if (target === 'jpg:-') {
     return 'a picture';

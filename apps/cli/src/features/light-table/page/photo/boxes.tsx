@@ -92,12 +92,12 @@ const Chosen = ({
 }) => (
   <>
     <span
-      className="pointer-events-auto absolute inset-0 cursor-move touch-none outline outline-1 outline-lamp"
+      className="pointer-events-auto absolute inset-0 cursor-move touch-none"
       {...holdOf(holding, at, 'whole')}
     />
     {handles.map((handle) => (
       <span
-        className={`-translate-1/2 pointer-events-auto absolute size-2.5 touch-none border border-sheet bg-lamp before:absolute before:-inset-2 pointer-coarse:before:-inset-4 ${places[handle]} ${cursors[handle]}`}
+        className={`-translate-1/2 pointer-events-auto absolute size-2.5 touch-none border border-sheet bg-wax-yellow before:absolute before:-inset-2 pointer-coarse:before:-inset-4 ${places[handle]} ${cursors[handle]}`}
         data-handle={handle}
         key={handle}
         {...holdOf(holding, at, handle)}
