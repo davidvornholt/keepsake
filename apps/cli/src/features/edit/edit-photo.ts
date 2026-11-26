@@ -14,7 +14,13 @@ import { wishIn, writeWish } from '../../shared/wishes.ts';
 import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
 import { type CorrectionFiles, correct } from './correct/correct.ts';
-import { Change, findPlaces, inMarked, type Place } from './correct/places.ts';
+import {
+  Change,
+  findPlaces,
+  inMarked,
+  markedAreas,
+  type Place,
+} from './correct/places.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
@@ -110,12 +116,18 @@ const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
 
 /** Changes single places of a finished photo. */
 const changePlaces = Effect.fn('changePlaces')(function* (
-  { job, former, files, wish }: ToChange,
+  { job, former, files, wish, areas }: ToChange,
   places: ReadonlyArray<Place>,
 ) {
   const image = yield* ImageModel;
   const { file, description, attempts, left } = yield* askReviewer(
-    correct({ open: job.open, versions: job.versions, files, places }),
+    correct({
+      open: job.open,
+      versions: job.versions,
+      files,
+      places,
+      areas: areas.length === 0 ? null : markedAreas(areas),
+    }),
   );
   const notDone = left.map(({ place, problem }) =>
     [...place.what, ...(problem === null ? [] : [problem])]

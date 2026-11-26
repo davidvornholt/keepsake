@@ -1,5 +1,6 @@
 import { Effect, Schema } from 'effect';
 import { wholePicture } from '../../../shared/boxes.ts';
+import type { Box } from '../../../shared/domain.ts';
 import { renderExactly, type Size, sizeOf } from '../../../shared/pictures.ts';
 import {
   atomically,
@@ -26,6 +27,8 @@ export type CorrectionFiles = ReturnType<ShootFiles['edit']>['correction'];
 export type Correction = Pick<Job, 'open' | 'versions'> & {
   readonly files: CorrectionFiles;
   readonly places: ReadonlyArray<Place>;
+  /** All that may change, if the user marked it. */
+  readonly areas: ReadonlyArray<Box> | null;
 };
 
 /** What an attempt starts from. */
@@ -75,7 +78,7 @@ type Known = Effect.Success<ReturnType<typeof known>>;
 
 /** Makes versions of a picture and takes the best of them at each place. */
 const attempt = Effect.fn('attempt')(function* (
-  { open, versions }: Correction,
+  { open, versions, areas }: Correction,
   files: CorrectionFiles,
   { number, base, changes }: Start,
   { size, about }: { readonly size: Size; readonly about: Known },
@@ -106,6 +109,7 @@ const attempt = Effect.fn('attempt')(function* (
           base,
           boxes.map((box) => ({ box, from })),
           file,
+          areas,
         ),
         { from, file },
       );
@@ -133,7 +137,7 @@ const attempt = Effect.fn('attempt')(function* (
   if (taken.length === 0) {
     return { base, left, isRefused: false };
   }
-  yield* writeWith(base, taken, files.result(number));
+  yield* writeWith(base, taken, files.result(number), areas);
   return { base: files.result(number), left, isRefused: false };
 });
 

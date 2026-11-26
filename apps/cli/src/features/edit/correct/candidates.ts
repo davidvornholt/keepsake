@@ -8,6 +8,7 @@ import {
 } from '../../../shared/pictures.ts';
 import { atomically } from '../../../shared/store.ts';
 import { type Taking, takePlace, takings } from '../patches/take-place.ts';
+import { channels, indexOf } from '../pixels/raster.ts';
 import { findPlacement } from '../placement/find-placement.ts';
 import { placedOn } from '../placement/placement.ts';
 
@@ -35,11 +36,51 @@ const aligned = (version: Raster, picture: Raster): Raster => {
 /** A place, and the candidate it is taken from. */
 export type Taken = { readonly box: Box; readonly from: Candidate };
 
-/** Writes a picture with places that are taken from its versions. */
+const half = 0.5;
+
+/** Whether the middle of a pixel is inside one of the areas. */
+const isInside = (
+  areas: ReadonlyArray<Box>,
+  { width, height }: Raster,
+  x: number,
+  y: number,
+) =>
+  areas.some(
+    ({ left, top, right, bottom }) =>
+      x + half > left * width &&
+      x + half < right * width &&
+      y + half > top * height &&
+      y + half < bottom * height,
+  );
+
+/** Puts the picture's own pixels back outside the areas. Changes `result`. */
+const keepOutside = (
+  picture: Raster,
+  result: Raster,
+  areas: ReadonlyArray<Box>,
+) => {
+  for (let y = 0; y < result.height; y += 1) {
+    for (let x = 0; x < result.width; x += 1) {
+      if (!isInside(areas, result, x, y)) {
+        const index = indexOf(result, x, y);
+        for (const channel of channels) {
+          result.pixels[index + channel] = picture.pixels[index + channel] ?? 0;
+        }
+      }
+    }
+  }
+};
+
+/**
+ * Writes a picture with places that are taken from its versions. With areas,
+ * nothing outside them changes, however far a place blends into its
+ * surroundings.
+ */
 export const writeWith = Effect.fn('writeWith')(function* (
   base: string,
   taken: ReadonlyArray<Taken>,
   target: string,
+  areas: ReadonlyArray<Box> | null = null,
 ) {
   const size = yield* sizeOf(base);
   const picture = yield* rasterOf(base, size);
@@ -53,6 +94,9 @@ export const writeWith = Effect.fn('writeWith')(function* (
         takePlace(version, result, box, { places, taking: from.taking });
       }
     }
+  }
+  if (areas !== null) {
+    keepOutside(picture, result, areas);
   }
   yield* atomically(target, (draft) => writeRaster(draft, result));
 });

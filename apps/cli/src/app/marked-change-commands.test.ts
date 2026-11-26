@@ -9,6 +9,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { assessment, fakeModels } from './fake-models.ts';
+import { fakeTools } from './fake-tools.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -74,6 +75,46 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
     );
     expect(places.length).toBeGreaterThan(0);
     expect(places.every(isInMark)).toBe(true);
+  });
+
+  it('leaves every pixel outside the mark as it was', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    await markB();
+    chairAt({ left: 0.1, top: 0.35, right: 0.6, bottom: 0.65 });
+    // The versions change a place on both sides of the mark's edge.
+    const isChanged = (x: number, y: number) =>
+      x >= 12 && x < 30 && y >= 14 && y < 18;
+    const version = (x: number, y: number) => (isChanged(x, y) ? 200 : 100);
+    fakeTools.pictures = {
+      'B-keepsake.jpg': () => 100,
+      'correction/version-1.png': version,
+      'correction/version-2.png': version,
+    };
+    expect((await editLisbon('--mark', 'one')).notDone).toEqual([]);
+    const pixels = readFileSync(
+      shootFile('edits', 'B', 'correction', 'result-1.png'),
+    );
+    // The mark with the little around it that may change too, in pixels.
+    const width = 48;
+    const height = 32;
+    const across = (marked.right - marked.left) * 0.15;
+    const down = (marked.bottom - marked.top) * 0.15;
+    const isMarked = (x: number, y: number) =>
+      x + 0.5 > (marked.left - across) * width &&
+      x + 0.5 < (marked.right + across) * width &&
+      y + 0.5 > (marked.top - down) * height &&
+      y + 0.5 < (marked.bottom + down) * height;
+    const outside: Array<number> = [];
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (!isMarked(x, y)) {
+          outside.push(pixels[(y * width + x) * 3] ?? 0);
+        }
+      }
+    }
+    expect(outside.filter((value) => value !== 100)).toEqual([]);
+    expect(pixels[(16 * width + 15) * 3]).toBeGreaterThan(100);
   });
 
   it('says so when the wish is about all of the photo', async () => {
