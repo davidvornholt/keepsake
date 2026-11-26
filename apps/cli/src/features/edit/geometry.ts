@@ -12,30 +12,34 @@ const half = 2;
 /** The smallest long side of a crop, in pixels of the camera's picture. */
 const smallestLongSide = 1600;
 
-/**
- * Where a side of a crop of the given length starts, centred on the wanted
- * span and inside the bounds, and covering what has to be kept if it can.
- */
-const placed = (
-  [wantedStart, wantedEnd]: readonly [number, number],
+/** Arithmetic on fractions of a picture is never exact. */
+const precision = 1e-9;
+
+type Span = readonly [number, number];
+
+/** Where a side of a crop of the given length may start to cover a span. */
+const covering = (
   length: number,
-  [low, boundsEnd]: readonly [number, number],
-  [keptStart, keptEnd]: readonly [number, number],
-): number => {
-  const high = boundsEnd - length;
-  const centred = (wantedStart + wantedEnd) / half - length / half;
-  const keepingLow = Math.max(low, keptEnd - length);
-  const keepingHigh = Math.min(high, keptStart);
-  return keepingLow <= keepingHigh
-    ? clamp(centred, keepingLow, keepingHigh)
-    : clamp(centred, low, high);
+  [low, boundsEnd]: Span,
+  [keptStart, keptEnd]: Span,
+): Span | null => {
+  const from = Math.max(low, keptEnd - length);
+  const to = Math.min(boundsEnd - length, keptStart);
+  return from <= to + precision ? [from, Math.max(from, to)] : null;
 };
 
+/** Where a side of a crop of the given length starts, centred on a span. */
+const centredOn = (
+  [wantedStart, wantedEnd]: Span,
+  length: number,
+  [from, to]: Span,
+): number => clamp((wantedStart + wantedEnd) / half - length / half, from, to);
+
 /**
- * The smallest crop of the wanted shape that shows the whole box, as large as
- * a crop has to be. It goes beyond the picture only as far as the box does.
- * Where the shape makes it smaller than the box, it keeps what is to be kept,
- * such as the subject and what belongs to it, and loses some of the rest.
+ * Fits the shape within the picture and as far beyond it as the box reaches,
+ * at least as large as an edit needs. It shows the whole box where the shape
+ * allows, and otherwise keeps what is to be kept, such as the subject and what
+ * belongs to it, when that fits; if it doesn't, it is centred on the box.
  */
 export const fitAspect = (
   wanted: Box,
@@ -54,29 +58,29 @@ export const fitAspect = (
   const smallestWidth =
     ratio >= 1 ? smallestLongSide : smallestLongSide * ratio;
   const widest = Math.min(most.width, most.height * ratio);
-  const width = Math.min(
-    Math.max(wantedWidth, wantedHeight * ratio, smallestWidth),
-    widest,
-  );
-  const height = width / ratio;
-  const left = placed(
+  const width =
+    Math.min(
+      Math.max(wantedWidth, wantedHeight * ratio, smallestWidth),
+      widest,
+    ) / size.width;
+  const height = (width * size.width) / ratio / size.height;
+  const across: Span = [bounds.left, bounds.right];
+  const down: Span = [bounds.top, bounds.bottom];
+  const keptAcross = covering(width, across, [kept.left, kept.right]);
+  const keptDown = covering(height, down, [kept.top, kept.bottom]);
+  // What can't be kept whole is no reason to move the frame on either axis.
+  const keeping = keptAcross !== null && keptDown !== null;
+  const left = centredOn(
     [wanted.left, wanted.right],
-    width / size.width,
-    [bounds.left, bounds.right],
-    [kept.left, kept.right],
+    width,
+    keeping ? keptAcross : [bounds.left, bounds.right - width],
   );
-  const top = placed(
+  const top = centredOn(
     [wanted.top, wanted.bottom],
-    height / size.height,
-    [bounds.top, bounds.bottom],
-    [kept.top, kept.bottom],
+    height,
+    keeping ? keptDown : [bounds.top, bounds.bottom - height],
   );
-  return {
-    left,
-    top,
-    right: left + width / size.width,
-    bottom: top + height / size.height,
-  };
+  return { left, top, right: left + width, bottom: top + height };
 };
 
 /** The shape in the list that is closest to a picture's own. */
