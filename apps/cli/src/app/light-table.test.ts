@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import process from 'node:process';
 import { BunServices } from '@effect/platform-bun';
 import { Effect } from 'effect';
 import { serveLightTable } from '../features/light-table/server.ts';
@@ -137,6 +139,26 @@ describe('the light table', () => {
     expect(told.before).toStartWith('event: changed\ndata: {"revision":');
     expect(told.after).toStartWith('event: changed\ndata: {"revision":');
     expect(told.after).not.toBe(told.before);
+  });
+});
+
+describe('what the light table is doing', () => {
+  it('says who waits for a hand-over, also when no file changed', async () => {
+    await pickLisbon();
+    const since = '2026-05-02T10:00:00.000Z';
+    const waiting = shootFile('waiting.json');
+    const seen = await whileServing(async (address) => {
+      const path = `${address}/api/shoots/lisbon`;
+      const first = await fetch(path);
+      const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
+      const waitsSince = async () => (await shootOf(address)).agent.waitsSince;
+      await Bun.write(waiting, JSON.stringify({ process: process.pid, since }));
+      const asked = await fetch(path, { headers });
+      const waits = await waitsSince();
+      await rm(waiting);
+      return [asked.status, waits, await waitsSince()];
+    });
+    expect(seen).toEqual([200, since, null]);
   });
 });
 

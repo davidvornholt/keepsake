@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto';
 import { Clock, Effect, Option, Schedule, Semaphore } from 'effect';
 import { readAlbum } from '../../shared/album.ts';
 import { isBusy } from '../../shared/lock.ts';
 import { type OpenShoot, openShoot, shootNames } from '../../shared/store.ts';
-import type { Changed } from './contract.ts';
+import type { Changed, ShootView } from './contract.ts';
 import {
   type Gallery,
   type Kind,
@@ -29,8 +30,15 @@ const newest = '9';
 /** A shoot's view as compressed JSON. */
 type View = {
   readonly revision: string;
+  /** Changes with the revision and with what is live in it. */
+  readonly etag: string;
   readonly json: Uint8Array<ArrayBuffer>;
+  /** All of it but what is live, which is read every time. */
+  readonly made: ShootView;
+  readonly live: string;
 };
+
+const etagLength = 16;
 
 /**
  * Makes the copies the page shows first, once for every photo, without anyone
@@ -52,6 +60,55 @@ const makeWarming = () => {
         ...fresh.map((photo) => [photo, 'preview'] as readonly [string, Kind]),
       ]).pipe(Effect.forkDetach);
     }
+  });
+};
+
+/**
+ * The view of a shoot. What a command, the page's program or an agent is doing
+ * changes without a file the revision knows of, such as when an agent that
+ * waits stops, so it is read every time.
+ */
+const makeView = (
+  canStartAgent: boolean,
+  views: Map<string, View>,
+  warmOnce: ReturnType<typeof makeWarming>,
+) => {
+  const madeOf = Effect.fn('madeOf')(function* (
+    gallery: Gallery,
+    revision: string,
+  ) {
+    const known = views.get(gallery.open.shoot.name);
+    if (known?.revision === revision) {
+      return known.made;
+    }
+    const made = yield* shootView(gallery, canStartAgent);
+    yield* saveLooks(gallery);
+    yield* warmOnce(gallery);
+    return made;
+  });
+
+  return Effect.fn('view')(function* (gallery: Gallery) {
+    const { name } = gallery.open.shoot;
+    const { revision, ...now } = yield* changedSince(
+      gallery.open,
+      canStartAgent,
+    );
+    const live = JSON.stringify(now);
+    const known = views.get(name);
+    if (known?.revision === revision && known.live === live) {
+      return known;
+    }
+    const made = yield* madeOf(gallery, revision);
+    const hash = createHash('sha256').update(live).digest('hex');
+    const packed: View = {
+      revision: made.revision,
+      etag: `${made.revision}-${hash.slice(0, etagLength)}`,
+      json: Bun.gzipSync(JSON.stringify({ ...made, ...now })),
+      made,
+      live,
+    };
+    views.set(name, packed);
+    return packed;
   });
 };
 
@@ -134,23 +191,8 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     };
   });
 
-  const view = Effect.fn('view')(function* (name: string) {
-    const gallery = yield* galleryOf(name);
-    const { revision } = yield* changedSince(gallery.open, canStartAgent);
-    const known = views.get(name);
-    if (known?.revision === revision) {
-      return known;
-    }
-    const made = yield* shootView(gallery, canStartAgent);
-    yield* saveLooks(gallery);
-    yield* warmOnce(gallery);
-    const packed: View = {
-      revision: made.revision,
-      json: Bun.gzipSync(JSON.stringify(made)),
-    };
-    views.set(name, packed);
-    return packed;
-  });
+  const viewOf = makeView(canStartAgent, views, warmOnce);
+  const view = (name: string) => Effect.flatMap(galleryOf(name), viewOf);
 
   return {
     galleryOf,

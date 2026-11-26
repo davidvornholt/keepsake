@@ -42,8 +42,8 @@ const shootAnswer = Effect.fn('shootAnswer')(function* (
   name: string,
   request: Request,
 ) {
-  const { json, revision } = yield* shoots.view(name);
-  const etag = `"${revision}"`;
+  const view = yield* shoots.view(name);
+  const etag = `"${view.etag}"`;
   const headers = {
     etag,
     'cache-control': 'private, no-cache',
@@ -52,7 +52,7 @@ const shootAnswer = Effect.fn('shootAnswer')(function* (
   };
   return request.headers.get('if-none-match') === etag
     ? new Response(null, { status: 304, headers })
-    : new Response(json, { headers });
+    : new Response(view.json, { headers });
 });
 
 type Named = {
