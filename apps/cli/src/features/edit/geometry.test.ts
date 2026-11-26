@@ -65,6 +65,50 @@ describe('fitAspect', () => {
   });
 });
 
+describe('fitAspect with what is to be kept', () => {
+  const portrait = { width: 2336, height: 3504 };
+
+  it('loses what reaches beyond rather than what is kept', () => {
+    const wanted = { left: -0.04, top: -0.06, right: 1, bottom: 1 };
+    const kept = { left: 0, top: 0.012, right: 0.9, bottom: 1 };
+    const crop = fitAspect(wanted, portrait, '2:3', kept);
+    expect(crop.top).toBeCloseTo(-0.04);
+    expect(crop.bottom).toBeCloseTo(1);
+  });
+
+  it('loses room around what is kept rather than what is kept', () => {
+    const wanted = { left: 0, top: -0.07, right: 0.913, bottom: 1 };
+    const kept = { left: 0, top: 0.012, right: 0.893, bottom: 1 };
+    const crop = fitAspect(wanted, portrait, '9:16', kept);
+    expect(crop.left).toBeCloseTo(0);
+    expect(crop.right).toBeGreaterThanOrEqual(0.893);
+  });
+
+  it('keeps what fits exactly, despite rounding', () => {
+    const photo = { width: 5000, height: 3000 };
+    const wanted = { left: 0, top: 0, right: 0.85, bottom: 1 };
+    const kept = { left: 0.2, top: 0.3, right: 0.8, bottom: 0.7 };
+    const crop = fitAspect(wanted, photo, '1:1', kept);
+    expect(crop.left * photo.width).toBeCloseTo(1000);
+    expect(crop.right * photo.width).toBeCloseTo(4000);
+  });
+
+  it('is centred on the box when what is kept doesn’t fit', () => {
+    const square = { width: 4000, height: 4000 };
+    const wanted = { left: 0.1, top: 0.1, right: 0.5, bottom: 0.5 };
+    const kept = { left: 0, top: 0.3, right: 0.8, bottom: 0.65 };
+    const crop = fitAspect(wanted, square, '1:1', kept);
+    expect(crop.left).toBeCloseTo(0.1);
+    expect(crop.top).toBeCloseTo(0.1);
+  });
+
+  it('is centred on the box when the shape is too small for it', () => {
+    const crop = fitAspect(everything, camera, '1:1');
+    expect(crop.left).toBeCloseTo(1 / 6);
+    expect(crop.right).toBeCloseTo(5 / 6);
+  });
+});
+
 describe('closestAspect', () => {
   it.each([
     [7008, 4672, '3:2'],
