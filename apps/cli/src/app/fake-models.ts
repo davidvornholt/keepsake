@@ -8,7 +8,12 @@ export type Asked = {
 };
 
 /** An edit that was asked of the image model. */
-export type AskedEdit = { readonly prompt: string; readonly size: string };
+export type AskedEdit = {
+  readonly prompt: string;
+  readonly size: string;
+  /** The photo it was given. */
+  readonly picture: Uint8Array;
+};
 
 const box = { left: 0.3, top: 0.3, right: 0.6, bottom: 0.6 };
 
@@ -139,9 +144,13 @@ const chat = async (request: Request): Promise<Response> => {
 
 const images = async (request: Request): Promise<Response> => {
   const form = await request.formData();
+  const picture = form.get('image[]');
   fakeModels.edits.push({
     prompt: String(form.get('prompt')),
     size: String(form.get('size')),
+    picture: new Uint8Array(
+      picture instanceof Blob ? await picture.arrayBuffer() : [],
+    ),
   });
   if (fakeModels.editAnswer !== undefined) {
     return fakeModels.editAnswer();

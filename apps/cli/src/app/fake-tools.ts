@@ -31,7 +31,7 @@ const cameraSize = '7008 4672';
 const editSize = '48 32';
 const editBytes = 4608;
 const editPattern =
-  /(?:input(?:-\d+)?\.jpg|version-\d+(?:-kept|-mended)?\.png|(?:candidate-\d+|result)-\d+\.png|-keepsake\.jpg)$/u;
+  /(?:input(?:-\d+)?\.jpe?g|version-\d+(?:-kept|-mended)?\.png|(?:candidate-\d+|result)-\d+\.png|-keepsake\.jpg)$/u;
 
 const wantedSize = /(?<width>\d+)x(?<height>\d+)!/u;
 

@@ -110,8 +110,11 @@ const editFiles = (path: Path.Path, directory: string, base: string) => ({
   /** What the photo shows, if another model judged it. */
   description: path.join(directory, 'description.json'),
   crop: path.join(directory, 'crop.json'),
-  /** The cropped photo the image model gets. */
-  input: path.join(directory, 'input.jpg'),
+  /**
+   * The cropped photo the image model gets. Unlike the camera's picture it
+   * doesn't end in .jpg, so no photo's name makes them the same file.
+   */
+  input: path.join(directory, 'input.jpeg'),
   /** What the user wants to be done with the photo. */
   wish: path.join(directory, 'wish.json'),
   /** What is removed from the photo. */

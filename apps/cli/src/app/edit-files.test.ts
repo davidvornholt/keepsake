@@ -43,9 +43,11 @@ const contentsOf = (folder: string): Record<string, string> =>
       .map((file) => [relative(folder, file), readFileSync(file, 'base64')]),
   );
 
+const filesOf = async (photo: string) =>
+  (await runOk('show', 'lisbon', photo)).files;
+
 const folderOf = async (photo: string) => {
-  const shown = await runOk('show', 'lisbon', photo);
-  return join(shown.files.final, '..');
+  return join((await filesOf(photo)).final, '..');
 };
 
 describe('keepsake edit, with a photo in a folder named like another', () => {
@@ -73,5 +75,29 @@ describe('keepsake edit, with a photo in a folder named like another', () => {
     expect(existsSync(shootFile('edits', 'A', 'B'))).toBe(false);
     expect((await editLisbon('A/B')).edited).toBe(1);
     expect(fakeModels.edits).toHaveLength(2);
+  });
+});
+
+describe('keepsake edit, with a photo called input', () => {
+  it('gives the image model only the cropped photo', async () => {
+    fakeTools.files = [{ file: 'input.ARW', second: 0 }];
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
+    await runOk('cull', 'lisbon');
+    expect((await editLisbon('input')).edited).toBe(1);
+    const { camera, input } = await filesOf('input');
+    expect(input).not.toBe(camera);
+    // Cut out of the camera's picture, without its metadata.
+    const cropped = fakeTools.runs.filter(
+      ({ command, args }) =>
+        command === 'magick' &&
+        args[0] === camera &&
+        args.includes('-extent') &&
+        args.includes('-strip'),
+    );
+    expect(cropped).toHaveLength(1);
+    expect(fakeModels.edits[0]?.picture).toEqual(
+      new Uint8Array(readFileSync(input)),
+    );
   });
 });
