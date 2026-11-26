@@ -14,6 +14,7 @@ import {
   failureOf,
   judge,
   photosFolder,
+  putPhotos,
   runOk,
   setUp,
   shootFile,
@@ -31,6 +32,7 @@ const scanNested = async () => {
     { file: 'A.ARW', second: 0 },
     { file: 'A/B.ARW', second: 300 },
   ];
+  await putPhotos();
   await runOk('scan', photosFolder(), '--name', 'lisbon', '--about', 'Lisbon');
   await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
   await runOk('cull', 'lisbon');
@@ -99,6 +101,7 @@ describe('keepsake edit, moving edits out of another photo’s', () => {
       { file: 'A/B.ARW', second: 300 },
       { file: 'A~sB.ARW', second: 600 },
     ];
+    await putPhotos();
     await runOk('scan', photosFolder(), '--name', 'lisbon');
     await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
     await runOk('cull', 'lisbon');
@@ -122,6 +125,7 @@ const editBesideFolder = async () => {
     { file: 'A/B.ARW', second: 0 },
     { file: 'A~sB/C.ARW', second: 300 },
   ];
+  await putPhotos();
   await runOk('scan', photosFolder(), '--name', 'lisbon');
   await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
   await runOk('cull', 'lisbon');
@@ -182,6 +186,7 @@ describe('keepsake edit, moving edits out of a folder where others go', () => {
 describe('keepsake edit, with a photo called input', () => {
   it('gives the image model only the cropped photo', async () => {
     fakeTools.files = [{ file: 'input.ARW', second: 0 }];
+    await putPhotos();
     await runOk('scan', photosFolder(), '--name', 'lisbon');
     await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
     await runOk('cull', 'lisbon');

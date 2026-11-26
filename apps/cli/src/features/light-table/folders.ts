@@ -1,19 +1,14 @@
-import { Effect, FileSystem, Option, Path, type Semaphore } from 'effect';
+import { Effect, Option, Path, type Semaphore } from 'effect';
 import { developed } from '../../shared/develop.ts';
 import type { Shoot } from '../../shared/domain.ts';
-import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
-import { photoExtensions, readPhotos } from '../../shared/exif.ts';
+import { InvalidInput } from '../../shared/errors/errors.ts';
+import { type PhotoFile, photoFilesIn, readPhotos } from '../../shared/exif.ts';
 import { sizeOfBytes } from '../../shared/pictures.ts';
 import type { FolderList, FolderLook } from './contract.ts';
 import { spread } from './spread.ts';
 
 // The folders with the owner's photos, of which they make albums. Only those
 // below the folders that `serve` was told of are ever looked at.
-
-const isPhoto = new Set<string>(photoExtensions);
-
-const storeFailed = (folder: string) => (error: { readonly message: string }) =>
-  new StoreFailed({ message: `Could not read ${folder}: ${error.message}` });
 
 type Found = {
   readonly path: string;
@@ -23,48 +18,37 @@ type Found = {
 };
 type InRoot = Found & { readonly root: string };
 
-/** How many files are looked at at once. */
-const concurrency = 64;
-
-const modified = Effect.fn('modified')(function* (file: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const info = yield* fs.stat(file).pipe(Effect.option);
-  return Option.isNone(info) || info.value.type !== 'File'
-    ? []
-    : [Option.match(info.value.mtime, { onNone: () => 0, onSome: Number })];
-});
+/** Photos by the folder they are right in. */
+export const byFolder = (
+  path: Path.Path,
+  photos: ReadonlyArray<PhotoFile>,
+): ReadonlyMap<string, ReadonlyArray<PhotoFile>> => {
+  const grouped = new Map<string, Array<PhotoFile>>();
+  for (const photo of photos) {
+    const folder = path.dirname(photo.file);
+    const before = grouped.get(folder);
+    if (before === undefined) {
+      grouped.set(folder, [photo]);
+    } else {
+      before.push(photo);
+    }
+  }
+  return grouped;
+};
 
 /** Every folder with photos right in it. */
 const foldersIn = Effect.fn('foldersIn')(function* (root: string) {
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const names = yield* fs
-    .readDirectory(root, { recursive: true })
-    .pipe(Effect.mapError(storeFailed(root)));
-  const files = new Map<string, Array<string>>();
-  for (const name of names) {
-    const isHidden = name.split(path.sep).some((part) => part.startsWith('.'));
-    const extension = path.extname(name).slice(1).toLowerCase();
-    if (!isHidden && isPhoto.has(extension)) {
-      const folder = path.join(root, path.dirname(name));
-      const list = files.get(folder) ?? [];
-      list.push(path.join(root, name));
-      files.set(folder, list);
-    }
-  }
-  return yield* Effect.forEach([...files], ([folder, all]) =>
-    Effect.gen(function* () {
-      const times = (yield* Effect.forEach(all, modified, {
-        concurrency,
-      })).flat();
-      return {
-        path: folder,
-        files: all.toSorted(),
-        from: Math.min(...times),
-        to: Math.max(...times),
-      } satisfies Found;
-    }),
-  );
+  const grouped = byFolder(path, yield* photoFilesIn(root));
+  return [...grouped].map(([folder, photos]): Found => {
+    const times = photos.map(({ modified }) => modified);
+    return {
+      path: folder,
+      files: photos.map(({ file }) => file).toSorted(),
+      from: Math.min(...times),
+      to: Math.max(...times),
+    };
+  });
 });
 
 /** The folders around a folder, below a root, outermost first. */

@@ -1,5 +1,6 @@
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, PickList, Shoot } from './domain.ts';
+import { editFiles, editFolderName } from './edit-files.ts';
 import { InvalidInput, StepMissing, StoreFailed } from './errors/errors.ts';
 import { exclusively } from './lock.ts';
 import { xdgDirectory } from './xdg.ts';
@@ -96,70 +97,14 @@ export const readBytes = (path: string) =>
     return yield* fs.readFile(path).pipe(Effect.mapError(storeFailed(path)));
   });
 
-const shootsDirectory = Effect.gen(function* () {
+/** Where every shoot has its folder. */
+export const shootsDirectory = Effect.gen(function* () {
   const path = yield* Path.Path;
   const data = yield* xdgDirectory('XDG_DATA_HOME', '.local/share');
   return path.join(data, 'keepsake', 'shoots');
 });
 
-/** The files of an edit of a photo. */
-const editFiles = (path: Path.Path, directory: string, base: string) => ({
-  directory,
-  /** The camera's own full-size JPEG. */
-  camera: path.join(directory, `${base}.jpg`),
-  /** What the photo shows, if another model judged it. */
-  description: path.join(directory, 'description.json'),
-  crop: path.join(directory, 'crop.json'),
-  /**
-   * The cropped photo the image model gets. Unlike the camera's picture it
-   * doesn't end in .jpg, so no photo's name makes them the same file.
-   */
-  input: path.join(directory, 'input.jpeg'),
-  /** What the user wants to be done with the photo. */
-  wish: path.join(directory, 'wish.json'),
-  /** What is removed from the photo. */
-  removals: path.join(directory, 'removals.json'),
-  /** The people who can be recognised, and everyone else. */
-  people: path.join(directory, 'people.json'),
-  bystanders: path.join(directory, 'bystanders.json'),
-  /** The animals too small for the image model to draw. */
-  animals: path.join(directory, 'animals.json'),
-  signs: path.join(directory, 'signs.json'),
-  /** The areas that keep the photo's own texture. */
-  textures: path.join(directory, 'textures.json'),
-  /** What the image model made. */
-  version: (number: number) => path.join(directory, `version-${number}.png`),
-  /** The versions an attempt made, once all of them are saved. */
-  batch: (attempt: number) => path.join(directory, `attempt-${attempt}.json`),
-  /** The signs it got wrong. */
-  changedSigns: (number: number) =>
-    path.join(directory, `version-${number}-signs.json`),
-  /** The same with the original's people, textures and signs in it. */
-  versionWithOriginals: (number: number) =>
-    path.join(directory, `version-${number}-kept.png`),
-  /** What is wrong with it when looking closely. */
-  faults: (number: number) =>
-    path.join(directory, `version-${number}-faults.json`),
-  /** The same without what could be mended. */
-  versionMended: (number: number) =>
-    path.join(directory, `version-${number}-mended.png`),
-  /** The edit command that starts it over, and whether it is done with it. */
-  anew: path.join(directory, 'anew.json'),
-  final: path.join(directory, `${base}-keepsake.jpg`),
-  /** The finished photos that newer ones replaced. */
-  earlier: path.join(directory, 'earlier'),
-  record: path.join(directory, 'edit.json'),
-});
-export type EditFiles = ReturnType<typeof editFiles>;
-
 const shootNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
-
-/**
- * The name of a photo's edit folder, which holds no slash, so that the edit of
- * `A/B` isn't inside the one of `A`. Different photos get different names.
- */
-const editFolderName = (photo: string) =>
-  photo.replace(/[~/]/gu, (sign) => (sign === '/' ? '~s' : '~~'));
 
 /** Where keepsake keeps everything about one shoot. */
 export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
@@ -169,7 +114,10 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     });
   }
   const path = yield* Path.Path;
-  const root = path.join(yield* shootsDirectory, name);
+  const shoots = yield* shootsDirectory;
+  const root = path.join(shoots, name);
+  // Beside the shoot's folder, so a shoot can be removed while it is held.
+  const locks = path.join(shoots, '..', 'locks');
   return {
     root,
     shoot: path.join(root, 'shoot.json'),
@@ -192,7 +140,10 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     marks: path.join(root, 'marks'),
     labels: path.join(root, 'labels.json'),
     spending: path.join(root, 'spending.json'),
-    lock: path.join(root, 'lock'),
+    /** Held by the command that changes the shoot. */
+    lock: path.join(locks, name),
+    /** Held while what is in its album is read or changed. */
+    albumLock: path.join(locks, `${name}.album`),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** The agent that waits for marks, and the one the page started last. */
@@ -202,6 +153,7 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     handOvers: path.join(root, 'hand-overs.json'),
     /** The program that gets the shoot ready for the owner. */
     preparation: path.join(root, 'preparation.json'),
+    previews: path.join(root, 'previews'),
     preview: (photo: string) => path.join(root, 'previews', `${photo}.jpg`),
     verdicts: (model: string) =>
       path.join(root, 'verdicts', model.replaceAll('/', '--')),

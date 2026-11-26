@@ -1,12 +1,8 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
 import { Box } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import {
-  type EditFiles,
-  type OpenShoot,
-  readJson,
-  writeJson,
-} from '../../shared/store.ts';
+import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 
 /**
  * An edit command that starts photos over or edits them with a wish. Run

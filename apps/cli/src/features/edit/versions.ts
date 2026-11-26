@@ -1,8 +1,8 @@
 import { Effect, Option, Schema } from 'effect';
 import { type Box, Sign } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import {
   atomically,
-  type EditFiles,
   exists,
   readJson,
   writeBytes,

@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { noted } from './activity.ts';
 import { exclusively } from './lock.ts';
 import { Spending } from './spending.ts';
-import { type OpenShoot, openShoot } from './store.ts';
+import { type OpenShoot, openShoot, shootFiles } from './store.ts';
 
 /**
  * Runs a step on a shoot that no other command is working on, and adds what
@@ -13,11 +13,14 @@ export const workOn = <A, E, R>(
   step: (open: OpenShoot) => Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
-    const open = yield* openShoot(name);
+    const files = yield* shootFiles(name);
     const spending = yield* Spending;
-    return yield* step(open).pipe(
-      noted(open),
-      spending.savingTo(open.files.spending),
-      exclusively(open.files),
-    );
+    // Read only once the lock is held, so nothing changes it meanwhile.
+    return yield* Effect.gen(function* () {
+      const open = yield* openShoot(name);
+      return yield* step(open).pipe(
+        noted(open),
+        spending.savingTo(open.files.spending),
+      );
+    }).pipe(exclusively(files));
   });

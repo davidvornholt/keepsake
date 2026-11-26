@@ -59,13 +59,13 @@ const tagsOf = (file: string, taken: string) => ({
  */
 export const fakeTools = {
   runs: [] as Array<Run>,
-  /** The RAW files in the folder that is scanned, by the second each was taken. */
+  /** The RAW files in the folder that is scanned, by the second each was taken; `putPhotos` puts them there. */
   files: [] as Array<{ readonly file: string; readonly second: number }>,
   /** Assets the photos command has uploaded, by file. */
   uploads: [] as Array<string>,
   /** The album in Immich, once it was created. */
   album: undefined as ReadonlyArray<FakeAsset> | undefined,
-  /** RAW files ImageMagick can't read. */
+  /** RAW files whose pictures can't be read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
   isSubscribed: false,
@@ -75,6 +75,10 @@ export const fakeTools = {
   programs: {} as Record<string, (run: Run) => string>,
   /** How bright ImageMagick finds each pixel of a file, by how its path ends. */
   pictures: {} as Record<string, (x: number, y: number) => number>,
+  /** Holds a program up until the promise settles; one that rejects stops keepsake. */
+  pause: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
+  /** Holds back what a program answered, as it was when it ran, until the promise settles. */
+  late: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
 };
 
 export const resetTools = () => {
@@ -87,6 +91,8 @@ export const resetTools = () => {
   fakeTools.assistant = undefined;
   fakeTools.programs = {};
   fakeTools.pictures = {};
+  fakeTools.pause = undefined;
+  fakeTools.late = undefined;
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
@@ -98,11 +104,12 @@ const exiftool = (args: ReadonlyArray<string>): string => {
   }
   const places = args.filter((arg) => arg.startsWith('/'));
   return JSON.stringify(
-    args.includes('-r')
-      ? fakeTools.files.map(({ file, second }) =>
-          tagsOf(`${places[0]}/${file}`, takenAt(second)),
-        )
-      : places.map((file, second) => tagsOf(file, takenAt(second))),
+    places.map((path, index) => {
+      const second =
+        fakeTools.files.find(({ file }) => path.endsWith(`/${file}`))?.second ??
+        index;
+      return tagsOf(path, takenAt(second));
+    }),
   );
 };
 
@@ -235,9 +242,13 @@ const answer = (run: Run): string | Uint8Array => {
 
 /** What a program prints, or why it fails. */
 const outcomeOf = (run: Run) => {
-  const isBroken = run.args.some((arg) =>
-    [...fakeTools.broken].some((file) => arg.endsWith(file)),
-  );
+  // exiftool lists a broken file with the others, as it is.
+  const isListing = run.command === 'exiftool' && run.args.includes('-json');
+  const isBroken =
+    !isListing &&
+    run.args.some((arg) =>
+      [...fakeTools.broken].some((file) => arg.endsWith(file)),
+    );
   if (isBroken) {
     return { output: '', error: 'unreadable file' };
   }
@@ -283,7 +294,15 @@ const spawner = ChildProcessSpawner.make((spawned) =>
         }
       : { command: '', args: [], input: '', inputBytes, env: {} };
     fakeTools.runs.push(run);
+    const paused = fakeTools.pause?.(run);
+    if (paused !== undefined) {
+      yield* Effect.promise(() => paused);
+    }
     const { output, error } = outcomeOf(run);
+    const late = fakeTools.late?.(run);
+    if (late !== undefined) {
+      yield* Effect.promise(() => late);
+    }
     const stdout = Stream.make(
       typeof output === 'string' ? new TextEncoder().encode(output) : output,
     );

@@ -1,10 +1,10 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
 import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
+import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import { askReviewer, ReviewVision } from '../../shared/review-vision.ts';
 import {
   atomically,
-  type EditFiles,
   exists,
   type OpenShoot,
   readJson,

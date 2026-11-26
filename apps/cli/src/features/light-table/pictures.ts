@@ -3,8 +3,9 @@ import {
   FileSystem,
   Option,
   Path,
+  Ref,
   Schema,
-  type Semaphore,
+  Semaphore,
 } from 'effect';
 import { rgbaToThumbHash } from 'thumbhash';
 import { developed } from '../../shared/develop.ts';
@@ -75,20 +76,32 @@ export type Gallery = {
   readonly looks: Map<string, Look>;
   /** Keeps the machine usable while many pictures are made smaller. */
   readonly workers: Semaphore.Semaphore;
+  /** Held by each write to the cache, and all of it to remove the cache. */
+  readonly writing: Semaphore.Semaphore;
+  /** Whether the shoot was forgotten, so nothing is written for it any more. */
+  readonly isGone: Ref.Ref<boolean>;
 };
 
+/** More than are ever written at once. */
+const allWrites = 1_000_000;
+
 const looksFile = (cache: string) => `${cache}/looks.json`;
+
+/** Where the smaller copies of a shoot's pictures are kept. */
+const cacheOf = Effect.fn('cacheOf')(function* (name: string) {
+  const path = yield* Path.Path;
+  return path.join(
+    yield* xdgDirectory('XDG_CACHE_HOME', '.cache'),
+    'keepsake',
+    name,
+  );
+});
 
 export const openGallery = Effect.fn('openGallery')(function* (
   open: OpenShoot,
   workers: Semaphore.Semaphore,
 ) {
-  const path = yield* Path.Path;
-  const cache = path.join(
-    yield* xdgDirectory('XDG_CACHE_HOME', '.cache'),
-    'keepsake',
-    open.shoot.name,
-  );
+  const cache = yield* cacheOf(open.shoot.name);
   const looks = Option.getOrElse(
     yield* readJson(Looks, looksFile(cache)),
     () => ({}),
@@ -98,11 +111,60 @@ export const openGallery = Effect.fn('openGallery')(function* (
     cache,
     looks: new Map(Object.entries(looks)),
     workers,
+    writing: yield* Semaphore.make(allWrites),
+    isGone: yield* Ref.make(false),
   } satisfies Gallery;
 });
 
-export const saveLooks = ({ cache, looks }: Gallery) =>
-  writeJson(Looks, looksFile(cache), Object.fromEntries(looks));
+/** Writes to the cache, unless the shoot was forgotten; then gives false. */
+const toCache = <E, R>(
+  { writing, isGone }: Gallery,
+  write: Effect.Effect<unknown, E, R>,
+) =>
+  writing.withPermits(1)(
+    Effect.gen(function* () {
+      if (yield* Ref.get(isGone)) {
+        return false;
+      }
+      yield* write;
+      return true;
+    }),
+  );
+
+export const saveLooks = (gallery: Gallery) =>
+  toCache(
+    gallery,
+    writeJson(
+      Looks,
+      looksFile(gallery.cache),
+      Object.fromEntries(gallery.looks),
+    ),
+  );
+
+/**
+ * Removes the smaller copies of a forgotten shoot, once those being made are
+ * there, and makes no more of them.
+ */
+export const forgetPictures = Effect.fn('forgetPictures')(function* (
+  name: string,
+  gallery: Gallery | undefined,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const cache = gallery?.cache ?? (yield* cacheOf(name));
+  const remove = fs
+    .remove(cache, { recursive: true, force: true })
+    .pipe(
+      Effect.mapError(
+        ({ message }) =>
+          new StoreFailed({ message: `Could not use ${cache}: ${message}` }),
+      ),
+    );
+  yield* gallery === undefined
+    ? remove
+    : gallery.writing.withPermits(allWrites)(
+        Effect.andThen(Ref.set(gallery.isGone, true), remove),
+      );
+});
 
 const placeholderSide = 64;
 
@@ -155,11 +217,12 @@ const smallQuality = '82';
 
 /** A smaller copy of a picture, which is made the first time. */
 export const smaller = Effect.fn('smaller')(function* (
-  { open, cache, workers }: Gallery,
+  gallery: Gallery,
   photo: string,
   kind: string,
   width: number,
 ) {
+  const { open, cache, workers } = gallery;
   const file = fileOf(open, photo, kind);
   if (file === undefined || !(yield* exists(file))) {
     return;
@@ -167,23 +230,29 @@ export const smaller = Effect.fn('smaller')(function* (
   const version = yield* versionOf(file);
   const target = `${cache}/${photo}/${kind}-${version}-${width}.webp`;
   if (!(yield* exists(target))) {
-    yield* workers.withPermits(1)(
-      atomically(target, (draft) =>
-        toolBytes('magick', [
-          '-define',
-          `jpeg:size=${width * 2}x${width * 2}`,
-          file,
-          '-resize',
-          `${width}x>`,
-          '-strip',
-          '-quality',
-          smallQuality,
-          '-define',
-          'webp:method=4',
-          draft,
-        ]),
+    const isWritten = yield* toCache(
+      gallery,
+      workers.withPermits(1)(
+        atomically(target, (draft) =>
+          toolBytes('magick', [
+            '-define',
+            `jpeg:size=${width * 2}x${width * 2}`,
+            file,
+            '-resize',
+            `${width}x>`,
+            '-strip',
+            '-quality',
+            smallQuality,
+            '-define',
+            'webp:method=4',
+            draft,
+          ]),
+        ),
       ),
     );
+    if (!isWritten) {
+      return;
+    }
   }
   return target;
 });
