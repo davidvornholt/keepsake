@@ -2,7 +2,7 @@ import { Effect, FileSystem, Option, Path, type Semaphore } from 'effect';
 import { developed } from '../../shared/develop.ts';
 import type { Shoot } from '../../shared/domain.ts';
 import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
-import { photoExtensions, readPhotos } from '../../shared/exif.ts';
+import { isInside, photoExtensions, readPhotos } from '../../shared/exif.ts';
 import { sizeOfBytes } from '../../shared/pictures.ts';
 import type { FolderList, FolderLook } from './contract.ts';
 import { spread } from './spread.ts';
@@ -26,12 +26,29 @@ type InRoot = Found & { readonly root: string };
 /** How many files are looked at at once. */
 const concurrency = 64;
 
-const modified = Effect.fn('modified')(function* (file: string) {
+/**
+ * When a photo was last changed, unless it can't be read now or a link takes
+ * it from outside the root.
+ */
+const modified = Effect.fn('modified')(function* (root: string, file: string) {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const real = yield* fs.realPath(file).pipe(Effect.option);
   const info = yield* fs.stat(file).pipe(Effect.option);
-  return Option.isNone(info) || info.value.type !== 'File'
+  return Option.isNone(real) ||
+    Option.isNone(info) ||
+    info.value.type !== 'File' ||
+    !isInside(path, root, real.value)
     ? []
-    : [Option.match(info.value.mtime, { onNone: () => 0, onSome: Number })];
+    : [
+        {
+          file,
+          at: Option.match(info.value.mtime, {
+            onNone: () => 0,
+            onSome: Number,
+          }),
+        },
+      ];
 });
 
 /** Every folder with photos right in it. */
@@ -40,6 +57,9 @@ const foldersIn = Effect.fn('foldersIn')(function* (root: string) {
   const path = yield* Path.Path;
   const names = yield* fs
     .readDirectory(root, { recursive: true })
+    .pipe(Effect.mapError(storeFailed(root)));
+  const real = yield* fs
+    .realPath(root)
     .pipe(Effect.mapError(storeFailed(root)));
   const files = new Map<string, Array<string>>();
   for (const name of names) {
@@ -52,19 +72,27 @@ const foldersIn = Effect.fn('foldersIn')(function* (root: string) {
       files.set(folder, list);
     }
   }
-  return yield* Effect.forEach([...files], ([folder, all]) =>
+  const found = yield* Effect.forEach([...files], ([folder, all]) =>
     Effect.gen(function* () {
-      const times = (yield* Effect.forEach(all, modified, {
-        concurrency,
-      })).flat();
-      return {
-        path: folder,
-        files: all.toSorted(),
-        from: Math.min(...times),
-        to: Math.max(...times),
-      } satisfies Found;
+      const photos = (yield* Effect.forEach(
+        all,
+        (file) => modified(real, file),
+        { concurrency },
+      )).flat();
+      const times = photos.map(({ at }) => at);
+      return photos.length === 0
+        ? []
+        : [
+            {
+              path: folder,
+              files: photos.map(({ file }) => file).toSorted(),
+              from: Math.min(...times),
+              to: Math.max(...times),
+            } satisfies Found,
+          ];
     }),
   );
+  return found.flat();
 });
 
 /** The folders around a folder, below a root, outermost first. */

@@ -1,5 +1,5 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
-import { Effect, Path, Schema } from 'effect';
+import { Effect, FileSystem, Path, Schema } from 'effect';
 import type { Photo } from './domain.ts';
 import { InvalidInput, ToolFailed } from './errors/errors.ts';
 import { runTool } from './tools.ts';
@@ -150,6 +150,39 @@ export const foundPhotos = (
 
 export const photoExtensions = [...rawExtensions, ...pictureExtensions];
 
+/** Whether a path is inside a folder, and not the folder itself. */
+export const isInside = (path: Path.Path, folder: string, file: string) => {
+  const relative = path.relative(folder, file);
+  return (
+    relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
+  );
+};
+
+/**
+ * Leaves out the files that a link takes from outside the folder, since
+ * keepsake reads only the folder it is given. One that can't be found stays,
+ * to be listed as unreadable.
+ */
+const onlyInside = Effect.fn('onlyInside')(function* <A>(
+  source: string,
+  files: ReadonlyArray<A>,
+  fileOf: (one: A) => string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const folder = yield* fs
+    .realPath(source)
+    .pipe(Effect.orElseSucceed(() => source));
+  const kept = yield* Effect.forEach(files, (one) =>
+    fs.realPath(fileOf(one)).pipe(
+      Effect.map((real) => isInside(path, folder, real)),
+      Effect.orElseSucceed(() => true),
+      Effect.map((isKept) => (isKept ? [one] : [])),
+    ),
+  );
+  return kept.flat();
+});
+
 const readExif = Effect.fn('readExif')(function* (
   source: string,
   args: ReadonlyArray<string>,
@@ -189,8 +222,9 @@ const readExif = Effect.fn('readExif')(function* (
         }),
     ),
   );
+  const inside = yield* onlyInside(source, list, (exif) => exif.SourceFile);
   return foundPhotos(
-    list.map((exif) => ({
+    inside.map((exif) => ({
       file: path.relative(source, exif.SourceFile),
       exif,
     })),
