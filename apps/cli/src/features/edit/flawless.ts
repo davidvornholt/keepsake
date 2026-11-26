@@ -72,16 +72,13 @@ const inspection = (files: EditFiles, prepared: Prepared, checked: ToCheck) =>
     const faults: Array<Fault> = [];
     let left: ReadonlyArray<Fault> | null = null;
     for (let round = 0; round < mostRounds; round += 1) {
+      // Also what few would notice, such as a small bird that became a lump:
+      // the original's own pixels are right there, at no risk.
       const mendable = (left ?? found).filter((fault) => fault.rightInOriginal);
-      if (seriousOf(mendable).length === 0) {
+      if (mendable.length === 0) {
         break;
       }
-      // A texture is mended at no risk, and may look worse beside a mended one.
-      faults.push(
-        ...mendable.filter(
-          ({ serious, kind }) => serious || kind === 'texture',
-        ),
-      );
+      faults.push(...mendable);
       yield* mend(files, prepared, checked, faults);
       left = yield* inspected(mended);
     }
