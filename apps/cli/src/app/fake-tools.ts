@@ -1,4 +1,6 @@
 // biome-ignore-all lint/style/useNamingConvention: exiftool's names for the tags
+
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   existsSync,
@@ -74,8 +76,8 @@ export const fakeTools = {
   files: [] as Array<{ readonly file: string; readonly second: number }>,
   /** Files the photos command has sent to Immich, in the order it got them. */
   uploads: [] as Array<string>,
-  /** The assets in Immich, with the file and the bytes each was made of. */
-  library: [] as Array<{ id: string; file: string; bytes: string }>,
+  /** The assets in Immich, with the file and the checksum of its bytes. */
+  library: [] as Array<{ id: string; file: string; checksum: string }>,
   /** The albums in Immich, the first of which is created as `album-1`. */
   albums: [] as Array<FakeAlbum>,
   /** Assets Immich refuses to put into an album or take out of one. */
@@ -218,14 +220,16 @@ const removeAssets = (album: FakeAlbum, ids: ReadonlyArray<string>) => {
 
 /** Immich knows a file again by its checksum, wherever the file is. */
 const assetFor = (file: string) => {
-  const bytes = existsSync(file) ? readFileSync(file, 'utf8') : file;
-  const known = fakeTools.library.find((asset) => asset.bytes === bytes);
+  const checksum = createHash('sha1')
+    .update(existsSync(file) ? readFileSync(file) : file)
+    .digest('hex');
+  const known = fakeTools.library.find((asset) => asset.checksum === checksum);
   if (known !== undefined) {
     return { status: 'duplicate', assetId: known.id, trashed: false };
   }
   fakeTools.uploads.push(file);
   const id = `asset-${fakeTools.uploads.length}`;
-  fakeTools.library.push({ id, file, bytes });
+  fakeTools.library.push({ id, file, checksum });
   return { status: 'created', assetId: id };
 };
 
