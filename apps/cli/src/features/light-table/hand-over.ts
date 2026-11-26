@@ -109,24 +109,28 @@ export const claimUnsettled = Effect.fn('claimUnsettled')(function* (
 });
 
 /**
- * What the page is to start an agent for: what is still to be done and that
- * nobody took, or that the page took and no program said it started an agent
- * for, unless one is being started for it now.
+ * What the page is to start an agent for: what the page took and no program
+ * said it started an agent for, unless one is being started for it now, and,
+ * when it `mayTake` more, what is still to be done and that nobody took. An
+ * agent that waits takes that itself.
  */
 export const toLaunch = Effect.fn('toLaunch')(function* (
   files: ShootFiles,
   known: Standings,
-  launching: ReadonlySet<string>,
+  {
+    launching,
+    mayTake,
+  }: { readonly launching: ReadonlySet<string>; readonly mayTake: boolean },
 ) {
   const unsettled = yield* unsettledOf(files, known);
   const found = yield* Effect.forEach(unsettled, ({ id }) =>
     Effect.gen(function* () {
-      if (yield* claim(files, id, 'page')) {
-        return [id];
-      }
       const taken = yield* claimOn(files, id);
+      if (taken === null) {
+        return mayTake && (yield* claim(files, id, 'page')) ? [id] : [];
+      }
       const isUnstarted =
-        taken?.by === 'page' && !taken.isAcknowledged && !launching.has(id);
+        taken.by === 'page' && !taken.isAcknowledged && !launching.has(id);
       return isUnstarted ? [id] : [];
     }),
   );

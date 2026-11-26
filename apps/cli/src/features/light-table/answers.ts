@@ -115,8 +115,9 @@ const standingsOf = (open: OpenShoot) =>
 
 /**
  * Starts an agent for what is handed over, unless one waits for it, took it,
- * or was started for it already. What no program said it started an agent
- * for is started again, with the same ids.
+ * or was started for it already. What the page took and no program said it
+ * started an agent for is started again, with the same ids, also while an
+ * agent waits, since that one can't take it.
  */
 const callAgent = Effect.fn('callAgent')(function* (
   open: OpenShoot,
@@ -124,10 +125,11 @@ const callAgent = Effect.fn('callAgent')(function* (
   launching: Set<string>,
 ) {
   const { files, shoot } = open;
-  if ((yield* agentWaitsSince(files)) !== null) {
-    return;
-  }
-  const ids = yield* toLaunch(files, yield* standingsOf(open), launching);
+  const mayTake = (yield* agentWaitsSince(files)) === null;
+  const ids = yield* toLaunch(files, yield* standingsOf(open), {
+    launching,
+    mayTake,
+  });
   if (ids.length === 0) {
     return;
   }
