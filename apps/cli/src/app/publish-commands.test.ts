@@ -115,6 +115,23 @@ describe('keepsake publish, to the album it published to', () => {
       photos.map(({ photo }: { readonly photo: string }) => photo),
     ).toEqual(['A1', 'B', 'C']);
   });
+  it('keeps the favorite of the upload it replaces', async () => {
+    await publishLisbon();
+    for (const album of fakeTools.albums) {
+      album.assets = album.assets.map((asset) =>
+        asset.id === 'asset-3' ? { ...asset, favorite: true } : asset,
+      );
+    }
+    await editAgain('B');
+    await runOk('publish', 'lisbon');
+    const { photos } = await shootJson('album.json');
+    expect(photos).toContainEqual({
+      photo: 'B',
+      asset: 'asset-7',
+      favorite: true,
+    });
+  });
+
   it('names a replaced upload after a publish that failed half-way', async () => {
     await publishLisbon();
     await editAgain('A1');

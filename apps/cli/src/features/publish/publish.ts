@@ -8,6 +8,7 @@ import {
   albumWithId,
   createAlbum,
   ensureTag,
+  markFavorite,
   stackPhotos,
   tagPhoto,
   uploadPhoto,
@@ -37,6 +38,8 @@ type Job = {
   readonly photo: string;
   readonly digest: string;
   readonly before: Published | undefined;
+  /** Whether the upload it replaces is a favorite. */
+  readonly favorite: boolean;
 };
 
 const digestOf = (file: string) =>
@@ -105,8 +108,12 @@ const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   target: Target,
-  published: ReadonlyArray<Published>,
+  album: {
+    readonly published: ReadonlyArray<Published>;
+    readonly favorites: ReadonlySet<string>;
+  },
 ) {
+  const { published, favorites } = album;
   const photos = yield* photosToSend(open, names, target);
   const found = yield* Effect.forEach(photos, (photo) =>
     Effect.gen(function* () {
@@ -118,7 +125,8 @@ const jobs = Effect.fn('jobs')(function* (
       }
       const digest = yield* digestOf(files.final);
       const before = published.find((earlier) => earlier.photo === photo);
-      return [{ photo, digest, before } satisfies Job];
+      const favorite = favorites.has(photo);
+      return [{ photo, digest, before, favorite } satisfies Job];
     }),
   );
   return found.flat();
@@ -136,6 +144,9 @@ const send = Effect.fn('send')(function* (
   yield* stackPhotos(asset, cameraAsset);
   yield* tagPhoto(tag, asset);
   const isReplaced = before !== undefined && before.asset !== asset;
+  if (isReplaced && job.favorite) {
+    yield* markFavorite(asset, true);
+  }
   const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
   return {
     photo,
@@ -184,8 +195,14 @@ export const publish = Effect.fn('publish')(function* (
   const isSame = isAbout(before, target);
   const there = isSame ? yield* readAlbum(open) : null;
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
+  const favorites = new Set(
+    there?.photos.flatMap(({ photo, favorite }) => (favorite ? [photo] : [])),
+  );
   const previous = isSame && before !== null ? before.photos : [];
-  const ready = yield* jobs(open, names, target, previous);
+  const ready = yield* jobs(open, names, target, {
+    published: previous,
+    favorites,
+  });
   if (ready.length === 0) {
     return yield* new StepMissing({
       message: `${names.length === 0 ? `No photo of ${name} is` : 'None of these photos is'} finished yet. Run \`keepsake edit ${[name, ...names].join(' ')}\` first.`,
