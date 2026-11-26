@@ -9,6 +9,6 @@
 - What the page and the server send each other is in `contract.ts` and `schemas.ts`. `revision.ts` decides when the page reads a shoot again, so add a file there when the page shows something new from it.
 - Every command picks up where it stopped. Write results with `atomically` as soon as they exist, because each one cost money.
 - `shared/subscriptions` runs the programs of Claude Code and Codex without tools, settings, instructions of the machine, or a saved session, and never with an API key, so photos stay out of session files and nothing is billed. Keep it so when their options change.
-- Prices in `shared/spending.ts` and the sizes in `features/edit/geometry.ts` belong to the models; check both when a model is added.
+- Prices and the most tokens a request may use in `shared/prices.ts`, and the sizes in `features/edit/geometry.ts` belong to the models; check both when a model is added.
 - No photo, server address, Azure resource or other personal detail belongs in this public repository. Tests use `example.openai.azure.com`, and no test reaches a real model.
 - Keep the skill in `apps/cli/skills/keepsake/SKILL.md` in step with the commands.
