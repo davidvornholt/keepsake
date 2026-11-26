@@ -47,7 +47,7 @@ const Found = Schema.Struct({
 const margin = 0.15;
 
 /** What the user marked, with a little around it. */
-const withMargin = ({ left, top, right, bottom }: Box): Box => {
+export const withMargin = ({ left, top, right, bottom }: Box): Box => {
   const across = (right - left) * margin;
   const down = (bottom - top) * margin;
   return {

@@ -115,7 +115,16 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
       }
     }
     expect(outside.filter((value) => value !== 100)).toEqual([]);
-    expect(pixels[(16 * width + 15) * 3]).toBeGreaterThan(100);
+    const row = Array.from(
+      { length: 10 },
+      (_, index) => pixels[(16 * width + 14 + index) * 3] ?? 0,
+    );
+    const change = (row[0] ?? 0) - 100;
+    expect(change).toBeGreaterThan(0);
+    // The change fades out across the little around the mark, without a step.
+    const steps = row.slice(1).map((value, index) => (row[index] ?? 0) - value);
+    expect(steps.every((step) => step >= 0)).toBe(true);
+    expect(Math.max(...steps)).toBeLessThan((change * 2) / 3);
   });
 
   it('changes the camera’s own picture only inside the mark', async () => {

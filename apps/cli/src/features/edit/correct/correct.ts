@@ -27,7 +27,7 @@ export type CorrectionFiles = ReturnType<ShootFiles['edit']>['correction'];
 export type Correction = Pick<Job, 'open' | 'versions'> & {
   readonly files: CorrectionFiles;
   readonly places: ReadonlyArray<Place>;
-  /** All that may change, if the user marked it. */
+  /** What the user marked, if they did; a little around it may change too. */
   readonly areas: ReadonlyArray<Box> | null;
 };
 
