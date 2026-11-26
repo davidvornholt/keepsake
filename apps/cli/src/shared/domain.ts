@@ -166,6 +166,11 @@ export const Removed = Schema.Struct({
   photo: Schema.String,
   at: Schema.String,
   because: Schema.NullOr(Schema.String),
+  /**
+   * The id of the album it went missing from. Without one it stays out of
+   * every album, as the owner asked or as records from before ids were kept.
+   */
+  album: Schema.optionalKey(Schema.String),
 });
 export type Removed = typeof Removed.Type;
 
@@ -239,7 +244,11 @@ export const EditRecord = Schema.Struct({
 export type EditRecord = typeof EditRecord.Type;
 
 export const Publication = Schema.Struct({
+  /** The album's name when keepsake last published to it. */
   album: Schema.String,
+  /** Missing only in records from before keepsake kept the album's id. */
+  albumId: Schema.optionalKey(Schema.String),
+  /** What was published to this album, and to no other. */
   photos: Schema.Array(
     Schema.Struct({
       photo: Schema.String,

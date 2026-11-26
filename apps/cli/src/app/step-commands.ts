@@ -248,7 +248,7 @@ export const edit = Command.make(
 
 const albumFlag = optionalString(
   'album',
-  'The name of the album (default: what the shoot is about, or its name)',
+  'The name of the album (default: the one published to before, or what the shoot is about, or its name)',
 );
 
 export const publish = Command.make(

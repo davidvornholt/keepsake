@@ -78,6 +78,22 @@ describe('keepsake publish, with an album that changed in Immich', () => {
     expect(result).toMatchObject({ published: 1, outdated: ['asset-3'] });
   });
 
+  it('leaves the photos of one album out of another', async () => {
+    await publishLisbon();
+    const second = await runOk('publish', 'lisbon', 'A1', '--album', 'Second');
+    expect(second).toMatchObject({ album: { id: 'album-2' }, outdated: [] });
+    expect(await shootJson('removed.json').catch(() => [])).toEqual([]);
+    const rest = await runOk('publish', 'lisbon');
+    expect(rest).toMatchObject({
+      album: { id: 'album-2', name: 'Second' },
+      published: 2,
+      alreadyThere: 1,
+      outdated: [],
+    });
+    expect(await inAlbum()).toEqual(['A1', 'B', 'C']);
+    expect(fakeTools.albums[0]?.assets).toHaveLength(3);
+  });
+
   it('takes the newer of two versions until the older is trashed', async () => {
     await publishLisbon();
     await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');

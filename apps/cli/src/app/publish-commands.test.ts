@@ -60,3 +60,43 @@ describe('keepsake publish', () => {
     expect(named.message).toContain('keepsake edit lisbon B');
   });
 });
+
+const editAgain = (photo: string) =>
+  writeFile(shootFile('edits', photo, `${photo}-keepsake.jpg`), 'another');
+
+const publishLisbon = async () => {
+  await pickLisbon();
+  await editLisbon();
+  return await runOk('publish', 'lisbon');
+};
+
+describe('keepsake publish, to the album it published to', () => {
+  it('publishes to no album when two have its name', async () => {
+    fakeTools.albums = ['album-1', 'album-2'].map((id) => ({
+      id,
+      name: 'Lisbon, May 2026',
+      assets: [],
+    }));
+    await pickLisbon();
+    await editLisbon();
+    const failure = await failureOf('publish', 'lisbon');
+    expect(failure.message).toContain('2 albums called Lisbon, May 2026');
+    expect(fakeTools.uploads).toEqual([]);
+  });
+
+  it('stays with an album that was renamed in Immich', async () => {
+    await publishLisbon();
+    const [album] = fakeTools.albums;
+    if (album !== undefined) {
+      album.name = 'Lisboa';
+    }
+    await editAgain('B');
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({
+      album: { id: 'album-1', name: 'Lisboa' },
+      published: 1,
+    });
+    expect(fakeTools.albums).toHaveLength(1);
+    expect(album?.assets.map(({ id }) => id)).toContain('asset-7');
+  });
+});

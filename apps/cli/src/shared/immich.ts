@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { ToolFailed } from './errors/errors.ts';
+import { InvalidInput, ToolFailed } from './errors/errors.ts';
 import { toolText } from './tools.ts';
 
 // keepsake reaches Immich through the photos command, so it needs no key of
@@ -25,19 +25,29 @@ const photos = Effect.fn('photos')(function* <S extends Schema.Constraint>(
 const Named = Schema.Struct({ id: Schema.String, name: Schema.String });
 const NamedList = Schema.Array(Named);
 
-/** The album with this name, if there is one. */
-export const findAlbum = Effect.fn('findAlbum')(function* (name: string) {
+/**
+ * The album with this name, if there is one. Albums are told apart by their
+ * id, so a name two albums share names none of them.
+ */
+export const albumNamed = Effect.fn('albumNamed')(function* (name: string) {
   const albums = yield* photos(NamedList, ['albums', 'list', '--name', name]);
-  return albums.find((candidate) => candidate.name === name);
+  const same = albums.filter((candidate) => candidate.name === name);
+  if (same.length > 1) {
+    return yield* new InvalidInput({
+      message: `Immich has ${same.length} albums called ${name} (${same.map(({ id }) => id).join(', ')}), and keepsake can't tell which is meant. Rename all but one of them in Immich, or give another name with --album.`,
+    });
+  }
+  return same[0];
 });
 
-/** The album with this name, which is created when there is none. */
-export const albumNamed = Effect.fn('albumNamed')(function* (name: string) {
-  return (
-    (yield* findAlbum(name)) ??
-    (yield* photos(Named, ['albums', 'create', name]))
-  );
+/** The album with this id, under the name it has now, unless it is gone. */
+export const albumWithId = Effect.fn('albumWithId')(function* (id: string) {
+  const albums = yield* photos(NamedList, ['albums', 'list']);
+  return albums.find((candidate) => candidate.id === id);
 });
+
+export const createAlbum = (name: string) =>
+  photos(Named, ['albums', 'create', name]);
 
 const Uploaded = Schema.Struct({
   files: Schema.Array(
@@ -105,7 +115,7 @@ export type Asset = (typeof Page.Type)['assets'][number];
 
 const pageSize = '1000';
 
-/** Every photo of an album. */
+/** Every photo of an album that isn't in the trash. */
 export const albumAssets = Effect.fn('albumAssets')(function* (id: string) {
   const assets: Array<Asset> = [];
   let cursor: string | null = null;

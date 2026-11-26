@@ -4,7 +4,7 @@ import { PickList, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { removeFromAlbum } from '../../shared/immich.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
-import { readRemoved } from '../../shared/standing.ts';
+import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 
 /** The photos that are to be in the album. */
@@ -24,7 +24,8 @@ export const takeOut = Effect.fn('takeOut')(function* (
 ) {
   const { name } = open.shoot;
   const album = yield* readAlbum(open);
-  const before = yield* readRemoved(open);
+  const all = yield* readAllRemoved(open);
+  const before = all.filter(isOutOf(album?.id));
   const picked = yield* pickedOf(open);
   const photos = yield* Effect.forEach(names, (one) => photoNamed(open, one));
   const found = yield* Effect.forEach(photos, ({ id }) => {
@@ -44,8 +45,9 @@ export const takeOut = Effect.fn('takeOut')(function* (
   }
   const now = DateTime.formatIso(yield* DateTime.now);
   const ids = new Set(found.map(({ id }) => id));
+  // The owner's own reason keeps a photo out of every album.
   yield* writeJson(Schema.Array(Removed), open.files.removed, [
-    ...before.filter(({ photo }) => !ids.has(photo)),
+    ...all.filter(({ photo }) => !ids.has(photo)),
     ...found.map(({ id, at }) => ({ photo: id, at: at ?? now, because })),
   ]);
   const after = yield* readAlbum(open);

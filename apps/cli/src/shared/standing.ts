@@ -3,6 +3,7 @@ import {
   Album,
   type Moment,
   PickList,
+  Publication,
   Reason,
   Removed,
   type Verdict,
@@ -46,11 +47,27 @@ export const readReasons = (open: OpenShoot) =>
     Option.getOrElse((): ReadonlyArray<Reason> => []),
   );
 
-export const readRemoved = (open: OpenShoot) =>
+/** Every photo that was taken out, of whichever album. */
+export const readAllRemoved = (open: OpenShoot) =>
   Effect.map(
     readJson(Removals, open.files.removed),
     Option.getOrElse((): ReadonlyArray<Removed> => []),
   );
+
+/** Whether a photo that was taken out stays out of the album with this id. */
+export const isOutOf =
+  (album: string | undefined) =>
+  (removed: Removed): boolean =>
+    removed.album === undefined || removed.album === album;
+
+/** The photos that stay out of the album keepsake publishes to. */
+export const readRemoved = Effect.fn('readRemoved')(function* (
+  open: OpenShoot,
+) {
+  const published = yield* readJson(Publication, open.files.publication);
+  const album = Option.getOrUndefined(published)?.albumId;
+  return (yield* readAllRemoved(open)).filter(isOutOf(album));
+});
 
 type Known = {
   readonly album: Album | null;
