@@ -1,5 +1,6 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { wholePicture } from '../../shared/boxes.ts';
+import type { Box } from '../../shared/domain.ts';
 import { putBack } from './keep-originals.ts';
 import { isBlock, picture, valueAt } from './pixels/test-pictures.ts';
 
@@ -86,7 +87,7 @@ describe('putBack', () => {
       { left: 0, top: 0, right: 1, bottom: 1.2 },
     ]) {
       const edit = editWith(marks);
-      putBack(originals, photoWith(marks), edit, crop);
+      putBack(originals, photoWith(marks), edit, { crop });
       const values: Array<{ mark: boolean; value: number }> = [];
       // Away from the edges, which the enlargement softens.
       for (let y = place.top + 25; y < place.bottom - 20; y += 10) {
@@ -112,7 +113,9 @@ describe('putBack', () => {
     };
     const edits = [[], [{ text: 'A', box: chest }]].map((signs) => {
       const edit = editWith(skin);
-      putBack({ ...person, signs }, photoWith(skin), edit, wholePicture);
+      putBack({ ...person, signs }, photoWith(skin), edit, {
+        crop: wholePicture,
+      });
       return edit.pixels;
     });
     expect(edits[1]).toEqual(edits[0]);
@@ -122,12 +125,9 @@ describe('putBack', () => {
     const removed = { ...box, right: (box.left + box.right) / 2 };
     const edit = editWith(letters);
     const before = editWith(letters);
-    putBack(
-      { ...sign, gone: [removed] },
-      photoWith(letters),
-      edit,
-      wholePicture,
-    );
+    putBack({ ...sign, gone: [removed] }, photoWith(letters), edit, {
+      crop: wholePicture,
+    });
     const changed = (column: number) =>
       Array.from({ length: 100 }, (_, index) =>
         Math.round(scale * (place.top + 30 + index) + offset.y),
@@ -152,16 +152,15 @@ describe('putBack', () => {
     const edit = picture(size, (x, y) =>
       isBroken(x, y) ? 255 : wall(x - shift.x, y - shift.y),
     );
-    putBack(nothing, picture(size, wall), edit, wholePicture, {
-      patches: [
-        {
-          left: broken.left / size.width,
-          top: broken.top / size.height,
-          right: broken.right / size.width,
-          bottom: broken.bottom / size.height,
-        },
-      ],
-      textures: [],
+    const patch = {
+      left: broken.left / size.width,
+      top: broken.top / size.height,
+      right: broken.right / size.width,
+      bottom: broken.bottom / size.height,
+    };
+    putBack(nothing, picture(size, wall), edit, {
+      crop: wholePicture,
+      mending: { patches: [patch], textures: [] },
     });
     for (let y = broken.top + 10; y < broken.bottom - 10; y += 10) {
       for (let x = broken.left + 10; x < broken.right - 10; x += 10) {
@@ -169,5 +168,59 @@ describe('putBack', () => {
         expect(Math.abs(valueAt(edit, x, y) - wanted)).toBeLessThan(10);
       }
     }
+  });
+});
+
+/** A person whose face is the top of the place, and the edit in place. */
+const face = { ...box, bottom: box.top + (box.bottom - box.top) / 4 };
+const lowerHalf = Math.round(((box.top + box.bottom) / 2) * size.height);
+const redrawnSkin = (x: number, y: number) =>
+  isRedrawn(x, y) ? skin.bright : skin.dark;
+const stillEdit = () =>
+  picture(size, (x, y) => (isInPlace(x, y) ? redrawnSkin(x, y) : wall(x, y)));
+const movedTo = (x: number, y: number) => ({
+  column: Math.round(scale * x + offset.x),
+  row: Math.round(scale * y + offset.y),
+});
+const stillAt = (x: number, y: number) => ({ column: x, row: y });
+
+describe.each([
+  { name: 'shifted', edited: () => editWith(skin), shown: movedTo },
+  { name: 'in place', edited: stillEdit, shown: stillAt },
+])('putBack, with a person and a removal, $name', ({ edited, shown }) => {
+  /** How many pixels of the place between two rows a removal leaves changed. */
+  const changes = (gone: Box) => {
+    const edit = edited();
+    const before = edited();
+    const outline = person.people[0]?.outline ?? [];
+    putBack(
+      { ...person, people: [{ face, outline }], gone: [gone] },
+      photoWith(skin),
+      edit,
+      { crop: wholePicture },
+    );
+    return (from: number, to: number) => {
+      let changed = 0;
+      for (let y = from; y < to; y += 2) {
+        for (let x = place.left + 30; x < place.right - 30; x += 2) {
+          const { column, row } = shown(x, y);
+          const isSame =
+            valueAt(edit, column, row) === valueAt(before, column, row);
+          changed += isSame ? 0 : 1;
+        }
+      }
+      return changed;
+    };
+  };
+
+  it('brings the person back only outside it', () => {
+    const changed = changes({ ...box, top: (box.top + box.bottom) / 2 });
+    expect(changed(lowerHalf + 20, place.bottom - 10)).toBe(0);
+    expect(changed(place.top + 10, lowerHalf - 20)).toBeGreaterThan(0);
+  });
+
+  it('brings all of them back when it reaches their face', () => {
+    const changed = changes({ ...box, top: face.top });
+    expect(changed(lowerHalf + 20, place.bottom - 10)).toBeGreaterThan(0);
   });
 });

@@ -58,6 +58,19 @@ const boundsOf = ({ face, outline }: Person): Box =>
     ...outline.map(({ x, y }) => ({ left: x, top: y, right: x, bottom: y })),
   ]);
 
+const overlap = (one: Box, other: Box): boolean =>
+  one.left < other.right &&
+  other.left < one.right &&
+  one.top < other.bottom &&
+  other.top < one.bottom;
+
+/**
+ * Where something was removed that doesn't come back with a person. One that
+ * reaches their face does, since no face of an edit is let through.
+ */
+const removedBeside = (face: Box, gone: ReadonlyArray<Box>) =>
+  gone.filter((box) => !overlap(box, face));
+
 /** The texts and logos on a person. */
 const writtenOn = (
   person: Person,
@@ -111,14 +124,17 @@ const keepMoved = (
     const rough = placedPerson(person, placement, original);
     const shift = shiftOf(moved, edit, frameOf(boundsOf(rough), original));
     const exact = movedOn(placement, shift);
-    keepPerson(
-      placed(original, edit, photo, exact),
-      edit,
-      placedPerson(person, exact, original),
-      writtenOn(person, originals.signs).map(
-        (sign) => placedSign(sign, exact, original).box,
-      ),
-    );
+    const there = placedPerson(person, exact, original);
+    changeOutside(removedBeside(there.face, gone), edit, () => {
+      keepPerson(
+        placed(original, edit, photo, exact),
+        edit,
+        there,
+        writtenOn(person, originals.signs).map(
+          (sign) => placedSign(sign, exact, original).box,
+        ),
+      );
+    });
   }
   const signs = signsApart(originals).map((sign) =>
     placedSign(sign, placement, original),
@@ -140,8 +156,14 @@ export const putBack = (
   wanted: Originals,
   original: Raster,
   edit: Raster,
-  crop: Box,
-  mending: Mending = nothingToMend,
+  {
+    crop,
+    mending = nothingToMend,
+  }: {
+    /** What the edit shows of the photo. */
+    readonly crop: Box;
+    readonly mending?: Mending;
+  },
 ): void => {
   const originals = {
     ...wanted,
@@ -166,12 +188,14 @@ export const putBack = (
   });
   for (const person of originals.people) {
     const written = writtenOn(person, originals.signs);
-    keepPerson(
-      original,
-      edit,
-      person,
-      written.map(({ box }) => box),
-    );
+    changeOutside(removedBeside(person.face, originals.gone), edit, () => {
+      keepPerson(
+        original,
+        edit,
+        person,
+        written.map(({ box }) => box),
+      );
+    });
   }
   const signs = signsApart(originals);
   changeOutside(originals.gone, edit, () => {
@@ -198,6 +222,6 @@ export const keepOriginals = Effect.fn('keepOriginals')(function* (
   const size = yield* sizeOf(files.original);
   const original = yield* rasterOf(files.original, size);
   const edit = yield* rasterOf(files.version, size);
-  putBack(originals, original, edit, crop, mending);
+  putBack(originals, original, edit, { crop, mending });
   yield* writeRaster(files.target, edit);
 });
