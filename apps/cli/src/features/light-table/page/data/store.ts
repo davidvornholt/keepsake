@@ -145,6 +145,9 @@ const marking = (core: Core) => {
   };
 };
 
+const unsaved =
+  'A mark wasn’t saved, so nothing was handed over. Look them over and hand them over again.';
+
 const answering = (core: Core) => ({
   seen: async (id: string) => {
     core.setMarks((marks) => withSeen(marks, id, new Date().toISOString()));
@@ -158,8 +161,12 @@ const answering = (core: Core) => ({
     core.setUndos([]);
     const handed = await core.send(async () => {
       // A mark that is still being saved is handed over by the id it gets.
+      // One that isn't saved makes what was agreed to another hand-over.
       const ids = await Promise.all(agreed.marks.map(core.idOf));
       const marks = ids.filter((id) => id !== null);
+      if (marks.length < ids.length) {
+        throw new Error(unsaved);
+      }
       return handOverMarks(core.name, { ...agreed, marks });
     });
     return handed?.length ?? null;

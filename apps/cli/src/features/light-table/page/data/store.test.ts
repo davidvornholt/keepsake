@@ -75,6 +75,23 @@ describe('a change that keepsake didn’t get', () => {
   });
 });
 
+describe('a hand-over', () => {
+  it('stops when a mark it was to hand over wasn’t saved', async () => {
+    const store = await loaded();
+    const draft = store.make(wish);
+    const handing = store.handOver({
+      dollars: 0.5,
+      marks: [draft?.id ?? ''],
+      album: null,
+    });
+    (await next('PUT')).answer(new Error('offline'));
+    await answerWith('GET', shootWith());
+    expect(await handing).toBeNull();
+    expect(calls.map(({ method }) => method)).not.toContain('POST');
+    expect(store.get().problem).not.toBeNull();
+  });
+});
+
 describe('undo', () => {
   it('takes back a mark it brought back', async () => {
     const store = await loaded();
