@@ -1,7 +1,10 @@
+// biome-ignore-all lint/style/useNamingConvention: the programs' names
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import {
   asked,
+  credentialsPath,
   failureOf,
   judge,
   photosFolder,
@@ -11,8 +14,63 @@ import {
   shootFile,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeModels, verdictAnswer } from './fake-models.ts';
+import { fakeModels, usualAnswers, verdictAnswer } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
+
+type Run = Parameters<NonNullable<typeof fakeTools.assistant>>[0];
+
+/** The usual answer to the question whose schema a program was given. */
+const answerTo = ({ command, args }: Run) => {
+  const given = (name: string) => args[args.indexOf(name) + 1] ?? '';
+  const schema = JSON.parse(
+    command === 'claude'
+      ? given('--json-schema')
+      : readFileSync(given('--output-schema'), 'utf8'),
+  );
+  const keysOf = (object: object) =>
+    Object.keys(object)
+      .toSorted((one, other) => one.localeCompare(other))
+      .join();
+  const wanted = keysOf(schema.properties);
+  const answer = Object.values(usualAnswers).find(
+    (usual) => keysOf(usual) === wanted,
+  );
+  if (answer === undefined) {
+    throw new Error(`No usual answer has the keys ${wanted}`);
+  }
+  return answer;
+};
+
+/** Answers as Claude Code and Codex do on a subscription. */
+const subscriptionAnswer = (run: Run) => {
+  const answer = answerTo(run);
+  const events =
+    run.command === 'claude'
+      ? [
+          {
+            type: 'result',
+            is_error: false,
+            structured_output: answer,
+            usage: {
+              input_tokens: 1,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+              output_tokens: 1,
+            },
+          },
+        ]
+      : [
+          {
+            type: 'item.completed',
+            item: { type: 'agent_message', text: JSON.stringify(answer) },
+          },
+          {
+            type: 'turn.completed',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        ];
+  return events.map((event) => JSON.stringify(event)).join('\n');
+};
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -63,6 +121,40 @@ describe('keepsake run', () => {
     expect(existsSync(shootFile('edits'))).toBe(false);
     const both = await failureOf(...runLisbon('--unedited', '--publish'));
     expect(both.message).toContain('either --unedited or --publish');
+  });
+
+  it('needs no API key to get a shoot ready on the subscriptions', async () => {
+    await rm(credentialsPath());
+    await rm(shootFile('judge.json'));
+    fakeTools.isSubscribed = true;
+    fakeTools.assistant = subscriptionAnswer;
+    const result = await runOk(
+      'run',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--unedited',
+    );
+    expect(result).toMatchObject({
+      culled: { model: 'codex/gpt-6.2-sol', failed: [] },
+      picked: { picked: 3 },
+      edited: null,
+      dollarsSpent: 0,
+    });
+    const commands = new Set(fakeTools.runs.map(({ command }) => command));
+    expect(commands).toContain('codex');
+    expect(commands).toContain('claude');
+  });
+
+  it('asks nothing when it couldn’t edit afterwards', async () => {
+    await rm(credentialsPath());
+    fakeTools.isSubscribed = true;
+    fakeTools.assistant = subscriptionAnswer;
+    const failure = await failureOf(
+      ...runLisbon('--model', 'codex/gpt-6.2-sol'),
+    );
+    expect(failure._tag).toBe('NotSignedIn');
+    expect(fakeTools.runs.map(({ command }) => command)).not.toContain('codex');
   });
 
   it('stops when many moments couldn’t be judged, and goes on later', async () => {

@@ -34,7 +34,8 @@ export const assessment = (version: number, overrides: object = {}) => ({
   ...overrides,
 });
 
-const usualAnswers = {
+/** What the fake models answer unless a test says otherwise. */
+export const usualAnswers = {
   judgement: verdictAnswer,
   shortlist: { best: [1] },
   check: {

@@ -2,7 +2,7 @@ import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
 import { edit as editShoot } from '../features/edit/edit.ts';
-import { ImageModel } from '../features/edit/image-model.ts';
+import { ImageModel, imageModelAccess } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { markWith } from '../features/light-table/marks.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
@@ -154,15 +154,16 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
   return { photos: [photo], wish, areas: boxes };
 });
 
+const imageModelOf = (asked: Option.Option<string>) =>
+  Option.getOrElse(asked, () => defaultImageModel);
+
 /** The models that edit and that look after the edits. */
 const editLayer = (flags: {
   readonly imageModel: Option.Option<string>;
   readonly reviewModel: Option.Option<string>;
 }) =>
   Layer.merge(
-    ImageModel.layer(
-      Option.getOrElse(flags.imageModel, () => defaultImageModel),
-    ),
+    ImageModel.layer(imageModelOf(flags.imageModel)),
     reviewLayer(flags.reviewModel),
   );
 
@@ -332,6 +333,11 @@ export const run = Command.make(
       if (flags.unedited && flags.publish) {
         return yield* fail('Give either --unedited or --publish.');
       }
+      const imageModel = imageModelOf(flags.imageModel);
+      if (!flags.unedited) {
+        // Stops before the cull, which may cost money, when it couldn't edit.
+        yield* imageModelAccess(imageModel);
+      }
       const scanned = yield* scan(flags);
       const { shoot } = scanned;
       yield* Effect.gen(function* () {
@@ -340,6 +346,7 @@ export const run = Command.make(
         const picked = yield* workOn(shoot, (open) =>
           pickShoot(open, { ...picking, again: false }),
         );
+        // Only the edits need the image model, so --unedited needs no key.
         const edited = flags.unedited
           ? null
           : yield* workOn(shoot, (open) =>
@@ -349,7 +356,7 @@ export const run = Command.make(
                 wish: null,
                 areas: [],
               }),
-            );
+            ).pipe(Effect.provide(ImageModel.layer(imageModel)));
         const published = flags.publish
           ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
           : null;
@@ -364,7 +371,10 @@ export const run = Command.make(
           published,
           explained,
         });
-      }).pipe(Effect.provide(editLayer(flags)), withVision(shoot, flags.model));
+      }).pipe(
+        Effect.provide(reviewLayer(flags.reviewModel)),
+        withVision(shoot, flags.model),
+      );
     }).pipe(Effect.provide(Spending.layer)),
 ).pipe(
   Command.withDescription(
