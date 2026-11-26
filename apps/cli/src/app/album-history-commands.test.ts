@@ -37,7 +37,7 @@ const assetsOf = (id: string) =>
 
 /** Someone shares an album with the owner under a name keepsake knows. */
 const shareAlbum = (name: string) => {
-  fakeTools.albums.push({ id: 'shared', name, assets: [] });
+  fakeTools.albums.push({ id: 'shared', name, owner: 'Friend', assets: [] });
 };
 
 /** What keepsake wrote before it kept the album's id. */
@@ -113,6 +113,31 @@ describe('keepsake publish, after the album changed in Immich', () => {
     expect(assetsOf('shared')).toEqual([]);
   });
 
+  it('stops when an album shared with the owner is gone', async () => {
+    await pickLisbon();
+    await editLisbon();
+    shareAlbum('Shared');
+    await runOk('publish', 'lisbon', '--album', 'Shared');
+    // Its owner stopped sharing it, which looks the same as deleting it.
+    fakeTools.albums = [];
+    const uploads = fakeTools.uploads.length;
+    await editAgain('B');
+    const failure = await failureOf('publish', 'lisbon');
+    expect(failure.message).toContain('Shared is no longer in Immich');
+    expect(fakeTools.albums).toEqual([]);
+    expect(fakeTools.uploads).toHaveLength(uploads);
+  });
+
+  it('stops when an album of a record from before ids were kept is gone', async () => {
+    await publishLisbon();
+    await makeLegacy();
+    await rm(shootFile('album.json'));
+    fakeTools.albums = [];
+    const failure = await failureOf('publish', 'lisbon');
+    expect(failure.message).toContain(`${first} is no longer in Immich`);
+    expect(fakeTools.albums).toEqual([]);
+  });
+
   it('knows the album of a record from before ids were kept', async () => {
     await publishLisbon();
     await makeLegacy();
@@ -129,11 +154,13 @@ describe('keepsake publish, after the album changed in Immich', () => {
     shareAlbum('Shared');
     await runOk('publish', 'lisbon', '--album', 'Shared');
     // A switch to a private album failed half-way before ids were kept.
+    const assets = albumWithId('shared')?.assets ?? [];
+    fakeTools.albums.push({ id: 'private', name: 'Private', assets });
     await makeLegacy('Private');
     const before = assetsOf('shared');
     await editAgain('B');
     const result = await runOk('publish', 'lisbon');
-    expect(result).toMatchObject({ album: { name: 'Private' } });
+    expect(result).toMatchObject({ album: { id: 'private' }, published: 1 });
     expect(assetsOf('shared')).toEqual(before);
   });
 

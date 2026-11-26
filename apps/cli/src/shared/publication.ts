@@ -28,6 +28,7 @@ export type AlbumRecord = {
   readonly album: string;
   /** Missing only in records from before keepsake kept the album's id. */
   readonly albumId?: string | undefined;
+  readonly owned?: boolean | undefined;
   readonly photos: ReadonlyArray<PublishedPhoto>;
 };
 
@@ -41,6 +42,7 @@ export const albumsOf = (
         {
           album: published.album,
           albumId: published.albumId,
+          owned: published.owned,
           photos: published.photos,
         },
         ...(published.elsewhere ?? []),

@@ -6,8 +6,10 @@ import { StepMissing } from '../../shared/errors/errors.ts';
 import {
   createAlbum,
   ensureTag,
+  isOwnAlbum,
   listAlbums,
   markFavorite,
+  signedInUser,
   stackPhotos,
   tagPhoto,
   uploadPhoto,
@@ -180,24 +182,49 @@ const withSent = (
   };
 };
 
+/** The album keepsake publishes to, and whether it is the account's own. */
+type Destination = {
+  readonly id: string;
+  readonly name: string;
+  readonly owned: boolean | undefined;
+};
+
 /** The publication keepsake goes on with for the album it publishes to. */
 const publicationFor = (
   before: Publication | null,
-  album: { readonly id: string; readonly name: string },
+  album: Destination,
 ): Publication => {
   const records = albumsOf(before);
   return {
     album: album.name,
     albumId: album.id,
+    ...(album.owned === undefined ? {} : { owned: album.owned }),
     photos: records.find(({ albumId }) => albumId === album.id)?.photos ?? [],
     outdated: before?.outdated ?? [],
-    elsewhere: records.flatMap(({ album: name, albumId, photos }) =>
+    elsewhere: records.flatMap(({ album: name, albumId, owned, photos }) =>
       albumId === undefined || albumId === album.id
         ? []
-        : [{ album: name, albumId, photos }],
+        : [
+            {
+              album: name,
+              albumId,
+              ...(owned === undefined ? {} : { owned }),
+              photos,
+            },
+          ],
     ),
   };
 };
+
+/** The album to publish to, made if it is new. */
+const destinationOf = Effect.fn('destinationOf')(function* (target: Target) {
+  if (target.id === undefined) {
+    const made = yield* createAlbum(target.name);
+    return { id: made.id, name: made.name, owned: true };
+  }
+  const { id, name } = target;
+  return { id, name, owned: isOwnAlbum(target, yield* signedInUser) };
+});
 
 /**
  * What keepsake published to the target album, if it did, and what the album
@@ -261,10 +288,7 @@ export const publish = Effect.fn('publish')(function* (
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
-  const album =
-    target.id === undefined
-      ? yield* createAlbum(target.name)
-      : { id: target.id, name: target.name };
+  const album = yield* destinationOf(target);
   yield* ensureTag(tag);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.

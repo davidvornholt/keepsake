@@ -22,7 +22,16 @@ const photos = Effect.fn('photos')(function* <S extends Schema.Constraint>(
   );
 });
 
-const Named = Schema.Struct({ id: Schema.String, name: Schema.String });
+const Named = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  /** The name of the account the album belongs to. */
+  owner: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The other accounts it is shared with. */
+  sharedWith: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ name: Schema.String })),
+  ),
+});
 const NamedList = Schema.Array(Named);
 
 export type NamedAlbum = typeof Named.Type;
@@ -204,10 +213,31 @@ export const markFavorite = (asset: string, isFavorite: boolean) =>
     isFavorite ? '--favorite' : '--no-favorite',
   ]);
 
-const Status = Schema.Struct({ server: Schema.String });
+const Status = Schema.Struct({
+  server: Schema.String,
+  /** The name of the account, unless the key may not read it. */
+  user: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
 
 /** The web address of Immich. */
 export const immichServer = Effect.map(
   photos(Status, ['status']),
   ({ server }) => server,
 );
+
+/** The name of the account photos is signed in to, if it may read it. */
+export const signedInUser = Effect.map(
+  photos(Status, ['status']),
+  ({ user }) => user ?? null,
+);
+
+/**
+ * Whether the album is the account's own, or undefined when photos can't
+ * tell. Accounts are told apart by their name here, so an album shared by a
+ * namesake counts as not the account's own.
+ */
+export const isOwnAlbum = (album: NamedAlbum, user: string | null) =>
+  user === null || album.owner === undefined || album.owner === null
+    ? undefined
+    : album.owner === user &&
+      !(album.sharedWith ?? []).some(({ name }) => name === user);

@@ -33,6 +33,8 @@ type FakeAlbum = {
   readonly id: string;
   /** Changes when the owner renames the album in Immich. */
   name: string;
+  /** Whose album it is, when it is not the owner's own but shared with them. */
+  readonly owner?: string;
   assets: ReadonlyArray<FakeAsset>;
 };
 
@@ -171,7 +173,14 @@ const albumOf = (id: string) => {
   return found;
 };
 
-const named = ({ id, name }: FakeAlbum) => ({ id, name });
+/** The account the photos command is signed in to. */
+const user = 'Owner';
+
+const named = ({ id, name, owner }: FakeAlbum) => ({
+  id,
+  name,
+  owner: owner ?? user,
+});
 
 /** Immich's answer for each asset, as `photos` passes it on. */
 const bulk = (
@@ -287,7 +296,7 @@ const photos = (args: ReadonlyArray<string>): unknown => {
     case 'tags list':
       return [];
     case 'status undefined':
-      return { server: 'https://photos.example.com' };
+      return { server: 'https://photos.example.com', user };
     default:
       if (args[0] === 'update') {
         return markFavorite(args);

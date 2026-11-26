@@ -1,14 +1,31 @@
 import { Effect, Option, Schema } from 'effect';
 import { type Publication, Removed } from '../../shared/domain.ts';
+import { InvalidInput } from '../../shared/errors/errors.ts';
 import { type NamedAlbum, uniqueNamed } from '../../shared/immich.ts';
 import { albumsOf, readPublication } from '../../shared/publication.ts';
 import { readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
 
 /** The album to publish to, which has no id until it is created. */
-export type Target = { readonly id: string | undefined; readonly name: string };
+export type Target =
+  | NamedAlbum
+  | { readonly id: undefined; readonly name: string };
 
 const fresh = (name: string): Target => ({ id: undefined, name });
+
+/**
+ * An album that is gone from the account's list was deleted, or its owner
+ * stopped sharing it, which looks the same. Only one the account owned may be
+ * made again, as one made in place of a shared album would be no one else's.
+ */
+const gone = (before: Publication) =>
+  before.owned === true
+    ? Effect.succeed(fresh(before.album))
+    : Effect.fail(
+        new InvalidInput({
+          message: `${before.album} is no longer in Immich, and keepsake can't tell that this account deleted it rather than that its owner stopped sharing it, so it makes no album in its place. Ask the owner to share it again, or choose an album with --album.`,
+        }),
+      );
 
 /**
  * What keepsake published. A record from before it kept album ids, and with
@@ -50,7 +67,8 @@ export const giveRemovalsTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(
  * found by their id, so one renamed in Immich stays the album. A name is
  * looked up only for an album keepsake hasn't published to, and when its
  * album is gone, keepsake makes a new one rather than take another album
- * that has its name now, which may be shared with others.
+ * that has its name now, which may be shared with others, but only if the
+ * album was the account's own.
  */
 export const targetOf = Effect.fn('targetOf')(function* (
   open: OpenShoot,
@@ -71,5 +89,5 @@ export const targetOf = Effect.fn('targetOf')(function* (
     const name = open.shoot.about ?? open.shoot.name;
     return (yield* uniqueNamed(albums, name)) ?? fresh(name);
   }
-  return withId(before.albumId) ?? fresh(before.album);
+  return withId(before.albumId) ?? (yield* gone(before));
 });

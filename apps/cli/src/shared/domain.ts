@@ -259,6 +259,11 @@ export type PublishedPhoto = typeof PublishedPhoto.Type;
 export const EarlierAlbum = Schema.Struct({
   album: Schema.String,
   albumId: Schema.String,
+  /**
+   * Whether the album was this account's own rather than shared with it, when
+   * keepsake last published to it. Missing in records from before it noted it.
+   */
+  owned: Schema.optionalKey(Schema.Boolean),
   photos: Schema.Array(PublishedPhoto),
 });
 export type EarlierAlbum = typeof EarlierAlbum.Type;
@@ -268,6 +273,8 @@ export const Publication = Schema.Struct({
   album: Schema.String,
   /** Missing only in records from before keepsake kept the album's id. */
   albumId: Schema.optionalKey(Schema.String),
+  /** Whether the album is this account's own, as for an earlier album. */
+  owned: Schema.optionalKey(Schema.Boolean),
   /** What was published to this album, and to no other. */
   photos: Schema.Array(PublishedPhoto),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
