@@ -126,10 +126,17 @@ const whatToEdit = Effect.fn('whatToEdit')(function* (
     readonly photos: ReadonlyArray<string>;
     readonly wish: Option.Option<string>;
     readonly mark: Option.Option<string>;
+    readonly again: boolean;
   },
 ) {
   const { photos, mark } = asked;
   const own = Option.getOrNull(asked.wish);
+  if (Option.isSome(mark) && asked.again) {
+    return yield* new InvalidInput({
+      message:
+        'A mark changes only what it is about, so it can’t start over. Use --again with the photo’s name and a --wish instead.',
+    });
+  }
   if (Option.isNone(mark)) {
     if (own !== null && photos.length === 0) {
       return yield* new InvalidInput({
@@ -226,7 +233,12 @@ export const edit = Command.make(
   ({ shoot, photos, model, wish, mark, again: startOver, ...flags }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
-      const asked = yield* whatToEdit(shoot, { photos, wish, mark });
+      const asked = yield* whatToEdit(shoot, {
+        photos,
+        wish,
+        mark,
+        again: startOver,
+      });
       yield* workOn(shoot, (open) =>
         editShoot(open, asked.photos, {
           ...input,

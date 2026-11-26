@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
   editLisbon,
+  failureOf,
   pickLisbon,
   setUp,
   shootFile,
@@ -117,6 +118,49 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
     expect(pixels[(16 * width + 15) * 3]).toBeGreaterThan(100);
   });
 
+  it('changes the camera’s own picture only inside the mark', async () => {
+    await pickLisbon();
+    fakeModels.answers.assessment = {
+      assessments: [
+        assessment(1, { samePlace: false, notes: 'Another beach.' }),
+      ],
+    };
+    expect((await editLisbon('B')).keptFromCamera).toHaveLength(1);
+    const before = fakeModels.edits.length;
+    fakeModels.answers.assessment = undefined;
+    await markB();
+    chairAt({ ...marked, right: 0.3 });
+    const result = await editLisbon('--mark', 'one');
+    expect(result.notDone).toEqual([]);
+    expect(fakeModels.edits).toHaveLength(before + 1);
+    expect(isLocal(fakeModels.edits.at(-1)?.prompt)).toBe(true);
+    expect(await shootJson('edits', 'B', 'edit.json')).toMatchObject({
+      version: 'ai',
+    });
+  });
+});
+
+describe('keepsake edit, with a mark that can’t be kept to', () => {
+  it('refuses to start over, which would change all of it', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    await Bun.write(finalFile(), 'the former edit');
+    await markB();
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      '--mark',
+      'one',
+      '--again',
+    );
+    expect(failure._tag).toBe('InvalidInput');
+    expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
+    expect(await shootJson('edits', 'B', 'edit.json')).toMatchObject({
+      version: 'ai',
+    });
+    expect(fakeModels.edits).toHaveLength(1);
+  });
+
   it('says so when the wish is about all of the photo', async () => {
     await pickLisbon();
     await editLisbon('B');
@@ -147,26 +191,5 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);
     expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
-  });
-
-  it('changes the camera’s own picture only inside the mark', async () => {
-    await pickLisbon();
-    fakeModels.answers.assessment = {
-      assessments: [
-        assessment(1, { samePlace: false, notes: 'Another beach.' }),
-      ],
-    };
-    expect((await editLisbon('B')).keptFromCamera).toHaveLength(1);
-    const before = fakeModels.edits.length;
-    fakeModels.answers.assessment = undefined;
-    await markB();
-    chairAt({ ...marked, right: 0.3 });
-    const result = await editLisbon('--mark', 'one');
-    expect(result.notDone).toEqual([]);
-    expect(fakeModels.edits).toHaveLength(before + 1);
-    expect(isLocal(fakeModels.edits.at(-1)?.prompt)).toBe(true);
-    expect(await shootJson('edits', 'B', 'edit.json')).toMatchObject({
-      version: 'ai',
-    });
   });
 });
