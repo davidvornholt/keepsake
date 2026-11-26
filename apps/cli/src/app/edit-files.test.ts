@@ -83,6 +83,37 @@ describe('keepsake edit, with a photo in a folder named like another', () => {
   });
 });
 
+/** What is in the edit folders of photos, one after the other. */
+const contentsOfAll = (photos: ReadonlyArray<string>) =>
+  photos.reduce<Promise<Array<Record<string, string>>>>(
+    async (all, photo) => [...(await all), contentsOf(await folderOf(photo))],
+    Promise.resolve([]),
+  );
+
+describe('keepsake edit, moving edits out of another photo’s', () => {
+  it('moves each, also onto where another one was', async () => {
+    fakeTools.files = [
+      { file: 'A.ARW', second: 0 },
+      { file: 'A/B.ARW', second: 300 },
+      { file: 'A~sB.ARW', second: 600 },
+    ];
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
+    await runOk('cull', 'lisbon');
+    const photos = ['A', 'A/B', 'A~sB'];
+    expect((await editLisbon(...photos)).edited).toBe(3);
+    const before = await contentsOfAll(photos);
+    // Where keepsake kept them before: A/B inside A, and A~sB where A/B goes.
+    renameSync(shootFile('edits', 'A~sB'), shootFile('edits', 'A', 'B'));
+    renameSync(shootFile('edits', 'A~~sB'), shootFile('edits', 'A~sB'));
+    rmSync(shootFile('flat-edits'));
+    const after = await contentsOfAll(photos);
+    expect(after).toEqual(before);
+    expect(existsSync(shootFile('edits', 'A', 'B'))).toBe(false);
+    expect(existsSync(shootFile('flat-edits'))).toBe(true);
+  });
+});
+
 describe('keepsake edit, with a photo called input', () => {
   it('gives the image model only the cropped photo', async () => {
     fakeTools.files = [{ file: 'input.ARW', second: 0 }];

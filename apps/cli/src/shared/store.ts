@@ -215,6 +215,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     edits: path.join(root, 'edits'),
     /** That the edits of photos in folders are no longer nested. */
     flatEdits: path.join(root, 'flat-edits'),
+    /** Where they are while they move. */
+    unnesting: path.join(root, 'unnesting'),
     edit: (photo: string) => {
       const directory = path.join(root, 'edits', editFolderName(photo));
       const base = path.basename(photo);
@@ -290,17 +292,41 @@ const unnestEdits = Effect.fn('unnestEdits')(function* (
   }
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const moved = Effect.gen(function* () {
-    // The deepest first, so that each is out before its parent moves.
+  const staged = (photo: string) =>
+    path.join(files.unnesting, editFolderName(photo));
+  // First all out of the way, so that none is moved onto one that hasn't
+  // moved yet, and the deepest first, so that each is out of its parent.
+  const outOfTheWay = Effect.gen(function* () {
+    yield* fs.makeDirectory(files.unnesting, { recursive: true });
     for (const photo of nested.toSorted((a, b) => depth(b) - depth(a))) {
       const before = path.join(files.edits, photo);
-      const { directory } = files.edit(photo);
       const camera = path.join(before, `${path.basename(photo)}.jpg`);
-      if ((yield* fs.exists(camera)) && !(yield* fs.exists(directory))) {
-        yield* fs.rename(before, directory);
+      if ((yield* fs.exists(camera)) && !(yield* fs.exists(staged(photo)))) {
+        yield* fs.rename(before, staged(photo));
       }
     }
-    yield* fs.writeFileString(files.flatEdits, '');
+  });
+  /** Whether each is where it belongs now. */
+  const inPlace = Effect.gen(function* () {
+    let isDone = true;
+    for (const photo of nested) {
+      const { directory } = files.edit(photo);
+      const isStaged = yield* fs.exists(staged(photo));
+      if (isStaged && (yield* fs.exists(directory))) {
+        isDone = false;
+      } else if (isStaged) {
+        yield* fs.rename(staged(photo), directory);
+      }
+    }
+    return isDone;
+  });
+  const moved = Effect.gen(function* () {
+    yield* outOfTheWay;
+    // Otherwise the next command goes on with it.
+    if (yield* inPlace) {
+      yield* fs.remove(files.unnesting, { recursive: true });
+      yield* fs.writeFileString(files.flatEdits, '');
+    }
   }).pipe(Effect.mapError(storeFailed(files.edits)));
   // While another command works on the shoot, they move the next time.
   yield* exclusively(files)(moved).pipe(
