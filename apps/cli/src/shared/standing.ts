@@ -91,7 +91,11 @@ const closest = (
   return candidates.toSorted((left, right) => away(left) - away(right))[0];
 };
 
-/** The photos of a moment that stand for the others. */
+/**
+ * The photos of a moment that stand for the others: those chosen for the
+ * album, or else its best one, so a moment is one stack unless the album
+ * holds several of its photos.
+ */
 const frontsOf = (
   facts: Facts,
   verdict: Verdict | undefined,
@@ -100,10 +104,7 @@ const frontsOf = (
   const chosen = photos.filter((photo) => isChosen(facts, photo));
   return chosen.length > 0
     ? chosen
-    : [
-        ...(verdict?.best.slice(0, 1) ?? photos.slice(0, 1)),
-        ...(verdict?.further.map(({ photo }) => photo) ?? []),
-      ];
+    : (verdict?.best.slice(0, 1) ?? photos.slice(0, 1));
 };
 
 /** Where a photo stands that was neither chosen nor taken out. */

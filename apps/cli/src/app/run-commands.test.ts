@@ -56,7 +56,7 @@ describe('keepsake run', () => {
       picked: { picked: 2 },
       edited: null,
       published: null,
-      explained: { notExplained: ['C', 'A2'] },
+      explained: { notExplained: ['B', 'A2'] },
     });
     expect(fakeModels.edits).toEqual([]);
     expect(asked('reasons').length).toBeGreaterThan(0);

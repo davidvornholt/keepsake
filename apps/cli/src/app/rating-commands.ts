@@ -123,8 +123,12 @@ export const bench = Command.make(
     workOn(shoot, (open) =>
       Effect.gen(function* () {
         const ratings = yield* readRatings(open);
-        const rated = new Set(ratings.map(({ moment }) => moment));
-        const moments = open.moments.filter(({ id }) => rated.has(id));
+        // The moments as they were rated, also when a later scan grouped the
+        // photos differently.
+        const moments = ratings.map(({ moment, photos }) => ({
+          id: moment,
+          photos,
+        }));
         if (moments.length === 0) {
           return yield* new StepMissing({
             message: `No moment of ${shoot} is rated yet. Run \`keepsake rate ${shoot}\` first.`,

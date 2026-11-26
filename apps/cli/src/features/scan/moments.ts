@@ -1,11 +1,21 @@
 import type { Moment, Photo } from '../../shared/domain.ts';
+import { type Look, likeness } from './look.ts';
 
 /** Photos this many milliseconds apart belong together, however they look. */
 const burstGap = 2000;
 /** Photos further apart than this never do. */
-const sceneGap = 60_000;
+const sceneGap = 120_000;
 /** How many of 64 bits may differ between photos of the same scene. */
 const sameSceneDistance = 12;
+/** From this likeness on, two photos show the same scene from the same spot. */
+const sameScene = 0.75;
+/** How much more one photo may be zoomed in than the other of the same scene. */
+const mostZoom = 1.25;
+/**
+ * How many of the last photos of a moment a photo is compared with, so that
+ * one frame where something crossed the picture doesn't end the moment.
+ */
+const comparedBack = 3;
 
 const bitsPerDigit = 4;
 const hexadecimal = 16;
@@ -49,33 +59,81 @@ export const hashOf = (pixels: Uint8Array): string => {
   return hash;
 };
 
-const belongsWith = (before: Photo, photo: Photo): boolean => {
-  const gap =
-    Date.parse(`${photo.takenAt}Z`) - Date.parse(`${before.takenAt}Z`);
+/** How much more `photo` was zoomed in than `before`, or null if unknown. */
+const zoomOf = (before: Photo, photo: Photo): number | null => {
+  if (before.focalLength === null || photo.focalLength === null) {
+    return before.focalLength === photo.focalLength ? 1 : null;
+  }
+  return photo.focalLength / Math.max(Number.EPSILON, before.focalLength);
+};
+
+/**
+ * Whether two photos show the same from about the same spot: held the same
+ * way, zoomed about the same, and either alike in their pattern of light and
+ * dark, or with the same picture in both when one is moved over the other.
+ */
+const looksAlike = (
+  before: Photo,
+  photo: Photo,
+  looks: ReadonlyMap<string, Look>,
+): boolean => {
+  const zoom = zoomOf(before, photo);
+  if (
+    zoom === null ||
+    before.orientation !== photo.orientation ||
+    Math.max(zoom, 1 / zoom) > mostZoom
+  ) {
+    return false;
+  }
+  if (hashDistance(before.hash, photo.hash) <= sameSceneDistance) {
+    return true;
+  }
+  const one = looks.get(before.id);
+  const other = looks.get(photo.id);
+  return (
+    one !== undefined &&
+    other !== undefined &&
+    likeness(one, other, zoom) >= sameScene
+  );
+};
+
+const timeOf = ({ takenAt }: Photo) => Date.parse(`${takenAt}Z`);
+
+const belongsWith = (
+  group: ReadonlyArray<Photo>,
+  photo: Photo,
+  looks: ReadonlyMap<string, Look>,
+): boolean => {
+  const last = group.at(-1);
+  if (last === undefined) {
+    return false;
+  }
+  const gap = timeOf(photo) - timeOf(last);
   if (gap <= burstGap) {
     return true;
   }
   return (
     gap <= sceneGap &&
-    before.orientation === photo.orientation &&
-    before.focalLength === photo.focalLength &&
-    hashDistance(before.hash, photo.hash) <= sameSceneDistance
+    group
+      .slice(-comparedBack)
+      .toReversed()
+      .some((before) => looksAlike(before, photo, looks))
   );
 };
 
-/** Groups photos, oldest first, into moments. */
+/**
+ * Groups photos, oldest first, into moments: photos taken one right after
+ * the other, or that show the same from about the same spot within two
+ * minutes of the moment's last photo. `looks` has what the photos look like, as far as it is known.
+ */
 export const momentsOf = (
   photos: ReadonlyArray<Photo>,
+  looks: ReadonlyMap<string, Look> = new Map(),
 ): ReadonlyArray<Moment> => {
   const groups: Array<Array<Photo>> = [];
   for (const photo of photos) {
     const group = groups.at(-1);
-    const before = group?.at(-1);
-    if (
-      group !== undefined &&
-      before !== undefined &&
-      belongsWith(before, photo)
-    ) {
+    if (group !== undefined && belongsWith(group, photo, looks)) {
       group.push(photo);
     } else {
       groups.push([photo]);
