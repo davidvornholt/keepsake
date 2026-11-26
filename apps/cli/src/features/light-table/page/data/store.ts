@@ -91,6 +91,26 @@ const marking = (core: Core) => {
     });
   };
 
+  /**
+   * Keeps what was written for a change until it is written again, when
+   * keepsake didn't get it, so that it isn't lost while another photo is
+   * shown.
+   */
+  const keepUnsaved = (id: string, { photo, kind, note, boxes }: NewMark) => {
+    if (kind !== 'change') {
+      return;
+    }
+    core
+      .idOf(id)
+      .then((real) => {
+        if (real === null) {
+          const { unsaved } = core.get();
+          core.set({ unsaved: { ...unsaved, [photo]: { note, boxes } } });
+        }
+      })
+      .catch(() => undefined);
+  };
+
   /** Sets the heart without remembering it for Undo. */
   const heart = async (photo: string, favorite: boolean) => {
     const shoot = core.get().index?.shoot;
@@ -115,8 +135,14 @@ const marking = (core: Core) => {
       if (mark !== null) {
         const replaced = replacedBy(marks, mark);
         core.setUndos([...core.undos(), { did: 'made', mark, replaced }]);
+        keepUnsaved(mark.id, wanted);
       }
       return mark;
+    },
+    /** Lets go of a change that wasn't saved, once it is written again. */
+    forgetUnsaved: (photo: string) => {
+      const { [photo]: _, ...others } = core.get().unsaved;
+      core.set({ unsaved: others });
     },
     takeBack: async (mark: Mark) => {
       core.setUndos([...core.undos(), { did: 'took-back', mark }]);
@@ -265,9 +291,6 @@ export const makeShootStore = (name: string) => {
     get: core.get,
     reload: core.load,
     dismissProblem: core.dismissProblem,
-    /** Whether keepsake saved a mark, once it answered. */
-    isSaved: async (id: string): Promise<boolean> =>
-      (await core.idOf(id)) !== null,
     ...hinting(core),
     ...marking(core),
     ...answering(core),

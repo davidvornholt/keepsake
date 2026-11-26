@@ -67,11 +67,34 @@ const loaded = async () => {
 describe('a change that keepsake didn’t get', () => {
   it('stays a problem when keepsake answers again', async () => {
     const store = await loaded();
-    const draft = store.make(wish);
+    store.make(wish);
     (await next('PUT')).answer(new Error('offline'));
     await answerWith('GET', shootWith());
-    expect(await store.isSaved(draft?.id ?? '')).toBe(false);
     expect(store.get().problem).toBe(unreachable);
+  });
+
+  it('keeps what was written for its photo until it is written again', async () => {
+    const store = await loaded();
+    const box = { left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 };
+    // Another photo is shown by now, so nothing of the photo holds it.
+    store.make({ ...wish, boxes: [box] });
+    (await next('PUT')).answer(new Error('offline'));
+    await answerWith('GET', shootWith());
+    await Bun.sleep(1);
+    expect(store.get().unsaved).toEqual({
+      a: { note: 'Warmer', boxes: [box] },
+    });
+    store.forgetUnsaved('a');
+    expect(store.get().unsaved).toEqual({});
+  });
+
+  it('keeps nothing that keepsake got', async () => {
+    const store = await loaded();
+    store.make(wish);
+    await answerWith('PUT', sampleMark('one', wish));
+    await answerWith('GET', shootWith([sampleMark('one', wish)]));
+    await Bun.sleep(1);
+    expect(store.get().unsaved).toEqual({});
   });
 });
 

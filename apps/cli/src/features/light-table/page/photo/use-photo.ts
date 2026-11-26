@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Box, MarkKind, PhotoView, Picture } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { favoriteHint } from '../app/use-table.ts';
@@ -94,9 +94,10 @@ const remembered = 40;
 
 /** The change that is being written, and what the owner does with it. */
 export const useComposing = (photo: PhotoView) => {
-  const { index, store } = useShootContext();
+  const { index, state, store } = useShootContext();
   const { open } = markedIn(index, photo.id);
   const saved = open?.kind === 'change' ? open : null;
+  const unsaved = state.unsaved[photo.id] ?? null;
   const fresh = (): Draft => ({
     note: saved?.note ?? '',
     boxes: (saved?.boxes ?? []).map((box) => ({ box, since: longAgo })),
@@ -104,6 +105,20 @@ export const useComposing = (photo: PhotoView) => {
   const [draft, setDraft] = useState<Draft | null>(() =>
     wasAskedToCompose(photo.id) ? fresh() : null,
   );
+  // What was written comes back when keepsake didn't get it, also after
+  // another photo was shown meanwhile.
+  useEffect(() => {
+    if (unsaved !== null) {
+      setDraft(
+        (now) =>
+          now ?? {
+            note: unsaved.note,
+            boxes: unsaved.boxes.map((box) => ({ box, since: longAgo })),
+          },
+      );
+      store.forgetUnsaved(photo.id);
+    }
+  }, [unsaved, store, photo.id]);
   /** The boxes as they were before each thing done to them. */
   const [past, setPast] = useState<ReadonlyArray<Boxes>>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -160,7 +175,7 @@ export const useComposing = (photo: PhotoView) => {
     },
     save: () => {
       if (draft !== null) {
-        const mark = store.make({
+        store.make({
           photo: photo.id,
           kind: 'change',
           note: draft.note.trim(),
@@ -168,15 +183,6 @@ export const useComposing = (photo: PhotoView) => {
           other: null,
         });
         end();
-        // What was written comes back when keepsake didn't get it.
-        store
-          .isSaved(mark?.id ?? '')
-          .then((isSaved) => {
-            if (!isSaved) {
-              setDraft((now) => now ?? draft);
-            }
-          })
-          .catch(() => undefined);
       }
     },
     remove: () => {
