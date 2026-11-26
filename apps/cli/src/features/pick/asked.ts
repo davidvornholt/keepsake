@@ -14,6 +14,8 @@ type Question<S extends AnswerSchema> = {
   readonly name: string;
   readonly schema: S;
   readonly pieces: ReadonlyArray<string | Shown>;
+  /** Tells apart questions that are the same but are asked more than once. */
+  readonly round?: number;
 };
 
 const whereKept = (open: OpenShoot, model: string, question: object) => {
@@ -33,8 +35,8 @@ export const askOnce = Effect.fn('askOnce')(function* <S extends AnswerSchema>(
   question: Question<S>,
 ) {
   const vision = yield* Vision;
-  const { role, name, schema, pieces } = question;
-  const file = whereKept(open, vision.model, { role, name, pieces });
+  const { role, name, schema, pieces, round } = question;
+  const file = whereKept(open, vision.model, { role, name, pieces, round });
   const before = yield* readJson(schema, file);
   if (Option.isSome(before)) {
     return before.value;

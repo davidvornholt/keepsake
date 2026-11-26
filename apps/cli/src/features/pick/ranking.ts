@@ -60,12 +60,18 @@ export const pointsOf = (
 
 const compare = Effect.fn('compare')(function* (
   open: OpenShoot,
-  group: ReadonlyArray<Pick>,
+  {
+    round,
+    group,
+  }: { readonly round: number; readonly group: ReadonlyArray<Pick> },
 ) {
   const { bestFirst } = yield* askOnce(open, {
     role,
     name: 'ranking',
     schema: Ranking,
+    // Rounds may ask about the same photos in the same order, and each
+    // answer counts on its own.
+    round,
     pieces: [
       ...group.flatMap(({ photo }, index) => [
         `Photo ${index + 1}:`,
@@ -91,10 +97,10 @@ export const bestOf = Effect.fn('bestOf')(function* (
     return picks;
   }
   const groups = Array.from({ length: rounds }, (_, round) =>
-    groupsIn(picks, round),
+    groupsIn(picks, round).map((group) => ({ round, group })),
   ).flat();
-  const compared = yield* inSteps('rank', groups, concurrency, (group) =>
-    compare(open, group),
+  const compared = yield* inSteps('rank', groups, concurrency, (asked) =>
+    compare(open, asked),
   );
   // The comparisons are worth one point of the score: they tell photos apart
   // that the score puts on the same or the next step.
