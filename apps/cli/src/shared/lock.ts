@@ -49,23 +49,41 @@ const isStill = (fd: number, path: string) => {
   }
 };
 
+/** Takes the lock on an open file, unless another holds it or it was removed. */
+const holdOpen = (fd: number, path: string) => {
+  if (flock(fd, exclusiveAtOnce) !== 0) {
+    return 'held';
+  }
+  // The one who held it last removed it, so this one is nobody's lock.
+  if (!isStill(fd, path)) {
+    return 'removed';
+  }
+  ftruncateSync(fd, 0);
+  writeSync(fd, `${process.pid}\n`);
+  return 'taken';
+};
+
 /** Takes a lock unless another holds it, and gives its file. */
 const tryToHold = (path: string): number | null => {
   mkdirSync(dirname(path), { recursive: true });
   for (let attempt = 0; attempt < tries; attempt += 1) {
     // Made if it isn't there, and never emptied by opening it.
     const fd = openSync(path, 'a+', ownerOnly);
-    if (flock(fd, exclusiveAtOnce) !== 0) {
-      closeSync(fd);
-      return null;
+    let outcome: ReturnType<typeof holdOpen> | 'failed' = 'failed';
+    try {
+      outcome = holdOpen(fd, path);
+    } finally {
+      // Closing it lets the lock go, also when taking it failed half-way.
+      if (outcome !== 'taken') {
+        closeSync(fd);
+      }
     }
-    // The one who held it last removed it, so this one is nobody's lock.
-    if (isStill(fd, path)) {
-      ftruncateSync(fd, 0);
-      writeSync(fd, `${process.pid}\n`);
+    if (outcome === 'taken') {
       return fd;
     }
-    closeSync(fd);
+    if (outcome === 'held') {
+      return null;
+    }
   }
   return null;
 };

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { BunServices } from '@effect/platform-bun';
@@ -156,5 +156,26 @@ describe('the lock of a shoot', () => {
     expect(whileHeld).toContain(`process ${holder.pid}`);
     expect(await command()).toBe('done');
     expect(await Bun.file(lock).exists()).toBe(false);
+  });
+
+  it('is let go when noting who holds it fails', async () => {
+    const outcomes = await inHome(
+      Effect.gen(function* () {
+        const files = yield* shootFiles('lisbon');
+        yield* Effect.promise(async () => {
+          await mkdir(dirname(files.lock), { recursive: true });
+          // Every write to it fails, as on a full disk.
+          await symlink('/dev/full', files.lock);
+        });
+        const command = exclusively(files)(Effect.void).pipe(
+          Effect.result,
+          Effect.map((result) =>
+            result._tag === 'Success' ? 'done' : result.failure._tag,
+          ),
+        );
+        return [yield* command, yield* command];
+      }),
+    );
+    expect(outcomes).toEqual(['StoreFailed', 'StoreFailed']);
   });
 });
