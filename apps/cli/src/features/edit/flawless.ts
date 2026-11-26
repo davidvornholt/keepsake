@@ -40,19 +40,17 @@ const mend = Effect.fn('mend')(function* (
   const patches = faults.filter(({ kind }) => kind !== 'texture');
   yield* atomically(files.versionMended(number), (draft) =>
     keepOriginals(
-      {
-        ...originals,
-        bystanders: [...originals.bystanders, ...patches.map(({ box }) => box)],
-        textures: [
-          ...originals.textures,
-          ...textures.map(({ box }) => outlineOf(box)),
-        ],
-      },
+      originals,
       crop.box,
       {
         original: files.input,
         version: files.version(number),
         target: draft,
+      },
+      // Where the edit shows them, which the inspection looked at.
+      {
+        patches: patches.map(({ box }) => box),
+        textures: textures.map(({ box }) => outlineOf(box)),
       },
     ),
   );

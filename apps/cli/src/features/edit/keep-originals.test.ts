@@ -139,4 +139,35 @@ describe('putBack', () => {
       changed(Math.round(scale * (place.right - 40) + offset.x)),
     ).toBeGreaterThan(0);
   });
+
+  it('mends a fault where the edit shows it', () => {
+    // The edit shows the photo further to the side, and is broken in a box.
+    const shift = { x: -100, y: -40 };
+    const broken = { left: 540, top: 360, right: 660, bottom: 440 };
+    const isBroken = (x: number, y: number) =>
+      x >= broken.left &&
+      x < broken.right &&
+      y >= broken.top &&
+      y < broken.bottom;
+    const edit = picture(size, (x, y) =>
+      isBroken(x, y) ? 255 : wall(x - shift.x, y - shift.y),
+    );
+    putBack(nothing, picture(size, wall), edit, wholePicture, {
+      patches: [
+        {
+          left: broken.left / size.width,
+          top: broken.top / size.height,
+          right: broken.right / size.width,
+          bottom: broken.bottom / size.height,
+        },
+      ],
+      textures: [],
+    });
+    for (let y = broken.top + 10; y < broken.bottom - 10; y += 10) {
+      for (let x = broken.left + 10; x < broken.right - 10; x += 10) {
+        const wanted = wall(x - shift.x, y - shift.y);
+        expect(Math.abs(valueAt(edit, x, y) - wanted)).toBeLessThan(10);
+      }
+    }
+  });
 });

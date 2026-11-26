@@ -44,6 +44,14 @@ export type Originals = {
   readonly gone: ReadonlyArray<Box>;
 };
 
+/** What an inspection found wrong, where the edit shows it. */
+export type Mending = {
+  readonly patches: ReadonlyArray<Box>;
+  readonly textures: ReadonlyArray<Outline>;
+};
+
+const nothingToMend: Mending = { patches: [], textures: [] };
+
 const boundsOf = ({ face, outline }: Person): Box =>
   around([
     face,
@@ -71,20 +79,28 @@ const keepMoved = (
   {
     photoBox,
     placement,
-  }: { readonly photoBox: Box; readonly placement: Placement },
+    mending,
+  }: {
+    readonly photoBox: Box;
+    readonly placement: Placement;
+    readonly mending: Mending;
+  },
 ): void => {
   const photo = frameOf(photoBox, original);
   const moved = placed(original, edit, photo, placement);
   const inEdit = (box: Box) => placedBox(box, placement, original);
   const gone = originals.gone.map(inEdit);
-  const bystanders = originals.bystanders.map(inEdit);
+  const bystanders = [...originals.bystanders.map(inEdit), ...mending.patches];
   changeOutside(gone, edit, () => {
     keepTexture(
       moved,
       edit,
-      originals.textures.map((outline) =>
-        placedOutline(outline, placement, original),
-      ),
+      [
+        ...originals.textures.map((outline) =>
+          placedOutline(outline, placement, original),
+        ),
+        ...mending.textures,
+      ],
       inEdit(photoBox),
     );
     for (const box of bystanders) {
@@ -125,6 +141,7 @@ export const putBack = (
   original: Raster,
   edit: Raster,
   crop: Box,
+  mending: Mending = nothingToMend,
 ): void => {
   const originals = {
     ...wanted,
@@ -136,13 +153,15 @@ export const putBack = (
     keepMoved(originals, original, edit, {
       photoBox,
       placement: placement ?? unmoved,
+      mending,
     });
     return;
   }
+  const bystanders = [...originals.bystanders, ...mending.patches];
   changeOutside(originals.gone, edit, () => {
-    keepTexture(original, edit, originals.textures);
-    for (const box of originals.bystanders) {
-      keepPatch(original, edit, box, originals.bystanders);
+    keepTexture(original, edit, [...originals.textures, ...mending.textures]);
+    for (const box of bystanders) {
+      keepPatch(original, edit, box, bystanders);
     }
   });
   for (const person of originals.people) {
@@ -174,10 +193,11 @@ export const keepOriginals = Effect.fn('keepOriginals')(function* (
     readonly version: string;
     readonly target: string;
   },
+  mending: Mending = nothingToMend,
 ) {
   const size = yield* sizeOf(files.original);
   const original = yield* rasterOf(files.original, size);
   const edit = yield* rasterOf(files.version, size);
-  putBack(originals, original, edit, crop);
+  putBack(originals, original, edit, crop, mending);
   yield* writeRaster(files.target, edit);
 });
