@@ -78,7 +78,7 @@ describe('keepsake edit, removing what is on a face', () => {
           ]
         : [{ place: 1, best: 1, notes: 'Clean' }],
     });
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.edited).toBe(1);
     const notDone = notDoneIn(result);
     expect(notDone).toHaveLength(1);

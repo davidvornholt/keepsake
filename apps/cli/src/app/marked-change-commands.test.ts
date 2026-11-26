@@ -84,7 +84,7 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
       'correction/version-1.png': () => 200,
       'correction/version-2.png': () => 200,
     };
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toEqual([]);
     expect(fakeModels.edits).toHaveLength(2);
     expect(isLocal(fakeModels.edits[1]?.prompt)).toBe(true);
@@ -109,7 +109,9 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
       'correction/version-1.png': version,
       'correction/version-2.png': version,
     };
-    expect((await editLisbon('--mark', 'one')).notDone).toEqual([]);
+    expect(
+      (await editLisbon('--mark', 'one', '--budget', '5')).notDone,
+    ).toEqual([]);
     const result = shootFile('edits', 'B', 'correction', 'result-1.png');
     expect(outsideMark(result).filter((value) => value !== 100)).toEqual([]);
     const pixels = readFileSync(result);
@@ -138,7 +140,7 @@ describe('keepsake edit, with a mark at places of a finished photo', () => {
     fakeModels.answers.assessment = undefined;
     await markB();
     chairAt({ ...marked, right: 0.3 });
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toEqual([]);
     expect(fakeModels.edits).toHaveLength(before + 1);
     expect(isLocal(fakeModels.edits.at(-1)?.prompt)).toBe(true);
@@ -175,11 +177,20 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await markB();
     chairAt(marked);
     fakeModels.answers.choices = () => new Response(null, { status: 400 });
-    expect((await editLisbon('--mark', 'one')).failed).toHaveLength(1);
+    expect(
+      (await editLisbon('--mark', 'one', '--budget', '5')).failed,
+    ).toHaveLength(1);
     const before = fakeModels.edits.length;
     chairAt(marked);
-    const other = 'gpt-image-other';
-    await editLisbon('--mark', 'one', '--image-model', `azure/${other}`);
+    const other = 'gpt-image-2.5-flare';
+    await editLisbon(
+      '--mark',
+      'one',
+      '--budget',
+      '5',
+      '--image-model',
+      `azure/${other}`,
+    );
     expect(fakeModels.edits.slice(before).map(({ model }) => model)).toEqual([
       other,
     ]);
@@ -188,13 +199,36 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     });
   });
 
+  it('changes with another image model only within the budget', async () => {
+    await pickLisbon();
+    await editLisbon('B');
+    await markB();
+    chairAt(marked);
+    fakeModels.answers.choices = () => new Response(null, { status: 400 });
+    expect(
+      (await editLisbon('--mark', 'one', '--budget', '5')).failed,
+    ).toHaveLength(1);
+    const before = fakeModels.edits.length;
+    chairAt(marked);
+    const result = await editLisbon(
+      '--mark',
+      'one',
+      '--budget',
+      '0.01',
+      '--image-model',
+      'azure/gpt-image-2.5-flare',
+    );
+    expect(result.edited).toBe(0);
+    expect(fakeModels.edits).toHaveLength(before);
+  });
+
   it('says so when the wish is about all of the photo', async () => {
     await pickLisbon();
     await editLisbon('B');
     await Bun.write(finalFile(), 'the former edit');
     await markB();
     fakeModels.answers.places = { everywhere: true, places: [] };
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);
     expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
@@ -214,7 +248,7 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await correction('wish.json', { wish: chair });
     await correction('areas.json', [marked]);
     await correction('places.json', { everywhere: true, places: [] });
-    const result = await editLisbon('--mark', 'one');
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);
     expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
@@ -241,7 +275,9 @@ describe('keepsake edit, with marks that overlap', () => {
       }),
     );
     chairAt({ left: 0.25, top: 0.4, right: 0.35, bottom: 0.6 });
-    expect((await editLisbon('--mark', 'one')).notDone).toEqual([]);
+    expect(
+      (await editLisbon('--mark', 'one', '--budget', '5')).notDone,
+    ).toEqual([]);
     const shown = asked('choices').flatMap(({ texts }) =>
       texts.filter((text) => text.includes(chair)),
     );

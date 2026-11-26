@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
 import {
   asked,
+  credentialsPath,
   editLisbon,
+  endpoint,
   judge,
   pickLisbon,
   runOk,
@@ -12,7 +14,17 @@ import {
 } from './command-fixtures.ts';
 import { assessment, fakeModels } from './fake-models.ts';
 
-beforeEach(() => setUp(spyOn));
+beforeEach(async () => {
+  await setUp(spyOn);
+  // Another provider, for a review model of the same price.
+  await Bun.write(
+    credentialsPath(),
+    JSON.stringify({
+      azure: { endpoint, apiKey: fakeModels.key },
+      openai: { endpoint: null, apiKey: fakeModels.key },
+    }),
+  );
+});
 afterEach(tearDown);
 
 const failing = () => new Response(null, { status: 400 });
@@ -33,6 +45,18 @@ describe('keepsake edit, after it was stopped', () => {
     expect((await editLisbon('B')).edited).toBe(1);
     expect(fakeModels.edits).toHaveLength(2);
     expect(existsSync(second)).toBe(true);
+  });
+
+  it('asks for the versions that weren’t saved only within the budget', async () => {
+    await pickLisbon();
+    fakeModels.answers.assessment = failing;
+    expect((await editLisbon('B')).failed).toHaveLength(1);
+    rmSync(shootFile('edits', 'B', 'version-2.png'));
+    rmSync(shootFile('edits', 'B', 'attempt-1.json'), { force: true });
+    fakeModels.answers.assessment = undefined;
+    const result = await editLisbon('B', '--budget', '0.01');
+    expect(result.overBudget).toEqual(['B']);
+    expect(fakeModels.edits).toHaveLength(1);
   });
 
   it('keeps each attempt’s versions when it makes another number', async () => {
@@ -65,8 +89,8 @@ describe('keepsake edit, starting over after it was stopped', () => {
   });
 
   it.each([
-    ['--image-model', 'azure/gpt-image-other'],
-    ['--review-model', 'azure/gpt-6-other'],
+    ['--image-model', 'azure/gpt-image-2.5-flare'],
+    ['--review-model', 'openai/gpt-6-astra'],
   ])(
     'starts anew when the command names another model with %s',
     async (flag, model) => {

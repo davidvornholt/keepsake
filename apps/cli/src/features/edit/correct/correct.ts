@@ -143,6 +143,31 @@ const attempt = Effect.fn('attempt')(function* (
 });
 
 /**
+ * Prepares an attempt and makes it, with what the picture shows. Nothing is
+ * paid for what would come back with a face; that is left on its own.
+ */
+const tryOnce = Effect.fn('tryOnce')(function* (
+  job: Correction,
+  files: CorrectionFiles,
+  start: Start,
+) {
+  const size = yield* inputFor(start.base, files.input);
+  const about = yield* known(job, files);
+  const { people } = about.originals;
+  const isKept = ({ place }: ToChange) =>
+    place.isRemoval && isOnFace(people, place.box);
+  const onFaces = start.changes
+    .filter(isKept)
+    .map(({ place }): ToChange => ({ place, problem: keptOnFace }));
+  const changes = start.changes.filter((change) => !isKept(change));
+  const made =
+    changes.length === 0
+      ? { base: start.base, left: [], isRefused: false }
+      : yield* attempt(job, files, { ...start, changes }, { size, about });
+  return { ...made, onFaces, description: about.description };
+});
+
+/**
  * Changes single places of a finished photo and leaves everything else as it
  * is. Answers with the file, or null when nothing worked, and with what didn't.
  */
@@ -156,41 +181,28 @@ export const correct = Effect.fn('correct')(function* (job: Correction) {
   let description: string | null = null;
   let attempts = 0;
   let isRefused = false;
-  // Nothing is paid for what would come back with a face.
   const onFaces: Array<ToChange> = [];
   while (left.length > 0 && attempts < mostAttempts && !isRefused) {
     attempts += 1;
     const files = { ...job.files, input: job.files.inputOf(attempts) };
-    const size = yield* inputFor(base, files.input);
-    const about = yield* known(job, files);
-    ({ description } = about);
-    const { people } = about.originals;
-    const isKept = ({ place }: ToChange) =>
-      place.isRemoval && isOnFace(people, place.box);
-    onFaces.push(
-      ...left
-        .filter(isKept)
-        .map(({ place }): ToChange => ({ place, problem: keptOnFace })),
+    const start: Start = { number: attempts, base, changes: left };
+    const result = yield* tryOnce(job, files, start).pipe(
+      // When the photo is refused, or what is left of the budget doesn't
+      // cover another attempt, the places left stay as they are.
+      Effect.catchTag(['PhotoRefused', 'OverBudget'], ({ message }) =>
+        Effect.succeed({
+          base: start.base,
+          left: start.changes.map(
+            ({ place }): ToChange => ({ place, problem: message }),
+          ),
+          isRefused: true,
+          onFaces: [],
+          description: null,
+        }),
+      ),
     );
-    const start: Start = {
-      number: attempts,
-      base,
-      changes: left.filter((change) => !isKept(change)),
-    };
-    const result =
-      start.changes.length === 0
-        ? { base, left: [], isRefused: false }
-        : yield* attempt(job, files, start, { size, about }).pipe(
-            Effect.catchTag('PhotoRefused', ({ message }) =>
-              Effect.succeed({
-                base: start.base,
-                left: start.changes.map(
-                  ({ place }): ToChange => ({ place, problem: message }),
-                ),
-                isRefused: true,
-              }),
-            ),
-          );
+    description = result.description ?? description;
+    onFaces.push(...result.onFaces);
     ({ base, left, isRefused } = result);
   }
   return {
