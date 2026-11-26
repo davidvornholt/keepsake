@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, PickList, Shoot } from './domain.ts';
 import { InvalidInput, StepMissing, StoreFailed } from './errors/errors.ts';
+import { exclusively } from './lock.ts';
 import { xdgDirectory } from './xdg.ts';
 
 const storeFailed = (path: string) => (error: { readonly message: string }) =>
@@ -146,6 +147,13 @@ export type EditFiles = ReturnType<typeof editFiles>;
 
 const shootNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
+/**
+ * The name of a photo's edit folder, which holds no slash, so that the edit of
+ * `A/B` isn't inside the one of `A`. Different photos get different names.
+ */
+const editFolderName = (photo: string) =>
+  photo.replace(/[~/]/gu, (sign) => (sign === '/' ? '~s' : '~~'));
+
 /** Where keepsake keeps everything about one shoot. */
 export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
   if (!shootNamePattern.test(name)) {
@@ -195,8 +203,11 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         model.replaceAll('/', '--'),
         `${moment}.json`,
       ),
+    edits: path.join(root, 'edits'),
+    /** That the edits of photos in folders are no longer nested. */
+    flatEdits: path.join(root, 'flat-edits'),
     edit: (photo: string) => {
-      const directory = path.join(root, 'edits', photo);
+      const directory = path.join(root, 'edits', editFolderName(photo));
       const base = path.basename(photo);
       const files = editFiles(path, directory, base);
       const changes = path.join(directory, 'correction');
@@ -254,6 +265,40 @@ const needed = <A>(
     onSome: Effect.succeed,
   });
 
+const depth = (photo: string) => photo.split('/').length;
+
+/**
+ * Moves the edits of photos in folders out of the edit folder of the photo
+ * named like the folder, where they used to be.
+ */
+const unnestEdits = Effect.fn('unnestEdits')(function* (
+  files: ShootFiles,
+  photos: ReadonlyArray<string>,
+) {
+  const nested = photos.filter((photo) => editFolderName(photo) !== photo);
+  if (nested.length === 0 || (yield* exists(files.flatEdits))) {
+    return;
+  }
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const moved = Effect.gen(function* () {
+    // The deepest first, so that each is out before its parent moves.
+    for (const photo of nested.toSorted((a, b) => depth(b) - depth(a))) {
+      const before = path.join(files.edits, photo);
+      const { directory } = files.edit(photo);
+      const camera = path.join(before, `${path.basename(photo)}.jpg`);
+      if ((yield* fs.exists(camera)) && !(yield* fs.exists(directory))) {
+        yield* fs.rename(before, directory);
+      }
+    }
+    yield* fs.writeFileString(files.flatEdits, '');
+  }).pipe(Effect.mapError(storeFailed(files.edits)));
+  // While another command works on the shoot, they move the next time.
+  yield* exclusively(files)(moved).pipe(
+    Effect.catchTag('ShootBusy', () => Effect.void),
+  );
+});
+
 /** A scanned shoot with its photos and moments. */
 export const openShoot = Effect.fn('openShoot')(function* (name: string) {
   const files = yield* shootFiles(name);
@@ -262,6 +307,10 @@ export const openShoot = Effect.fn('openShoot')(function* (name: string) {
   const photos = yield* needed(
     yield* readJson(Schema.Array(Photo), files.photos),
     message,
+  );
+  yield* unnestEdits(
+    files,
+    photos.map(({ id }) => id),
   );
   const moments = yield* needed(
     yield* readJson(Schema.Array(Moment), files.moments),
