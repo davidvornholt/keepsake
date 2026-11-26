@@ -132,17 +132,18 @@ export const handOver = Effect.fn('handOver')(function* (
   const isOrdered = (yield* orderOf(files, known)) !== null;
   const orderable = isOrdered || picked.length === 0 ? null : picked;
   const { album } = wanted;
-  if (marks.length === 0 && album === null) {
-    return yield* new InvalidInput({
-      message: 'There is nothing to hand over.',
-    });
-  }
   const ids = marks.map(({ id }) => id);
   const isAsOrderable = album === null || isSame(album, orderable);
+  // First, since what the page shows may be gone, which leaves nothing.
   if (!(isSame(ids, wanted.marks) && isAsOrderable)) {
     return yield* new Outdated({
       message:
         'The marks or the chosen photos changed since this page showed them. Look over them again.',
+    });
+  }
+  if (marks.length === 0 && album === null) {
+    return yield* new InvalidInput({
+      message: 'There is nothing to hand over.',
     });
   }
   const at = DateTime.formatIso(yield* DateTime.now);

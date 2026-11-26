@@ -147,6 +147,19 @@ describe('a hand-over on the light table', () => {
     });
   });
 
+  it('says the marks changed when the last one was taken back', async () => {
+    await pickLisbon();
+    const status = await whileServing(async (address) => {
+      const path = `${address}/api/shoots/lisbon/marks`;
+      const { id } = await (await send('PUT', path, change)).json();
+      const reviewed = await openMarksOf(address);
+      // Another tab takes it back.
+      await send('DELETE', `${path}/${id}`);
+      return statusOf(handOver(address, { dollars: 0.75, marks: reviewed }));
+    });
+    expect(status).toBe(409);
+  });
+
   it('orders only the chosen photos that were looked over', async () => {
     await pickLisbon();
     const [stale, ordered] = await whileServing(async (address) => {
