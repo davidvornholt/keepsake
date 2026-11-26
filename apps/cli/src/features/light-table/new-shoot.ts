@@ -32,6 +32,35 @@ const freeName = (wanted: string, taken: ReadonlyArray<string>): string => {
   );
 };
 
+/**
+ * Makes a shoot under the first name that no shoot has, while no command works
+ * on one of that name, which may have taken it since the names were read.
+ */
+const claim = <E, R>(
+  wanted: string,
+  taken: ReadonlyArray<string>,
+  make: (name: string, files: ShootFiles) => Effect.Effect<void, E, R>,
+): Effect.Effect<
+  string,
+  E | InvalidInput | StoreFailed,
+  R | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function* () {
+    const name = freeName(wanted, taken);
+    const files = yield* shootFiles(name);
+    const isMade = yield* Effect.gen(function* () {
+      if (yield* exists(files.root)) {
+        return false;
+      }
+      yield* make(name, files);
+      return true;
+    }).pipe(
+      exclusively(files),
+      Effect.catchTag('ShootBusy', () => Effect.succeed(false)),
+    );
+    return isMade ? name : yield* claim(wanted, [...taken, name], make);
+  });
+
 /** Notes a new shoot, which is empty until its photos are found. */
 export const makeShoot = Effect.fn('makeShoot')(function* (wanted: NewShoot) {
   const about = wanted.about.trim();
@@ -49,19 +78,16 @@ export const makeShoot = Effect.fn('makeShoot')(function* (wanted: NewShoot) {
     wanted.timeZone === null
       ? {}
       : { timeZone: yield* checkTimeZone(wanted.timeZone) };
-  const name = freeName(nameFor(about), yield* shootNames);
-  const files = yield* shootFiles(name);
-  yield* writeJson(Schema.Array(Photo), files.photos, []);
-  yield* writeJson(Schema.Array(Moment), files.moments, []);
-  yield* notePreparation(files, wanted.maximum);
-  // Last, since the shoot is one from then on.
-  yield* writeJson(Shoot, files.shoot, {
-    name,
-    source: wanted.folder,
-    about,
-    ...timeZone,
-  });
-  return name;
+  const shoot = { source: wanted.folder, about, ...timeZone };
+  return yield* claim(nameFor(about), yield* shootNames, (name, files) =>
+    Effect.gen(function* () {
+      yield* writeJson(Schema.Array(Photo), files.photos, []);
+      yield* writeJson(Schema.Array(Moment), files.moments, []);
+      yield* notePreparation(files, wanted.maximum);
+      // Last, since the shoot is one from then on.
+      yield* writeJson(Shoot, files.shoot, { name, ...shoot });
+    }),
+  );
 });
 
 /** Whether a model was paid for, by what was spent or what it answered. */
