@@ -213,21 +213,27 @@ const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
   };
 });
 
-/** Asks the model about the moments it hasn't judged yet. */
+/**
+ * Asks the model about the moments it hasn't judged yet. `fileOf` says where
+ * a moment's verdict is kept.
+ */
 export const judgeMoments = Effect.fn('judgeMoments')(function* (
   open: OpenShoot,
   moments: ReadonlyArray<Moment>,
   again: boolean,
+  fileOf = (model: string, moment: Moment) =>
+    open.files.verdict(model, moment.id),
 ) {
   const { model } = yield* Vision;
   const outcomes = yield* inSteps('cull', moments, concurrency, (moment) =>
     Effect.gen(function* () {
-      const before = yield* verdictOn(open, model, moment);
+      const file = fileOf(model, moment);
+      const before = yield* verdictOn(open, model, moment, file);
       if (Option.isSome(before) && !again) {
         return { verdict: before.value };
       }
       const verdict = yield* judge(open, moment);
-      yield* writeJson(Verdict, open.files.verdict(model, moment.id), verdict);
+      yield* writeJson(Verdict, file, verdict);
       return { verdict };
     }).pipe(
       // One moment a model can't answer for doesn't stop the others.

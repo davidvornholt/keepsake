@@ -195,6 +195,14 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         model.replaceAll('/', '--'),
         `${moment}.json`,
       ),
+    /** A benchmark's verdict on a moment as it was rated, not as it is now. */
+    ratedVerdict: (model: string, moment: string) =>
+      path.join(
+        root,
+        'rated-verdicts',
+        model.replaceAll('/', '--'),
+        `${moment}.json`,
+      ),
     edit: (photo: string) => {
       const directory = path.join(root, 'edits', photo);
       const base = path.basename(photo);
