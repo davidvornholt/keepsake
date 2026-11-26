@@ -223,6 +223,32 @@ describe('a hand-over', () => {
     expect(agreedDollars).toBeLessThan(1.5);
   });
 
+  it('counts what was spent only against what was agreed before', async () => {
+    await pickLisbon();
+    await mark('one', notHandedOver);
+    await mark('two', { ...notHandedOver, photo: 'C' });
+    const spend = (dollars: number) =>
+      Bun.write(
+        shootFile('spending.json'),
+        JSON.stringify({
+          model: { calls: 1, inputTokens: 0, outputTokens: 0, dollars },
+        }),
+      );
+    await spend(0);
+    await handedOver('first', { dollars: 1, marks: ['one'] });
+    await spend(2);
+    await handedOver('second', {
+      at: '2026-04-01T12:00:00Z',
+      dollars: 1,
+      marks: ['two'],
+    });
+    const both = ['--hand-over', 'first', '--hand-over', 'second'];
+    expect(await runOk('marks', 'lisbon', ...both)).toMatchObject({
+      agreedDollars: 1,
+    });
+    expect(await runOk('marks', 'lisbon')).toMatchObject({ agreedDollars: 1 });
+  });
+
   it('forgets an order once its photos are in the album', async () => {
     await pickLisbon();
     await runOk('pick', 'lisbon', '--maximum', '1');

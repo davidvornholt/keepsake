@@ -139,7 +139,8 @@ export const toLaunch = Effect.fn('toLaunch')(function* (
 
 /**
  * What is left of what the owner agreed to pay for what an agent still has to
- * do. Everything spent on the shoot since counts against it.
+ * do. What was spent on the shoot counts against what was agreed before it,
+ * oldest first, and never against what was agreed only later.
  */
 export const agreedDollars = Effect.fn('agreedDollars')(function* (
   files: ShootFiles,
@@ -147,13 +148,21 @@ export const agreedDollars = Effect.fn('agreedDollars')(function* (
   only: Only = null,
 ) {
   const unsettled = yield* unsettledOf(files, known, only);
-  if (unsettled.length === 0) {
+  const [first] = unsettled;
+  if (first === undefined) {
     return 0;
   }
-  const agreed = unsettled.reduce((sum, { dollars }) => sum + dollars, 0);
-  const since = Math.min(...unsettled.map(({ spentBefore }) => spentBefore));
-  const spent = (yield* spentOn(files)) - since;
-  return inCents(Math.max(0, agreed - spent));
+  const atLast = unsettled.reduce(
+    (left, { spentBefore, dollars }) => ({
+      dollars:
+        Math.max(0, left.dollars - Math.max(0, spentBefore - left.spent)) +
+        dollars,
+      spent: Math.max(left.spent, spentBefore),
+    }),
+    { dollars: 0, spent: first.spentBefore },
+  );
+  const spentSince = (yield* spentOn(files)) - atLast.spent;
+  return inCents(Math.max(0, atLast.dollars - spentSince));
 });
 
 const keyOf = (ids: ReadonlyArray<string> | null) =>
