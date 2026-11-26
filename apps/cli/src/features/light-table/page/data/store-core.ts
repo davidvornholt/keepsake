@@ -88,14 +88,25 @@ export const makeCore = (name: string) => {
     set({ problem: isMissing ? null : messageOf(error) });
   };
 
+  /** How many reads were begun, so that an answer to an older one is left alone. */
+  let reads = 0;
+
   const load = async (): Promise<void> => {
     clearTimeout(again);
+    reads += 1;
+    const read = reads;
     try {
-      take(await readShoot(name));
+      const shoot = await readShoot(name);
+      if (read === reads) {
+        take(shoot);
+      }
     } catch (error) {
-      fail(error, await isGone(error), () => {
-        load().catch(() => undefined);
-      });
+      const isMissing = await isGone(error);
+      if (read === reads) {
+        fail(error, isMissing, () => {
+          load().catch(() => undefined);
+        });
+      }
     }
   };
 

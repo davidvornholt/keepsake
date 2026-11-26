@@ -97,3 +97,38 @@ describe('undo', () => {
     expect((await next('DELETE')).path).toEndWith('/marks/again');
   });
 });
+
+describe('reading the shoot', () => {
+  it('keeps what keepsake said last', async () => {
+    const store = await loaded();
+    const open = sampleMark('one', {
+      ...wish,
+      handedOverAt: '2026-05-21T10:00:00Z',
+    });
+    const answer = {
+      outcome: 'done',
+      note: 'Warmer',
+      at: '2026-05-21T11:00:00Z',
+    } as const;
+    const slow = store.reload();
+    const slowRead = await next('GET');
+    const quick = store.reload();
+    (await next('GET')).answer(Response.json(shootWith([{ ...open, answer }])));
+    await quick;
+    slowRead.answer(Response.json(shootWith([open])));
+    await slow;
+    expect(store.get().index?.shoot.marks[0]?.answer).toEqual(answer);
+  });
+
+  it('doesn’t say a read failed that something newer replaced', async () => {
+    const store = await loaded();
+    const slow = store.reload();
+    const slowRead = await next('GET');
+    const quick = store.reload();
+    await answerWith('GET', shootWith());
+    await quick;
+    slowRead.answer(new Error('offline'));
+    await slow;
+    expect(store.get().problem).toBeNull();
+  });
+});
