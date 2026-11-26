@@ -130,8 +130,9 @@ const legacyRecords = Effect.fn('legacyRecords')(function* (
 
 /**
  * Turns the old list of hand-overs into files of their own, once. A file
- * that is there already stays, and the list is kept beside them under
- * another name when all are written, so this can stop anywhere and run again.
+ * that is there already stays, also one another reader put there meanwhile,
+ * and the list is kept beside them under another name when all are written,
+ * so this can stop anywhere and run again.
  */
 const migrate = Effect.fn('migrate')(function* (files: ShootFiles) {
   const agreements = yield* readJson(Agreements, legacyFile(files));
@@ -147,7 +148,11 @@ const migrate = Effect.fn('migrate')(function* (files: ShootFiles) {
       .exists(fileOf(files, record.id))
       .pipe(Effect.mapError(storeFailed));
     if (!isThere) {
-      yield* saveHandOver(files, record);
+      // Another one that reads them now may have been first; its stays.
+      const text = yield* Schema.encodeEffect(
+        Schema.fromJsonString(HandOverRecord),
+      )(record).pipe(Effect.mapError(storeFailed));
+      yield* publish(files, `${record.id}${extension}`, text);
     }
   }
   yield* fs
