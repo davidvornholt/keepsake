@@ -14,6 +14,8 @@ export type FakeAlbum = {
   name: string;
   /** Whose album it is, when it is not the owner's own but shared with them. */
   readonly owner?: string;
+  /** The days of its first and last photo, which `photos` gives. */
+  readonly taken?: { readonly first: string; readonly last: string };
   assets: ReadonlyArray<FakeAsset>;
 };
 
@@ -44,10 +46,12 @@ const albumOf = (immich: FakeImmich, id: string) => {
 /** The account the photos command is signed in to. */
 const user = 'Owner';
 
-const named = ({ id, name, owner }: FakeAlbum) => ({
+const named = ({ id, name, owner, taken }: FakeAlbum) => ({
   id,
   name,
   owner: owner ?? user,
+  firstTakenOn: taken?.first ?? null,
+  lastTakenOn: taken?.last ?? null,
 });
 
 /** Immich's answer for each asset, as `photos` passes it on. */

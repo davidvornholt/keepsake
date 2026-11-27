@@ -8,6 +8,7 @@ import {
   spyOn,
 } from 'bun:test';
 import { appendFileSync, existsSync, readdirSync } from 'node:fs';
+import { copyFile } from 'node:fs/promises';
 import { changeUsedUp } from '../features/light-table/mark-answers.ts';
 import { inImmich, publishLisbon } from './choice-fixtures.ts';
 import {
@@ -37,6 +38,7 @@ import {
   restingOf,
   stopOf,
 } from './runner-fixtures.ts';
+import { editLater, laterAlbum, laterFinal } from './shared-album-fixtures.ts';
 
 // The test's reviewing model is a paid one, which the page's usual one isn't,
 // so the hand-overs agree to more than the page would ask. A server on a
@@ -302,6 +304,41 @@ describe('a change mark whose photo changed meanwhile', () => {
     expect(marks).toMatchObject([{ answer: null }]);
     expect(keepsakeRuns().filter((args) => args.startsWith('publish'))).toEqual(
       [],
+    );
+  });
+});
+
+describe('a change mark of a photo another shoot published too', () => {
+  it('leaves the upload it replaced, since the other shoot names it', async () => {
+    await publishLisbon();
+    // The other shoot's B is the same file, so Immich has one upload of it.
+    await editLater((photo) =>
+      copyFile(
+        shootFile('edits', photo, `${photo}-keepsake.jpg`),
+        laterFinal(photo),
+      ),
+    );
+    await runOk('publish', 'later');
+    const { photos } = await laterAlbum();
+    expect(photos).toContainEqual(
+      expect.objectContaining({ photo: 'B', asset: 'asset-3' }),
+    );
+    keepsakeInProcess(([command]) => {
+      if (command === 'publish') {
+        appendFileSync(shootFile('edits', 'B', 'B-keepsake.jpg'), 'changed');
+      }
+    });
+    const [{ answer }] = await whileServing(async (address) => {
+      await markB(address);
+      await handOver(address, { dollars: 5 });
+      const answered = await answeredOf(address);
+      await restingOf(address);
+      return answered;
+    });
+    expect(answer).toMatchObject({ outcome: 'done' });
+    expect(fakeTools.trashed).toEqual([]);
+    expect(fakeTools.albums[0]?.assets.map(({ id }) => id)).toContain(
+      'asset-3',
     );
   });
 });

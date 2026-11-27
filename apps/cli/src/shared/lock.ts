@@ -280,6 +280,20 @@ export const withAlbum =
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
     waitingFor(files.albumLock, albumPause, albumTries, 'the album')(work);
 
+/**
+ * Runs work that looks for the album of a name and makes it if there is none,
+ * after other such work for the name, from any shoot.
+ */
+export const withAlbumName =
+  (files: ShootFiles, key: string) =>
+  <A, E, R>(work: Effect.Effect<A, E, R>) =>
+    waitingFor(
+      files.albumNameLock(key),
+      albumPause,
+      albumTries,
+      'an album',
+    )(work);
+
 /** The same, or none when such work is going on now. */
 export const withAlbumIfFree = (files: ShootFiles) => holding(files.albumLock);
 

@@ -31,6 +31,9 @@ const Named = Schema.Struct({
   sharedWith: Schema.optionalKey(
     Schema.Array(Schema.Struct({ name: Schema.String })),
   ),
+  /** The days of its first and last photo, null while it has none. */
+  firstTakenOn: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  lastTakenOn: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 const NamedList = Schema.Array(Named);
 
@@ -40,17 +43,46 @@ export type NamedAlbum = typeof Named.Type;
 export const listAlbums = photos(NamedList, ['albums', 'list']);
 
 /**
+ * An album's name as the owner tells names apart: not by case, nor by spaces
+ * at the ends. The page compares them the same way.
+ */
+export const albumNameKey = (name: string) => name.trim().toLowerCase();
+
+export const isSameName = (one: string, other: string) =>
+  albumNameKey(one) === albumNameKey(other);
+
+/** The albums of these with this name. */
+export const albumsNamed = (
+  albums: ReadonlyArray<NamedAlbum>,
+  name: string,
+): ReadonlyArray<NamedAlbum> =>
+  albums.filter((candidate) => isSameName(candidate.name, name));
+
+/** When an album's photos were taken, to tell albums of one name apart. */
+const takenWhen = ({ firstTakenOn, lastTakenOn }: NamedAlbum) => {
+  if (firstTakenOn === undefined || firstTakenOn === null) {
+    return 'one without photos';
+  }
+  const last = lastTakenOn ?? firstTakenOn;
+  return last === firstTakenOn
+    ? `one with photos of ${firstTakenOn}`
+    : `one with photos from ${firstTakenOn} to ${last}`;
+};
+
+/**
  * The album of these with this name, if there is one. Albums are told apart
- * by their id, so a name two albums share names none of them.
+ * by their id, so a name two albums share names none of them, and the
+ * message says what else to do than rename all but one of them.
  */
 export const uniqueNamed = Effect.fn('uniqueNamed')(function* (
   albums: ReadonlyArray<NamedAlbum>,
   name: string,
+  otherwise = 'or give another name with --album',
 ) {
-  const same = albums.filter((candidate) => candidate.name === name);
+  const same = albumsNamed(albums, name);
   if (same.length > 1) {
     return yield* new InvalidInput({
-      message: `Immich has ${same.length} albums called ${name} (${same.map(({ id }) => id).join(', ')}), and keepsake can't tell which is meant. Rename all but one of them in Immich, or give another name with --album.`,
+      message: `Immich has ${same.length} albums called ${name}: ${same.map(takenWhen).join(', ')}. keepsake can't tell which one is meant, so it published nothing. Rename all but one of them in Immich, ${otherwise}.`,
     });
   }
   return same[0];
@@ -104,8 +136,13 @@ const notAdded = (asset: string, album: (typeof Uploaded.Type)['album']) => {
   return unchanged.reason === 'duplicate' ? undefined : unchanged.reason;
 };
 
-/** Uploads a file and returns its asset's id, also when Immich had it. */
-export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
+/**
+ * Uploads a file into an album, and says what Immich did: the asset's id,
+ * also when Immich had the file, whether it made a new asset of it, and
+ * whether this upload put the asset into the album rather than finding it
+ * there.
+ */
+export const uploadInto = Effect.fn('uploadInto')(function* (
   file: string,
   album: string | null,
 ) {
@@ -132,8 +169,16 @@ export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
       message: `Immich took ${file} as ${result.assetId} but did not put it into the album: ${refused}`,
     });
   }
-  return result.assetId;
+  return {
+    asset: result.assetId,
+    created: result.status === 'created',
+    added: answer.album?.added.includes(result.assetId) === true,
+  };
 });
+
+/** Uploads a file and returns its asset's id, also when Immich had it. */
+export const uploadPhoto = (file: string, album: string | null) =>
+  Effect.map(uploadInto(file, album), ({ asset }) => asset);
 
 /** Puts photos on top of each other, so the timeline shows the first. */
 export const stackPhotos = (top: string, below: string) =>

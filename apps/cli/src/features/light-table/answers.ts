@@ -11,7 +11,7 @@ import { type Folders, lookAtFolder } from './folders.ts';
 import { handOver } from './hand-over.ts';
 import { saveLabels } from './labels.ts';
 import { makeMark, takeBack } from './marks.ts';
-import { forgetShoot, makeShoot } from './new-shoot.ts';
+import { existingAlbums, forgetShoot, makeShoot } from './new-shoot.ts';
 import { seeItems } from './news.ts';
 import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
@@ -170,6 +170,9 @@ export const makeAnswers = (has: Has) => ({
     return Response.json(yield* has.folders.list(shoots));
   }),
   look: (request: Request) => lookAnswer(has, request),
+  albums: Effect.map(existingAlbums, (list) =>
+    Response.json(list, { headers: { 'cache-control': 'no-store' } }),
+  ),
   newShoot: (request: Request) => newShootAnswer(has, request),
   prepare: (name: string) =>
     Effect.gen(function* () {

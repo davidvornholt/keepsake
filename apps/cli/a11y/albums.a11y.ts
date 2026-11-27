@@ -1,6 +1,6 @@
 import { mobileDeviceTag } from '@davidvornholt/a11y-testing/playwright-config';
 import { expect, test } from '@playwright/test';
-import { large, lay, scan, shelf, title } from './page.ts';
+import { large, lay, type Page, scan, shelf, title } from './page.ts';
 
 // The shelf of albums, and the way of a new one: from a folder of photos
 // to the choice, the order, and keepsake editing it. Tests that change
@@ -15,11 +15,24 @@ const stopped = /has stopped$/u;
 const englishName =
   /its common English name where it has one, such as Vienna for Wien/u;
 const newAlbum = /^New album From/u;
+const joinsTavira =
+  /Immich has an album called Tavira already, with photos of 2 October to 4 October 2025\. The photos join it/u;
 const newAlbumWithKey = /^New album N$/u;
 const newThings = /^\d+ new things? to look at$/u;
 const goOnForMore = /^Go on, at most \$11\.25 more$/u;
 const usedUp = /^What you agreed to pay is used up/u;
 const sintraNews = /\/sintra\/news\?across$/u;
+const albumsAnswer = '**/api/albums';
+const looking = 'Looking for albums of this name in Immich.';
+const sharedLagos =
+  /Friend shared an album called Lagos with you, with photos of 5 October 2025\. The photos go into a new album of your own instead\./u;
+
+/** The name of a new album of the Tavira folder, as the page asks for it. */
+const nameTavira = async (page: Page) => {
+  await page.goto('/?new');
+  await page.getByRole('link', { name: tavira }).click();
+  return page.getByRole('textbox', { name: 'What is the album called?' });
+};
 
 test('shows every album on a shelf, with what waits at each', async ({
   page,
@@ -93,7 +106,54 @@ test('finds the folder a new album is made of', async ({ page }) => {
   await expect(named).toBeFocused();
   await expect(named).toHaveAccessibleDescription(englishName);
   await expect(page.getByText('09:00 on 18 October')).toBeVisible();
+  // Immich has an album of that name, which the photos join.
+  await expect(named).toHaveAccessibleDescription(joinsTavira);
   await scan(page);
+  await named.fill('Tavira beaches');
+  await expect(named).not.toHaveAccessibleDescription(joinsTavira);
+});
+
+test('says what Immich has of the name, however it is written', async ({
+  page,
+}) => {
+  const named = await nameTavira(page);
+  await expect(named).toHaveAccessibleDescription(joinsTavira);
+  await named.fill(' tavira ');
+  await expect(named).toHaveAccessibleDescription(joinsTavira);
+  // An album another account shares isn't joined.
+  await named.fill('Lagos');
+  await expect(named).toHaveAccessibleDescription(sharedLagos);
+  await scan(page);
+});
+
+test('says it looks while Immich is slow to answer', async ({ page }) => {
+  const answered = Promise.withResolvers<void>();
+  await page.route(albumsAnswer, async (route) => {
+    await answered.promise;
+    await route.continue();
+  });
+  const named = await nameTavira(page);
+  await expect(page.getByText(looking)).toBeVisible();
+  await scan(page);
+  answered.resolve();
+  await expect(named).toHaveAccessibleDescription(joinsTavira);
+  await expect(page.getByText(looking)).toHaveCount(0);
+});
+
+test('says when it can’t ask Immich, and asks again', async ({ page }) => {
+  await page.route(albumsAnswer, (route) =>
+    route.fulfill({ status: 502, json: { error: 'Immich is not reachable.' } }),
+  );
+  const named = await nameTavira(page);
+  const failed = page.getByText(
+    'Keepsake couldn’t look for albums of this name in Immich, so it can’t say whether the photos join one: Immich is not reachable.',
+  );
+  await expect(failed).toBeVisible();
+  await scan(page);
+  await page.unroute(albumsAnswer);
+  await page.getByRole('button', { name: 'Look again' }).click();
+  await expect(named).toHaveAccessibleDescription(joinsTavira);
+  await expect(failed).toHaveCount(0);
 });
 
 test('makes a new album of a folder, and throws it away', async ({ page }) => {

@@ -209,9 +209,18 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
       path.join(locks, `${name}.photo-${editFolderName(photo)}`),
     /**
      * Held by the page's server for as long as it carries out what was
-     * handed over in the shoot, so no other server does it too.
+     * handed over in the shoot, which tells the page that it does.
      */
     runnerLock: path.join(locks, `${name}.runner`),
+    /**
+     * Held while the album of a name is looked for and made, by any shoot.
+     * Shoot names have no dot, so it is no shoot's lock.
+     */
+    albumNameLock: (key: string) =>
+      path.join(
+        locks,
+        `album.${createHash('sha256').update(key).digest('hex')}`,
+      ),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** What the owner handed over, a file for each time. */

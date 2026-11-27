@@ -250,6 +250,16 @@ export const EditRecord = Schema.Struct({
 });
 export type EditRecord = typeof EditRecord.Type;
 
+/**
+ * Whether the shoot put the upload into the album, as Immich answered: it
+ * keeps a file once, so the asset may have been in the album already, as the
+ * owner's or another shoot's. Records from before keepsake noted this don't
+ * have it, and their uploads count as put there.
+ */
+const Ownership = {
+  added: Schema.optionalKey(Schema.Boolean),
+};
+
 /** A photo keepsake uploaded to an album. */
 export const PublishedPhoto = Schema.Struct({
   photo: Schema.String,
@@ -257,10 +267,37 @@ export const PublishedPhoto = Schema.Struct({
   cameraAsset: Schema.String,
   /** The SHA-256 of the file that was published. */
   digest: Schema.String,
-  /** Earlier uploads of the photo, which may wait in the album for the trash. */
+  /**
+   * Earlier uploads of the photo that keepsake put into the album, which may
+   * wait there for the trash.
+   */
   replaced: Schema.optionalKey(Schema.Array(Schema.String)),
+  ...Ownership,
 });
 export type PublishedPhoto = typeof PublishedPhoto.Type;
+
+/**
+ * The upload of a photo whose finished file Immich took, noted as soon as it
+ * answered, before the rest of the photo is sent. It is noted under `photos`
+ * once all of the photo is sent.
+ */
+export const SendingPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+  ...Ownership,
+});
+export type SendingPhoto = typeof SendingPhoto.Type;
+
+/**
+ * An upload that a publish from before keepsake noted every upload found by
+ * its file's name, `<photo>-keepsake.jpg`, and that keepsake took on once as
+ * the photo's. It counts as put there, like other uploads from then.
+ */
+export const AdoptedPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+});
+export type AdoptedPhoto = typeof AdoptedPhoto.Type;
 
 /** What keepsake published to an album it published to before the last. */
 export const EarlierAlbum = Schema.Struct({
@@ -272,6 +309,8 @@ export const EarlierAlbum = Schema.Struct({
    */
   owned: Schema.optionalKey(Schema.Boolean),
   photos: Schema.Array(PublishedPhoto),
+  sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
+  adopted: Schema.optionalKey(Schema.Array(AdoptedPhoto)),
 });
 export type EarlierAlbum = typeof EarlierAlbum.Type;
 
@@ -284,6 +323,20 @@ export const Publication = Schema.Struct({
   owned: Schema.optionalKey(Schema.Boolean),
   /** What was published to this album, and to no other. */
   photos: Schema.Array(PublishedPhoto),
+  sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
+  adopted: Schema.optionalKey(Schema.Array(AdoptedPhoto)),
+  /**
+   * Whether the uploads that `album.json` named by their file's name were
+   * taken on, which happens once, so nothing is found by name after it.
+   * Missing in records from before keepsake noted every upload.
+   */
+  namesAdopted: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The assets keepsake made for the shoot, as Immich answered, which alone
+   * may be called outdated. Missing in records from before keepsake noted
+   * this, whose uploads may have been files the owner had.
+   */
+  made: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
   outdated: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The other albums keepsake published to, by their id. */
