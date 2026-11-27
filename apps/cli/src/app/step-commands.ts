@@ -30,7 +30,7 @@ import { markOfChosen, whatToEdit } from './what-to-edit.ts';
 
 const lowestScore = 1;
 const highestScore = 10;
-const defaultMinimum = 7;
+const defaultMinimum = 6;
 const mostPicks = 10_000;
 const defaultBudget = 25;
 const mostDollars = 10_000;
