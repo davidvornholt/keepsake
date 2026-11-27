@@ -152,6 +152,8 @@ export const scanLisbon = async () => {
     photosFolder(),
     '--name',
     'lisbon',
+    '--title',
+    'Lisbon',
     '--about',
     'Lisbon, May 2026',
   );

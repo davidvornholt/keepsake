@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { aboutOf, clockThere, maximumFor, monthsOf } from './proposal.ts';
+import {
+  aboutOf,
+  clockThere,
+  maximumFor,
+  monthsOf,
+  titleOf,
+} from './proposal.ts';
 
 const march = '2026-03-31T06:12:00';
 const april = '2026-04-02T19:00:00';
@@ -15,6 +21,27 @@ describe('monthsOf', () => {
       'December 2025 to January 2026',
     );
     expect(monthsOf('', april)).toBe('');
+  });
+});
+
+describe('titleOf', () => {
+  it('takes the name of the folder without its date', () => {
+    expect(titleOf({ name: '2026-03-31 Gardens', within: ['2026'] })).toBe(
+      'Gardens',
+    );
+    expect(titleOf({ name: '20260331_old-town_walk', within: [] })).toBe(
+      'Old town walk',
+    );
+  });
+
+  it('takes the folder around it when its own name says nothing', () => {
+    expect(titleOf({ name: 'raw', within: ['2025', '2025-10-06 Porto'] })).toBe(
+      'Porto',
+    );
+  });
+
+  it('proposes nothing where no name says anything', () => {
+    expect(titleOf({ name: '100MSDCF', within: ['DCIM'] })).toBe('');
   });
 });
 

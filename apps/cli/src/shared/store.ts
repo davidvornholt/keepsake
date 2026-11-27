@@ -344,7 +344,7 @@ const unnestEdits = Effect.fn('unnestEdits')(function* (
 /** A scanned shoot with its photos and moments. */
 export const openShoot = Effect.fn('openShoot')(function* (name: string) {
   const files = yield* shootFiles(name);
-  const message = `There is no shoot called ${name}. Run \`keepsake scan <folder> --name ${name}\` first; \`keepsake shoots\` lists the ones there are.`;
+  const message = `There is no shoot called ${name}. Run \`keepsake scan <folder> --name ${name} --title "<album name>"\` first; \`keepsake shoots\` lists the ones there are.`;
   const shoot = yield* needed(yield* readJson(Shoot, files.shoot), message);
   const photos = yield* needed(
     yield* readJson(Schema.Array(Photo), files.photos),

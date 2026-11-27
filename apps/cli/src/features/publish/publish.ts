@@ -1,8 +1,16 @@
 import { createHash } from 'node:crypto';
-import { Effect, Option } from 'effect';
+import { Effect, FileSystem, Option } from 'effect';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
-import { Publication, type PublishedPhoto } from '../../shared/domain.ts';
-import { InvalidInput, StepMissing } from '../../shared/errors/errors.ts';
+import {
+  Album,
+  Publication,
+  type PublishedPhoto,
+} from '../../shared/domain.ts';
+import {
+  InvalidInput,
+  StepMissing,
+  StoreFailed,
+} from '../../shared/errors/errors.ts';
 import {
   albumAssets,
   createAlbum,
@@ -19,19 +27,17 @@ import {
 import { withAlbum, withChoice, withPhoto } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
-import {
-  albumsOf,
-  assetsInUse,
-  readPublication,
-} from '../../shared/publication.ts';
+import { albumsOf } from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
   exists,
   type OpenShoot,
   readBytes,
+  readJson,
   readPicks,
   writeJson,
 } from '../../shared/store.ts';
+import { outdatedOf } from './outdated.ts';
 import {
   giveRemovalsTheirAlbum,
   knownPublication,
@@ -161,15 +167,6 @@ const send = Effect.fn('send')(function* (
   } satisfies Published;
 });
 
-/**
- * The upload of a photo that a new one replaced and that is a photo of no
- * album keepsake knows of, as Immich gives a file that it has the same id.
- */
-const outdatedOf = (publication: Publication) => {
-  const inUse = assetsInUse(publication);
-  return (publication.outdated ?? []).filter((asset) => !inUse.has(asset));
-};
-
 /** The publication with a photo's upload in it, and the one it replaced. */
 const withSent = (
   publication: Publication,
@@ -278,52 +275,24 @@ const albumNow = Effect.fn('albumNow')(function* (
 });
 
 /**
- * Forgets the replaced uploads that the output of a command named, which
- * happens only once it was printed.
+ * Notes the album before anything is uploaded, so that a publish that stopped
+ * after it made the album finds the album by its id when run again, rather
+ * than make another one. What keepsake read of another album is forgotten, so
+ * nothing calls that album's photos published or marks them as favorites
+ * until this one is read.
  */
-const forgetOutdated = Effect.fn('forgetOutdated')(function* (
-  open: OpenShoot,
-  named: ReadonlyArray<string>,
-) {
-  const publication = yield* readPublication(open);
-  if (publication !== null && named.length > 0) {
-    yield* writeJson(Publication, open.files.publication, {
-      ...publication,
-      outdated: (publication.outdated ?? []).filter(
-        (asset) => !named.includes(asset),
-      ),
-    });
-  }
-});
-
-/**
- * Of these replaced uploads, those still noted and in no album keepsake knows
- * of, as a publish since may have brought one back.
- */
-const stillOutdated = Effect.fn('stillOutdated')(function* (
-  open: OpenShoot,
-  candidates: ReadonlyArray<string>,
-) {
-  const publication = yield* readPublication(open);
-  const noted = new Set(publication === null ? [] : outdatedOf(publication));
-  return candidates.filter((asset) => noted.has(asset));
-});
-
-/**
- * Tells of the replaced uploads that are still outdated and forgets them once
- * told. Run it on the shoot it holds, so no publish changes them in between;
- * it holds the choice too, so the page publishes nothing meanwhile.
- */
-export const tellOutdated = <E, R>(
-  open: OpenShoot,
-  candidates: ReadonlyArray<string>,
-  tell: (outdated: ReadonlyArray<string>) => Effect.Effect<void, E, R>,
-) =>
-  stillOutdated(open, candidates).pipe(
-    Effect.tap(tell),
-    Effect.flatMap((outdated) => forgetOutdated(open, outdated)),
-    withChoice(open.files),
-  );
+const switchTo = (open: OpenShoot, publication: Publication) =>
+  Effect.gen(function* () {
+    // Forgotten first, so a failed removal leaves the old album current.
+    const read = Option.getOrNull(yield* readJson(Album, open.files.album));
+    if (read !== null && read.id !== publication.albumId) {
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs
+        .remove(open.files.album, { force: true })
+        .pipe(Effect.mapError(({ message }) => new StoreFailed({ message })));
+    }
+    yield* writeJson(Publication, open.files.publication, publication);
+  }).pipe(withAlbum(open.files));
 
 const publishNow = Effect.fn('publish')(function* (
   open: OpenShoot,
@@ -344,10 +313,11 @@ const publishNow = Effect.fn('publish')(function* (
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
   const album = yield* destinationOf(target, makesAlbum);
-  yield* ensureTag(tag);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
   let publication = publicationFor(before, album, albums);
+  yield* switchTo(open, publication);
+  yield* ensureTag(tag);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {

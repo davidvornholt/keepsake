@@ -283,7 +283,7 @@ const Sheet = ({
   useFlip(listRef);
   useScrollKept(listRef, sheet.shoot);
   const title = titleOf(ledger, index.shoot.ordered !== null);
-  useTitle(title, index.shoot.about ?? index.shoot.name);
+  useTitle(title, index.shoot.title);
 
   useEffect(() => {
     viewRef.current?.focus({ preventScroll: true });

@@ -14,14 +14,20 @@ import {
 import { field, mainButton } from '../ui/classes.ts';
 import { Img } from '../ui/placed.tsx';
 import { useFocused } from '../ui/use-focused.ts';
-import { aboutOf, clockThere, maximumFor, timeZones } from './proposal.ts';
+import {
+  aboutOf,
+  clockThere,
+  maximumFor,
+  timeZones,
+  titleOf,
+} from './proposal.ts';
 import type { Folder } from './tree.ts';
 import { type Loaded, useLoaded } from './use-loaded.ts';
 import { useIsShown, whileShown } from './while-shown.ts';
 
-// The second step: what the album is about, whether the camera's clock was
-// right, and how many photos the album may have. Everything is proposed, so
-// that pressing the button is enough.
+// The second step: what the album is called and what it is about, whether
+// the camera's clock was right, and how many photos the album may have.
+// Everything is proposed, so that pressing the button is enough.
 
 const heading = 'type-name text-[1.0625rem] text-lamp';
 const radio = 'mt-[3px] size-4 shrink-0 accent-lamp';
@@ -210,7 +216,7 @@ const noon = '2026-01-01T12:00';
 /** What is sent, or null while something is still missing. */
 const wantedOf = (
   folder: Folder,
-  about: string,
+  { title, about }: { readonly title: string; readonly about: string },
   clock: Clock,
   limit: Limit,
 ) => {
@@ -218,9 +224,11 @@ const wantedOf = (
   const isClockKnown =
     clock.was === 'there' || clockThere(noon, clock.timeZone) !== null;
   const isLimitKnown = !limit.has || (Number.isInteger(most) && most >= 1);
-  return about.trim() !== '' && isClockKnown && isLimitKnown
+  const isSaid = title.trim() !== '' && about.trim() !== '';
+  return isSaid && isClockKnown && isLimitKnown
     ? {
         folder: folder.path,
+        title: title.trim(),
         about: about.trim(),
         timeZone: clock.was === 'home' ? clock.timeZone : null,
         maximum: limit.has ? most : null,
@@ -229,8 +237,9 @@ const wantedOf = (
 };
 
 export const Details = ({ folder }: { readonly folder: Folder }) => {
+  const titleId = useId();
   const aboutId = useId();
-  const aboutRef = useFocused<HTMLInputElement>();
+  const titleRef = useFocused<HTMLInputElement>();
   const { loaded: look } = useLoaded(folder.path, () =>
     lookIntoFolder(folder.path),
   );
@@ -238,7 +247,8 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
   const from =
     look.status === 'ready' ? look.value.from : localStamp(folder.from);
   const to = look.status === 'ready' ? look.value.to : localStamp(folder.to);
-  const [typed, setTyped] = useState<string | null>(null);
+  const [typedTitle, setTypedTitle] = useState<string | null>(null);
+  const [typedAbout, setTypedAbout] = useState<string | null>(null);
   const [clock, setClock] = useState<Clock>({ was: 'there', timeZone: '' });
   const [limit, setLimit] = useState<Limit>({
     has: true,
@@ -247,8 +257,9 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
   const [isSending, setIsSending] = useState(false);
   const isShown = useIsShown();
   const [problem, setProblem] = useState<string | null>(null);
-  const about = typed ?? aboutOf(folder, from, to);
-  const wanted = wantedOf(folder, about, clock, limit);
+  const title = typedTitle ?? titleOf(folder);
+  const about = typedAbout ?? aboutOf(folder, from, to);
+  const wanted = wantedOf(folder, { title, about }, clock, limit);
 
   const make = (event: SyntheticEvent) => {
     event.preventDefault();
@@ -282,19 +293,37 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
         ) : null}
       </p>
       <Samples look={look} />
-      <label className={`mt-9 block ${heading}`} htmlFor={aboutId}>
-        What is it about?
+      <label className={`mt-9 block ${heading}`} htmlFor={titleId}>
+        What is the album called?
       </label>
-      <p className="mt-2 max-w-[36rem] text-quiet">
-        Where and when. It is the name of the album, and what the models that
-        choose and edit are told about the photos.
+      <p className="mt-2 max-w-[36rem] text-quiet" id={`${titleId}-more`}>
+        The place or the event the photos show, by its common English name where
+        it has one, such as Vienna for Wien. Leave out the date and the country,
+        since Immich shows them.
       </p>
       <input
-        ref={aboutRef}
+        ref={titleRef}
+        aria-describedby={`${titleId}-more`}
+        className={`${field} mt-3`}
+        id={titleId}
+        maxLength={120}
+        onChange={(event) => setTypedTitle(event.target.value)}
+        placeholder="Lisbon"
+        required={true}
+        value={title}
+      />
+      <label className={`mt-9 block ${heading}`} htmlFor={aboutId}>
+        Where and when?
+      </label>
+      <p className="mt-2 max-w-[36rem] text-quiet" id={`${aboutId}-more`}>
+        The models that choose and edit are told this about the photos.
+      </p>
+      <input
+        aria-describedby={`${aboutId}-more`}
         className={`${field} mt-3`}
         id={aboutId}
         maxLength={120}
-        onChange={(event) => setTyped(event.target.value)}
+        onChange={(event) => setTypedAbout(event.target.value)}
         placeholder="Lisbon, May 2026"
         required={true}
         value={about}

@@ -100,6 +100,7 @@ export const sampleShoot = (
   choices: ReadonlyArray<Choice> = [],
 ): ShootView => ({
   name: 'lisbon',
+  title: 'Lisbon',
   about: 'Lisbon, May 2026',
   revision: 'one',
   album: null,

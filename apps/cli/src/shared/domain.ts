@@ -14,6 +14,8 @@ export const Shoot = Schema.Struct({
   name: Schema.String,
   /** The folder the photos are in. keepsake only ever reads it. */
   source: Schema.String,
+  /** The album's name in Immich and on the page: "Lisbon". */
+  title: Schema.String,
   /** Where and when, for the models: "Lisbon, May 2026". */
   about: Schema.NullOr(Schema.String),
   /** Where the photos were taken, if the camera's clock was set elsewhere. */

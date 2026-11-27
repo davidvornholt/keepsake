@@ -128,7 +128,9 @@ export type HandOverRecord = typeof HandOverRecord.Type;
 export const NewShoot = Schema.Struct({
   /** The path of one of the folders it was told of. */
   folder: Schema.String,
-  /** Where and when: "Lisbon, May 2026" */
+  /** The album's name: "Lisbon" */
+  title: Schema.String,
+  /** Where and when, for the models: "Lisbon, May 2026" */
   about: Schema.String,
   /** Where the photos were taken, if the camera's clock was set elsewhere. */
   timeZone: Schema.NullOr(Schema.String),

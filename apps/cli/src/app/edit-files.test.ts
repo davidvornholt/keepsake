@@ -33,7 +33,16 @@ const scanNested = async () => {
     { file: 'A/B.ARW', second: 300 },
   ];
   await putPhotos();
-  await runOk('scan', photosFolder(), '--name', 'lisbon', '--about', 'Lisbon');
+  await runOk(
+    'scan',
+    photosFolder(),
+    '--name',
+    'lisbon',
+    '--title',
+    'Lisbon',
+    '--about',
+    'Lisbon',
+  );
   await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
   await runOk('cull', 'lisbon');
 };
@@ -102,7 +111,14 @@ describe('keepsake edit, moving edits out of another photo’s', () => {
       { file: 'A~sB.ARW', second: 600 },
     ];
     await putPhotos();
-    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await runOk(
+      'scan',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--title',
+      'Lisbon',
+    );
     await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
     await runOk('cull', 'lisbon');
     const photos = ['A', 'A/B', 'A~sB'];
@@ -126,7 +142,7 @@ const editBesideFolder = async () => {
     { file: 'A~sB/C.ARW', second: 300 },
   ];
   await putPhotos();
-  await runOk('scan', photosFolder(), '--name', 'lisbon');
+  await runOk('scan', photosFolder(), '--name', 'lisbon', '--title', 'Lisbon');
   await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
   await runOk('cull', 'lisbon');
   const photos = ['A/B', 'A~sB/C'];
@@ -187,7 +203,14 @@ describe('keepsake edit, with a photo called input', () => {
   it('gives the image model only the cropped photo', async () => {
     fakeTools.files = [{ file: 'input.ARW', second: 0 }];
     await putPhotos();
-    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await runOk(
+      'scan',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--title',
+      'Lisbon',
+    );
     await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
     await runOk('cull', 'lisbon');
     expect((await editLisbon('input')).edited).toBe(1);

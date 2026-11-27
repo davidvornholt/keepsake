@@ -122,7 +122,7 @@ export const isBusy = (shoot: ShootSummary): boolean =>
 /** The whole of it in one sentence, for whoever can't see the page. */
 export const sentenceOf = (shoot: ShootSummary): string =>
   [
-    shoot.about ?? shoot.name,
+    shoot.title,
     ...printOf(shoot),
     ...waitsOf(shoot).map(({ text, more }) =>
       more === null ? text : `${text}: ${more}`,

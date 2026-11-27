@@ -96,10 +96,29 @@ describe('keepsake run', () => {
     expect(result.culled.moments).toBe(3);
     expect(result.picked.picked).toBe(3);
     expect(result.edited.edited).toBe(3);
-    expect(result.published.published).toBe(3);
+    expect(result.published).toMatchObject({
+      album: { name: 'Lisbon' },
+      published: 3,
+    });
     const questions = fakeModels.asked.length;
     await runOk(...runLisbon('--publish'));
     expect(fakeModels.asked).toHaveLength(questions);
+  });
+
+  it('asks nothing for a new shoot without a title', async () => {
+    const failure = await failureOf(
+      'run',
+      photosFolder(),
+      '--name',
+      'untitled',
+      '--model',
+      judge,
+      '--review-model',
+      judge,
+    );
+    expect(failure._tag).toBe('InvalidInput');
+    expect(failure.message).toContain('--title');
+    expect(fakeModels.asked).toEqual([]);
   });
 
   it('uploads nothing unless asked to', async () => {

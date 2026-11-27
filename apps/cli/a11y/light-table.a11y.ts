@@ -20,7 +20,7 @@ const viewOf = (name: string, stacks: number) =>
   new RegExp(`^${name}\\s*${stacks}\\s*\\d$`, 'u');
 
 test('lays a published album on the table', async ({ page }) => {
-  await lay(page, '/lisbon', 'Lisbon, May 2026');
+  await lay(page, '/lisbon', 'Lisbon');
   await expect(page.getByText('43 photos in 17 stacks').first()).toBeVisible();
   await expect(page.getByText('8 in the album of at most 10')).toBeVisible();
   await expect(
@@ -58,16 +58,16 @@ test('lays a published album on the table', async ({ page }) => {
 test('shows albums that nothing is chosen for yet', {
   tag: mobileDeviceTag,
 }, async ({ page }) => {
-  await lay(page, '/braga', 'Braga, July 2026');
+  await lay(page, '/braga', 'Braga');
   await expect(page.getByText('Nothing chosen yet')).toBeVisible();
   await expect(page.getByRole('list', { name: 'Which photos' })).toBeHidden();
   await scan(page);
-  await lay(page, '/evora', 'Évora, August 2026');
+  await lay(page, '/evora', 'Évora');
   await scan(page);
 });
 
 test('opens a stack on the table and closes it', async ({ page }) => {
-  await lay(page, '/evora', 'Évora, August 2026');
+  await lay(page, '/evora', 'Évora');
   await frame(page).focus();
   for (const _ of [1, 2, 3, 4, 5, 6, 7]) {
     await page.keyboard.press('ArrowRight');
@@ -86,7 +86,7 @@ test('opens a stack on the table and closes it', async ({ page }) => {
 test('takes a photo out on the table with the keyboard and puts it back', async ({
   page,
 }) => {
-  await lay(page, '/sintra', 'Sintra, October 2026');
+  await lay(page, '/cascais', 'Cascais');
   await frame(page).focus();
   await page.keyboard.press('ArrowRight');
   await expect(frame(page)).toHaveAccessibleName(secondFrame);
@@ -144,7 +144,7 @@ test('hands marks over to an agent that is started for them', async ({
   await expect(page.getByRole('button', { name: 'Copy' })).toHaveCount(0);
   await scan(page);
   await page.keyboard.press('Escape');
-  await expect(title(page)).toHaveText('Lisbon, May 2026');
+  await expect(title(page)).toHaveText('Lisbon');
   await expect(handing).toBeHidden();
   // One chosen photo wasn't in the album yet, so it is ordered with the marks.
   await expect(

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { correctionPrompt } from './correction-prompt.ts';
 
-const shoot = { name: 'lisbon', source: '/photos', about: 'Lisbon' };
+const shoot = {
+  name: 'lisbon',
+  source: '/photos',
+  title: 'Lisbon',
+  about: 'Lisbon',
+};
 const box = { left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 };
 
 describe('correctionPrompt', () => {

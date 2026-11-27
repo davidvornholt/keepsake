@@ -42,6 +42,10 @@ const lookAt = (folder: string) => async (address: string) =>
 const readOf = (file: string) =>
   fakeTools.runs.filter(({ args }) => args.some((arg) => arg.endsWith(file)));
 
+/** Scans a folder into a new shoot. */
+const scanFolder = (folder: string, ...args: ReadonlyArray<string>) =>
+  runOk('scan', folder, '--title', 'Trip', ...args);
+
 describe('the folders of photos on the page', () => {
   it('are listed when one has a photo that is gone', async () => {
     await Bun.write(join(photosFolder(), 'lisbon', 'A.jpg'), 'a photo');
@@ -103,7 +107,7 @@ describe('the folders of photos on the page', () => {
     const { trip } = await withLinkOutside();
     await Bun.write(join(trip, '.hidden', 'C.jpg'), 'a photo');
     await Bun.write(join(trip, 'notes.txt'), 'notes');
-    const scanned = await runOk('scan', trip, '--name', 'trip');
+    const scanned = await scanFolder(trip, '--name', 'trip');
     expect(scanned).toMatchObject({ photos: 1, moments: 1 });
     const [exiftool] = fakeTools.runs.filter(
       ({ command }) => command === 'exiftool',
@@ -122,7 +126,7 @@ describe('the folders of photos on the page', () => {
   it('hands exiftool any name a photo can have', async () => {
     const odd = join(photosFolder(), 'o@dd', 'a\\b\nc$d@e.jpg');
     await Bun.write(odd, 'a photo');
-    const scanned = await runOk('scan', join(photosFolder(), 'o@dd'));
+    const scanned = await scanFolder(join(photosFolder(), 'o@dd'));
     expect(scanned).toMatchObject({ photos: 1 });
     const [exiftool] = fakeTools.runs.filter(
       ({ command }) => command === 'exiftool',
@@ -138,7 +142,7 @@ describe('the folders of photos on the page', () => {
         Bun.write(join(photosFolder(), 'many', `${long}${index}.jpg`), ''),
       ),
     );
-    const scanned = await runOk('scan', join(photosFolder(), 'many'));
+    const scanned = await scanFolder(join(photosFolder(), 'many'));
     expect(scanned).toMatchObject({ photos: count });
     const runs = fakeTools.runs.filter(
       ({ command, args }) => command === 'exiftool' && args.includes('--'),

@@ -5,10 +5,8 @@ import { edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
-import {
-  publish as publishShoot,
-  tellOutdated,
-} from '../features/publish/publish.ts';
+import { tellOutdated } from '../features/publish/outdated.ts';
+import { publish as publishShoot } from '../features/publish/publish.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { withChoice } from '../shared/lock.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
@@ -218,17 +216,15 @@ export const edit = Command.make(
   ),
 );
 
-export const albumFlag = optionalString(
-  'album',
-  'The name of the album (default: the one published to before, or what the shoot is about, or its name)',
-);
-
 export const publish = Command.make(
   'publish',
   {
     shoot: shootArgument,
     photos: photosArgument('Photos to publish instead of the picked ones'),
-    album: albumFlag,
+    album: optionalString(
+      'album',
+      'Publish to the album with this name instead, made if there is none (default: the album published to before, or else a new album named after the shoot’s title)',
+    ),
   },
   ({ shoot, photos, album }) =>
     workOn(shoot, (open) =>

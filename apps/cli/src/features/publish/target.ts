@@ -71,11 +71,13 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
 
 /**
  * The album keepsake published to before, unless another is named. Albums are
- * found by their id, so one renamed in Immich stays the album. A name is
- * looked up only for an album keepsake hasn't published to, and when its
- * album is gone, keepsake makes a new one rather than take another album
- * that has its name now, which may be shared with others, but only if the
- * album was the account's own.
+ * found by their id, so one renamed in Immich stays the album. A shoot's first
+ * album is a new one named after its title, even when an album has that name
+ * already, since a title without a date may be that of another trip. Only an
+ * album named with --album is looked up by its name. When the album is gone,
+ * keepsake makes a new one rather than take another album that has its name
+ * now, which may be shared with others, but only if the album was the
+ * account's own.
  */
 export const targetOf = Effect.fn('targetOf')(function* (
   open: OpenShoot,
@@ -93,8 +95,7 @@ export const targetOf = Effect.fn('targetOf')(function* (
     return known ?? (yield* uniqueNamed(albums, name)) ?? fresh(name);
   }
   if (before === null) {
-    const name = open.shoot.about ?? open.shoot.name;
-    return (yield* uniqueNamed(albums, name)) ?? fresh(name);
+    return fresh(open.shoot.title);
   }
   return withId(before.albumId) ?? (yield* gone(before));
 });

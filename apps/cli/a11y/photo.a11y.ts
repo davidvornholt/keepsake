@@ -173,7 +173,7 @@ test('says so when a photo couldn’t be taken out of the album', async ({
   page,
 }) => {
   // Immich refused when the page tried to take it out.
-  await open(page, '/coimbra/photos/D63');
+  await open(page, '/nazare/photos/D63');
   const notice = page
     .getByRole('status')
     .filter({ hasText: 'wasn’t taken out' });
