@@ -144,12 +144,12 @@ describe('an album that is ordered', () => {
 
   it('keeps a wish for a first edit back until the photo is ordered', () => {
     const wish = sampleMark('1', { photo: 'd', note: 'Warmer' });
-    const shoot = (photos: ReadonlyArray<string>): ShootView => ({
+    const orderOf = (inOrder: ReadonlyArray<string>): ShootView => ({
       ...sampleShoot(chosen, [wish]),
-      ordered: { at, dollars: 2.25, photos },
+      ordered: { at, dollars: 2.25, photos: inOrder },
     });
-    expect(ledgerOf(indexOf(shoot(['a']))).open).toEqual([]);
-    const ordered = ledgerOf(indexOf(shoot(['a', 'd'])));
+    expect(ledgerOf(indexOf(orderOf(['a']))).open).toEqual([]);
+    const ordered = ledgerOf(indexOf(orderOf(['a', 'd'])));
     expect(ordered.open.map(({ mark }) => mark.id)).toEqual(['1']);
     expect(ordered.edits).toBe(0);
   });
