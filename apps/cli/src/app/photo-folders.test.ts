@@ -135,8 +135,10 @@ describe('the folders of photos on the page', () => {
   });
 
   it('hands exiftool very many photos in runs it can be given', async () => {
-    const count = 3000;
-    const long = 'a-long-name-of-a-trip-to-fill-the-arguments-'.repeat(2);
+    // Names near the longest a file system allows fill a run with few photos,
+    // since each photo also costs the scan a few runs of other programs.
+    const count = 1200;
+    const long = 'a-long-name-of-a-trip-to-fill-the-arguments-'.repeat(5);
     await Promise.all(
       Array.from({ length: count }, (_, index) =>
         Bun.write(join(photosFolder(), 'many', `${long}${index}.jpg`), ''),

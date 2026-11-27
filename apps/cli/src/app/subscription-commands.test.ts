@@ -13,6 +13,7 @@ import {
 } from './command-fixtures.ts';
 import { verdictAnswer } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
+import { claudeAnswer, codexAnswer, lines } from './subscription-answers.ts';
 
 beforeEach(async () => {
   await setUp(spyOn);
@@ -20,37 +21,6 @@ beforeEach(async () => {
   await scanLisbon();
 });
 afterEach(tearDown);
-
-const lines = (...events: ReadonlyArray<object>) =>
-  events.map((event) => JSON.stringify(event)).join('\n');
-
-const claudeAnswer = (result: object) =>
-  lines(
-    { type: 'system', subtype: 'init' },
-    {
-      type: 'result',
-      usage: {
-        input_tokens: 2,
-        cache_creation_input_tokens: 1000,
-        cache_read_input_tokens: 500,
-        output_tokens: 80,
-      },
-      ...result,
-    },
-  );
-
-const codexAnswer = (answer: object) =>
-  lines(
-    { type: 'thread.started' },
-    {
-      type: 'item.completed',
-      item: { type: 'agent_message', text: JSON.stringify(answer) },
-    },
-    {
-      type: 'turn.completed',
-      usage: { input_tokens: 12_000, output_tokens: 70 },
-    },
-  );
 
 /** The question about the two frames of the burst. */
 const aboutBurst = (command: string) => {

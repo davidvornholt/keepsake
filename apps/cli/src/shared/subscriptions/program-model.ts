@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Layer, Schema, Stream } from 'effect';
+import { Effect, FileSystem, Layer, Result, Schema, Stream } from 'effect';
 import {
   AiError,
   LanguageModel,
@@ -8,12 +8,13 @@ import {
 } from 'effect/ai';
 import type { ChildProcessSpawner } from 'effect/process';
 import { ToolFailed } from '../errors/errors.ts';
-import { runTool } from '../tools.ts';
+import { runToolToEnd } from '../tools.ts';
 import {
   requireSubscription,
   type Subscription,
   withoutApiKeys,
 } from './subscriptions.ts';
+import { type ProgramUsage, usageRecorder } from './usage-records.ts';
 
 /** One question for a program, in the words it needs. */
 export type ProgramQuestion = {
@@ -46,15 +47,27 @@ export type Program<R> = {
   readonly answer: (
     events: ReadonlyArray<unknown>,
   ) => Effect.Effect<ProgramAnswer, ToolFailed>;
+  readonly usage: ProgramUsage;
 };
 
 const Line = Schema.fromJsonString(Schema.Unknown);
 
-const eventsIn = (text: string) =>
-  Effect.forEach(
+/**
+ * The events in what a program printed, and the first line that isn't one,
+ * such as a last line cut off when the program stopped.
+ */
+const eventsIn = Effect.fn('eventsIn')(function* (text: string) {
+  const read = yield* Effect.forEach(
     text.split('\n').filter((line) => line.startsWith('{')),
-    (line) => Schema.decodeUnknownEffect(Line)(line),
+    (line) => Effect.result(Schema.decodeUnknownEffect(Line)(line)),
   );
+  return {
+    events: read.flatMap((line) =>
+      Result.isSuccess(line) ? [line.success] : [],
+    ),
+    unread: read.find(Result.isFailure)?.failure,
+  };
+});
 
 const roleOf = (prompt: Prompt.Prompt): string =>
   prompt.content
@@ -96,6 +109,7 @@ export const programModelLayer = <R>(program: Program<R>) =>
     Effect.gen(function* () {
       const { subscription, codecTransformer } = program;
       yield* requireSubscription(subscription);
+      const recordUsage = yield* usageRecorder(program.usage);
       const services = yield* Effect.context<
         R | FileSystem.FileSystem | ChildProcessSpawner.ChildProcessSpawner
       >();
@@ -126,12 +140,21 @@ export const programModelLayer = <R>(program: Program<R>) =>
             }),
             directory,
           });
-          const { stdout, stderr, exitCode } = yield* runTool(
+          const { stdout, stderr, ending } = yield* runToolToEnd(
             subscription,
             args,
             { input, cwd: directory, env: withoutApiKeys },
           );
-          const events = yield* eventsIn(new TextDecoder().decode(stdout));
+          const { events, unread } = yield* eventsIn(
+            new TextDecoder().decode(stdout),
+          );
+          // A failed answer, or one a signal cut short, may have used tokens
+          // too, so its usage is recorded before it fails.
+          yield* recordUsage(events);
+          const exitCode = yield* Effect.fromResult(ending);
+          if (unread !== undefined) {
+            return yield* unread;
+          }
           if (events.length === 0) {
             return yield* new ToolFailed({
               message: `exit code ${exitCode}. ${stderr}`,
