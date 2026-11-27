@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { writeFile } from 'node:fs/promises';
 import { withChoice } from '../shared/lock.ts';
 import {
+  choicesOf,
   choose,
   inImmich,
   outReason,
@@ -31,6 +32,9 @@ const dismiss = (address: string, action: string) =>
   send('DELETE', `${address}/api/shoots/lisbon/choices/${action}`);
 
 const instead = 'You chose A2 instead.';
+
+/** The upload of A1, which publish sent to Immich first. */
+const assetOfA1 = 'asset-1';
 
 /** The upload of B, which publish sent after A1 and its RAW file. */
 const assetOfB = 'asset-3';
@@ -140,5 +144,74 @@ describe('a choice the page stopped half-way through', () => {
       kind: 'taken-out',
       because: outReason,
     });
+  });
+});
+
+describe('a photo used instead of one Immich keeps in the album', () => {
+  const swap = (address: string) =>
+    choose(address, {
+      photo: 'A2',
+      wants: 'in',
+      instead: 'A1',
+      because: instead,
+    });
+
+  it('stays out too, and says why', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const before = await standingOf('A2');
+    fakeTools.refused.add(assetOfA1);
+    const [failed, again] = await whileServing(async (address) => {
+      await swap(address);
+      const choices = await settled(address);
+      await dismiss(address, choices[0]?.action ?? '');
+      fakeTools.refused.clear();
+      await swap(address);
+      return [choices, await settled(address)];
+    });
+    expect(failed).toMatchObject([
+      { photo: 'A2', wants: 'in' },
+      { photo: 'A1', wants: 'out' },
+    ]);
+    expect(failed[0]?.failed).toContain('did not take A1 out');
+    expect(again).toEqual([]);
+    expect(inImmich()).toEqual(['B', 'C', 'A2']);
+    expect(before.kind).not.toBe('album');
+  });
+
+  it('is in the album as it was before, after it went in for a moment', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const before = await standingOf('A2');
+    fakeTools.refused.add(assetOfA1);
+    const [failed, standing] = await whileServing(async (address) => {
+      await swap(address);
+      return [await settled(address), await standingOf('A2')];
+    });
+    expect(failed).toHaveLength(2);
+    expect(inImmich()).toEqual(['A1', 'B', 'C']);
+    expect(standing).toEqual(before);
+  });
+
+  it('stays to be seen to when it can’t be taken back out', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    fakeTools.refused.add(assetOfA1);
+    fakeTools.pause = ({ args }) => {
+      if (args[1] === 'remove' && args.includes(assetOfA1)) {
+        fakeTools.refused.add(assetOfA2);
+      }
+    };
+    const failed = await whileServing(async (address) => {
+      await swap(address);
+      await settled(address);
+      return choicesOf(address);
+    });
+    expect(failed).toMatchObject([
+      { photo: 'A2', wants: 'in' },
+      { photo: 'A1', wants: 'out' },
+    ]);
+    expect(failed[0]?.failed).toContain('couldn’t be taken back out');
+    expect(inImmich()).toEqual(['A1', 'B', 'C', 'A2']);
   });
 });

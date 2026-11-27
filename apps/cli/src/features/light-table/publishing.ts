@@ -1,4 +1,5 @@
 import { Context, type Effect } from 'effect';
+import type { PublishedPhoto } from '../../shared/domain.ts';
 import type { OpenShoot } from '../../shared/store.ts';
 
 type Failure = { readonly message: string };
@@ -18,6 +19,15 @@ export class Publishing extends Context.Service<
     readonly publish: (
       open: OpenShoot,
       photos: ReadonlyArray<string>,
+    ) => Effect.Effect<void, Failure>;
+    /**
+     * Takes a photo just published back out of the album, and lets what
+     * was published of it be what it was before.
+     */
+    readonly unpublish: (
+      open: OpenShoot,
+      photo: string,
+      before: PublishedPhoto | undefined,
     ) => Effect.Effect<void, Failure>;
   }
 >()('@keepsake/cli/features/light-table/Publishing') {}

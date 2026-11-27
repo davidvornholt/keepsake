@@ -13,7 +13,14 @@ import {
 } from '../../shared/store.ts';
 import { withdrawOpen } from './marks.ts';
 import { Publishing } from './publishing.ts';
-import { isFinished, keepOut, putIn, verdictOf } from './putting-in.ts';
+import {
+  beforeOf,
+  isFinished,
+  keepOut,
+  putIn,
+  undoPutIn,
+  verdictOf,
+} from './putting-in.ts';
 import { Choice, type NewChoice } from './schemas.ts';
 
 // Taking a photo out and putting one in cost nothing, so the page does them
@@ -253,6 +260,9 @@ const actionsOf = (waiting: ReadonlyArray<Choice>) => [
 const insteadFailed =
   'The photo that was to take its place couldn’t be put in.';
 
+const notUndone =
+  'It came into the album all the same, and couldn’t be taken back out';
+
 /**
  * Takes a photo out, or keeps it out when it is out already, as a pick may
  * have left it meanwhile. What the owner wanted changed of it goes with it.
@@ -273,7 +283,8 @@ const takeOutOne = Effect.fn('takeOutOne')(function* (
 
 /**
  * Does one action, and says for each of its photos why it couldn't be
- * done, or nothing while it has to wait.
+ * done, or nothing while it has to wait. A photo that was to take the place
+ * of one that stays goes back to where it stood.
  */
 const doAction = Effect.fn('doAction')(function* (
   open: OpenShoot,
@@ -297,6 +308,7 @@ const doAction = Effect.fn('doAction')(function* (
   if (edited.has(comesIn.photo) && (yield* isFinished(open, comesIn.photo))) {
     return outcomes;
   }
+  const before = yield* beforeOf(open, comesIn.photo);
   const isIn = yield* outcomeOf(putIn(open, known, comesIn.photo));
   outcomes.set(comesIn.photo, isIn);
   if (leaving === undefined) {
@@ -307,6 +319,13 @@ const doAction = Effect.fn('doAction')(function* (
       ? yield* outcomeOf(takeOutOne(open, known, leaving))
       : insteadFailed;
   outcomes.set(leaving.photo, isOut);
+  if (isIn === null && isOut !== null) {
+    const undone = yield* outcomeOf(undoPutIn(open, comesIn.photo, before));
+    outcomes.set(
+      comesIn.photo,
+      undone === null ? isOut : `${isOut} ${notUndone}: ${undone}`,
+    );
+  }
   return outcomes;
 });
 

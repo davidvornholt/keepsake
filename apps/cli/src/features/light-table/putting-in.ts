@@ -1,5 +1,5 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
-import { PickList, Removed } from '../../shared/domain.ts';
+import { PickList, type PublishedPhoto, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { withAlbum } from '../../shared/lock.ts';
 import { readPublication } from '../../shared/publication.ts';
@@ -18,7 +18,8 @@ import {
 import { pickOf } from '../../shared/verdicts.ts';
 import { Publishing } from './publishing.ts';
 
-// What the page does to a photo it puts in, or keeps out.
+// What the page does to a photo it puts in, or keeps out, and how it lets a
+// photo be as it was when the photo it was to take the place of stays.
 
 const Removals = Schema.Array(Removed);
 
@@ -103,3 +104,49 @@ export const keepOut = (open: OpenShoot, photo: string, because: string) =>
       { photo, at, because },
     ]);
   }).pipe(withAlbum(open.files));
+
+/** What stood for a photo before it was put in. */
+type Before = {
+  readonly removed: ReadonlyArray<Removed>;
+  readonly picked: boolean;
+  readonly published: PublishedPhoto | undefined;
+};
+
+export const beforeOf = Effect.fn('beforeOf')(function* (
+  open: OpenShoot,
+  photo: string,
+) {
+  const list = Option.getOrNull(yield* readJson(PickList, open.files.picks));
+  const publication = yield* readPublication(open);
+  return {
+    removed: (yield* removalsOf(open.files)).filter(
+      (one) => one.photo === photo,
+    ),
+    picked: list?.picks.some((one) => one.photo === photo) ?? false,
+    published: publication?.photos.find((one) => one.photo === photo),
+  } satisfies Before;
+});
+
+/** Lets a photo that was put in stand where it stood before. */
+export const undoPutIn = Effect.fn('undoPutIn')(function* (
+  open: OpenShoot,
+  photo: string,
+  before: Before,
+) {
+  const { files } = open;
+  yield* (yield* Publishing).unpublish(open, photo, before.published);
+  yield* Effect.gen(function* () {
+    const all = yield* removalsOf(files);
+    yield* writeJson(Removals, files.removed, [
+      ...all.filter((one) => one.photo !== photo),
+      ...before.removed,
+    ]);
+    const list = Option.getOrNull(yield* readJson(PickList, files.picks));
+    if (list !== null && !before.picked) {
+      yield* writeJson(PickList, files.picks, {
+        ...list,
+        picks: list.picks.filter((one) => one.photo !== photo),
+      });
+    }
+  }).pipe(withAlbum(files));
+});

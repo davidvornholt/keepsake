@@ -2,10 +2,12 @@ import { Context, Effect, Layer } from 'effect';
 import { Publishing } from '../features/light-table/publishing.ts';
 import { publishToAlbum } from '../features/publish/publish.ts';
 import { takeOut } from '../features/publish/take-out.ts';
+import { unpublish } from '../features/publish/unpublish.ts';
 
 type Needs =
   | Effect.Services<ReturnType<typeof takeOut>>
-  | Effect.Services<ReturnType<typeof publishToAlbum>>;
+  | Effect.Services<ReturnType<typeof publishToAlbum>>
+  | Effect.Services<ReturnType<typeof unpublish>>;
 
 /**
  * Lets the page take photos out of the album and publish them, with the
@@ -30,6 +32,8 @@ export const publishingLayer = Layer.effect(
       takeOut: (open, photos, because) =>
         plainly(takeOut(open, photos, because)),
       publish: (open, photos) => plainly(publishToAlbum(open, photos)),
+      unpublish: (open, photo, before) =>
+        plainly(unpublish(open, photo, before)),
     });
   }),
 );
