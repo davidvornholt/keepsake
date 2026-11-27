@@ -3,8 +3,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Effect, Fiber } from 'effect';
 import { bytesOf, mostCostOf } from '../shared/prices.ts';
 import {
+  credentialsPath,
+  endpoint,
   judge,
   pickLisbon,
+  scanLisbon,
   setUp,
   shootFile,
   start,
@@ -87,16 +90,20 @@ describe('keepsake edit, when an image request gets no answer', () => {
     expect(spentOn(imageModel)).toBeCloseTo(mostOfLastEdit());
   });
 
-  it('counts nothing when it couldn’t reach the model', async () => {
-    await pickLisbon();
-    const sent = Promise.withResolvers<void>();
-    fakeModels.editAnswer = () => {
-      sent.resolve();
-      throw connectionError('ECONNREFUSED');
-    };
-    await editUntil(sent.promise, () => Bun.sleep(100));
-    expect(spentOn(imageModel)).toBe(0);
-  });
+  // Refused, or the TLS handshake failed: nothing reached the model.
+  it.each(['ECONNREFUSED', 'EPROTO'])(
+    'counts nothing when it couldn’t reach the model (%s)',
+    async (code) => {
+      await pickLisbon();
+      const sent = Promise.withResolvers<void>();
+      fakeModels.editAnswer = () => {
+        sent.resolve();
+        throw connectionError(code);
+      };
+      await editUntil(sent.promise, () => Bun.sleep(100));
+      expect(spentOn(imageModel)).toBe(0);
+    },
+  );
 });
 
 describe('keepsake edit, when a question gets no answer', () => {
@@ -126,5 +133,28 @@ describe('keepsake edit, when a question gets no answer', () => {
     await editUntil(sent.promise);
     expect(recordOf(judge).calls).toBe(before.calls + 1);
     expect(spentOn(judge) - before.dollars).toBeGreaterThan(oneQuestion);
+  });
+});
+
+describe('keepsake cull, when a question to Anthropic gets no answer', () => {
+  it('counts it when keepsake is stopped while it waits', async () => {
+    await scanLisbon();
+    await Bun.write(
+      credentialsPath(),
+      JSON.stringify({
+        azure: { endpoint, apiKey: fakeModels.key },
+        anthropic: { endpoint: null, apiKey: fakeModels.key },
+      }),
+    );
+    const sent = Promise.withResolvers<void>();
+    fakeModels.anthropicAnswer = () => {
+      sent.resolve();
+      return new Promise<Response>(() => undefined);
+    };
+    const model = 'anthropic/claude-test';
+    const culling = start('cull', 'lisbon', '--model', model);
+    await sent.promise;
+    await Effect.runPromise(Fiber.interrupt(culling));
+    expect(recordOf(model).calls).toBe(1);
   });
 });

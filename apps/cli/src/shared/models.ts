@@ -121,13 +121,24 @@ export const AnswerLost = Context.Reference<Effect.Effect<void>>(
   { defaultValue: () => Effect.void },
 );
 
-/** What fetch says when a request couldn't reach the provider at all. */
+/**
+ * What fetch says when a request couldn't reach the provider at all: the
+ * name or the host wasn't found, nothing listened, or the TLS handshake or
+ * the certificate failed before anything was sent.
+ */
 const unreached = new Set([
   'ENOTFOUND',
   'EAI_AGAIN',
   'ECONNREFUSED',
   'ENETUNREACH',
   'EHOSTUNREACH',
+  'EPROTO',
+  'CERT_HAS_EXPIRED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
 ]);
 
 /**
@@ -190,7 +201,12 @@ const apiLayer = (provider: Provider, model: string) =>
       const apiKey = Redacted.make(access.apiKey);
       if (provider === 'anthropic') {
         return AnthropicLanguageModel.layer({ model }).pipe(
-          Layer.provide(AnthropicClient.layer({ apiKey })),
+          Layer.provide(
+            AnthropicClient.layer({
+              apiKey,
+              transformClient: tellingWhenAnswered,
+            }),
+          ),
         );
       }
       // A paid model may answer only as much as the budget counted on.

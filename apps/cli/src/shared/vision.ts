@@ -92,7 +92,6 @@ const watching =
           seen.began = true;
         }).pipe(Effect.andThen(paid.answered), Effect.ignore),
       ),
-      // Counted at its most, like one that breaks off, and asked again.
       Effect.provideService(AnswerLost, Effect.ignore(paid.answered)),
       Effect.provideService(
         Telemetry.CurrentSpanTransformer,

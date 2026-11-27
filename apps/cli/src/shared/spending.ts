@@ -186,7 +186,7 @@ const paymentFor = (
         return ledger.charge(model, entry, wasAnswered ? 0 : held);
       }).pipe(Effect.uninterruptible),
   };
-  // A request that got no answer cost nothing.
+  // One that was never counted cost nothing, so what it held is free again.
   const release = Effect.suspend(() =>
     stage === 'held' ? ledger.release(held) : Effect.void,
   );
