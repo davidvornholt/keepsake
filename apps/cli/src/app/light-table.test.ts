@@ -303,6 +303,19 @@ describe('who the light table answers', () => {
     expect(await Bun.file(shootFile('marks')).exists()).toBe(false);
   });
 
+  it('can’t be shown inside another website’s page', async () => {
+    const policies = await whileServing((address) =>
+      Promise.all(
+        ['/', '/lisbon/photos/B'].map((path) =>
+          fetch(`${address}${path}`).then((response) =>
+            response.headers.get('content-security-policy'),
+          ),
+        ),
+      ),
+    );
+    expect(policies).toEqual(new Array(2).fill("frame-ancestors 'none'"));
+  });
+
   it('says that something else uses its port', async () => {
     const other = Bun.serve({ port: 0, fetch: () => new Response() });
     try {

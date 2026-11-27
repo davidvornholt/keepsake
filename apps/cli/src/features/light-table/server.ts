@@ -68,6 +68,37 @@ const toThePage =
       : new Response(null, { status: forbidden });
   };
 
+/**
+ * Serves the page, which Bun serves only under a route of its own, with a
+ * policy that keeps other websites from showing it inside theirs, where they
+ * could trick the owner into clicking. The route's name can't be guessed, so
+ * no website can show the page from there instead.
+ */
+const unframed =
+  (hidden: string) =>
+  async (request: Request, server: Bun.Server<undefined>) => {
+    const etag = request.headers.get('if-none-match');
+    const own = await fetch(
+      new URL(hidden, `http://127.0.0.1:${server.port}`),
+      { headers: etag === null ? {} : { 'if-none-match': etag } },
+    );
+    const headers = new Headers({
+      'content-security-policy': "frame-ancestors 'none'",
+    });
+    for (const name of ['content-type', 'etag', 'cache-control']) {
+      const value = own.headers.get(name);
+      if (value !== null) {
+        headers.set(name, value);
+      }
+    }
+    return new Response(own.body, { status: own.status, headers });
+  };
+
+/** The page under the route `unframed` reads it from. */
+const pageAt = (hidden: string): Record<string, Bun.HTMLBundle> => ({
+  [hidden]: page,
+});
+
 /** Whether the server couldn't listen because the address is taken. */
 const isInUse = (error: unknown) =>
   typeof error === 'object' &&
@@ -88,6 +119,7 @@ const routesOf = Effect.fn('routesOf')(function* (
   has: Has,
   address: URL | undefined,
   writing: Semaphore.Semaphore,
+  hidden: string,
 ) {
   const { shoots } = has;
   const answers = makeAnswers(has);
@@ -184,7 +216,7 @@ const routesOf = Effect.fn('routesOf')(function* (
       ),
     },
     '/api/*': new Response(null, { status: notFound }),
-    '/*': page,
+    '/*': unframed(hidden),
   };
   // biome-ignore-end lint/style/useNamingConvention: Bun's names for the HTTP methods
 });
@@ -209,10 +241,12 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   const preparations = yield* makePreparations(keepsake);
   const folders = yield* makeFolders(photos);
   const settling = yield* makeSettling(writing);
+  const hidden = `/${crypto.randomUUID()}`;
   const routes = yield* routesOf(
     { shoots, folders, preparations, settling, workers, runner },
     address,
     writing,
+    hidden,
   );
   yield* removeForgotten;
   yield* Effect.forkScoped(shoots.prepare);
@@ -234,7 +268,7 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
             // biome-ignore lint/style/noProcessEnv: the build puts its value here, so the binary needs no environment
             process.env.NODE_ENV ?? '',
           ),
-          routes,
+          routes: { ...routes, ...pageAt(hidden) },
         }),
       catch: (error) =>
         new InvalidInput({
