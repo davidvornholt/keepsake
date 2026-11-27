@@ -42,6 +42,7 @@ export const listShoots = Effect.gen(function* () {
         : [
             {
               shoot: name,
+              title: open.value.shoot.title ?? null,
               about: open.value.shoot.about,
               source: open.value.shoot.source,
               photos: open.value.photos.size,
@@ -85,6 +86,7 @@ export const showShoot = Effect.fn('showShoot')(function* (
   );
   return {
     shoot: open.shoot.name,
+    title: open.shoot.title ?? null,
     about: open.shoot.about,
     source: open.shoot.source,
     folder: open.files.root,

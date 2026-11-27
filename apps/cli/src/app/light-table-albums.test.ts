@@ -129,6 +129,7 @@ describe('the folders of photos', () => {
 
 const wanted = () => ({
   folder: join(photosFolder(), 'lisbon'),
+  title: ' Lisbon ',
   about: ' Lisbon, May 2026 ',
   timeZone: 'Europe/Lisbon',
   maximum: 40,
@@ -137,7 +138,7 @@ const wanted = () => ({
 const make = (address: string, changes: object = {}) =>
   send('POST', `${address}/api/shoots`, { ...wanted(), ...changes });
 
-const shoot = 'lisbon-may-2026';
+const shoot = 'lisbon';
 
 const newShootOf = async (address: string) =>
   (await fetch(`${address}/api/shoots/${shoot}`)).json();
@@ -187,6 +188,7 @@ describe('a new album', () => {
     expect(answer).toEqual({ name: shoot });
     expect(view).toMatchObject({
       name: shoot,
+      title: 'Lisbon',
       about: 'Lisbon, May 2026',
       photos: [],
       stacks: [],
@@ -199,6 +201,8 @@ describe('a new album', () => {
         '--unedited',
         '--name',
         shoot,
+        '--title',
+        'Lisbon',
         '--about',
         'Lisbon, May 2026',
         '--time-zone',
@@ -267,6 +271,7 @@ describe('a new album', () => {
 
   it.each([
     { folder: '/etc' },
+    { title: '  ' },
     { about: '  ' },
     { maximum: 0 },
     { timeZone: 'Europe/Nowhere' },
@@ -348,6 +353,7 @@ describe('a new album beside a command on a shoot of its name', () => {
     expect(await Bun.file(join(folder, 'photos.json')).json()).toEqual([]);
     expect(await Bun.file(join(folder, 'moments.json')).json()).toEqual([]);
     expect(await Bun.file(join(folder, 'shoot.json')).json()).toMatchObject({
+      title: 'Lisbon',
       about: 'Lisbon, May 2026',
     });
   });

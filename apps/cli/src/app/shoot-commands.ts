@@ -26,6 +26,10 @@ export const scanFlags = {
     'name',
     "What to call the shoot (default: the folder's name)",
   ),
+  title: optionalString(
+    'title',
+    'The name of the album in Immich and on the page: the place or event the photos show, in English, without the date or the country, such as "Mainau Island"',
+  ),
   about: optionalString(
     'about',
     'Where and when the photos were taken, for the models, such as "Lisbon, May 2026"',

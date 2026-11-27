@@ -63,6 +63,10 @@ const claim = <E, R>(
 
 /** Notes a new shoot, which is empty until its photos are found. */
 export const makeShoot = Effect.fn('makeShoot')(function* (wanted: NewShoot) {
+  const title = wanted.title.trim();
+  if (title === '') {
+    return yield* new InvalidInput({ message: 'Give the album a name.' });
+  }
   const about = wanted.about.trim();
   if (about === '') {
     return yield* new InvalidInput({
@@ -78,8 +82,8 @@ export const makeShoot = Effect.fn('makeShoot')(function* (wanted: NewShoot) {
     wanted.timeZone === null
       ? {}
       : { timeZone: yield* checkTimeZone(wanted.timeZone) };
-  const shoot = { source: wanted.folder, about, ...timeZone };
-  return yield* claim(nameFor(about), yield* shootNames, (name, files) =>
+  const shoot = { source: wanted.folder, title, about, ...timeZone };
+  return yield* claim(nameFor(title), yield* shootNames, (name, files) =>
     Effect.gen(function* () {
       yield* writeJson(Schema.Array(Photo), files.photos, []);
       yield* writeJson(Schema.Array(Moment), files.moments, []);

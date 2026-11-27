@@ -217,17 +217,15 @@ export const edit = Command.make(
   ),
 );
 
-export const albumFlag = optionalString(
-  'album',
-  'The name of the album (default: the one published to before, or what the shoot is about, or its name)',
-);
-
 export const publish = Command.make(
   'publish',
   {
     shoot: shootArgument,
     photos: photosArgument('Photos to publish instead of the picked ones'),
-    album: albumFlag,
+    album: optionalString(
+      'album',
+      'Publish to the album with this name instead, made if there is none (default: the album published to before, or else a new album named after the shoot’s title)',
+    ),
   },
   ({ shoot, photos, album }) =>
     workOn(shoot, (open) =>

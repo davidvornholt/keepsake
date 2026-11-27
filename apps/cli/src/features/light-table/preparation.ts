@@ -62,6 +62,7 @@ const argumentsFor = (shoot: Shoot, maximum: number | null) => [
   '--unedited',
   '--name',
   shoot.name,
+  ...(shoot.title === undefined ? [] : ['--title', shoot.title]),
   ...(shoot.about === null ? [] : ['--about', shoot.about]),
   ...(shoot.timeZone === undefined ? [] : ['--time-zone', shoot.timeZone]),
   ...(maximum === null ? [] : ['--maximum', String(maximum)]),

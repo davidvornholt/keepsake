@@ -69,13 +69,35 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
   }
 });
 
+const untitled = (open: OpenShoot) =>
+  new InvalidInput({
+    message: `${open.shoot.name} has no title to name a new album after. Give it one with --title "<album name>" on \`keepsake scan\` or \`keepsake run\`, or name an album with \`keepsake publish --album\`.`,
+  });
+
+/**
+ * Fails for a shoot that has no title and no album yet, since keepsake would
+ * have nothing to name a new album after.
+ */
+export const checkTitled = Effect.fn('checkTitled')(function* (
+  open: OpenShoot,
+) {
+  if (
+    open.shoot.title === undefined &&
+    (yield* readPublication(open)) === null
+  ) {
+    return yield* untitled(open);
+  }
+});
+
 /**
  * The album keepsake published to before, unless another is named. Albums are
- * found by their id, so one renamed in Immich stays the album. A name is
- * looked up only for an album keepsake hasn't published to, and when its
- * album is gone, keepsake makes a new one rather than take another album
- * that has its name now, which may be shared with others, but only if the
- * album was the account's own.
+ * found by their id, so one renamed in Immich stays the album. A shoot's first
+ * album is a new one named after its title, even when an album has that name
+ * already, since a title without a date may be that of another trip. Only an
+ * album named with --album is looked up by its name. When the album is gone,
+ * keepsake makes a new one rather than take another album that has its name
+ * now, which may be shared with others, but only if the album was the
+ * account's own.
  */
 export const targetOf = Effect.fn('targetOf')(function* (
   open: OpenShoot,
@@ -93,8 +115,8 @@ export const targetOf = Effect.fn('targetOf')(function* (
     return known ?? (yield* uniqueNamed(albums, name)) ?? fresh(name);
   }
   if (before === null) {
-    const name = open.shoot.about ?? open.shoot.name;
-    return (yield* uniqueNamed(albums, name)) ?? fresh(name);
+    const { title } = open.shoot;
+    return title === undefined ? yield* untitled(open) : fresh(title);
   }
   return withId(before.albumId) ?? (yield* gone(before));
 });

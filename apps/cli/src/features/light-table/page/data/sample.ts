@@ -86,6 +86,7 @@ export const sampleShoot = (
   marks: ReadonlyArray<Mark> = [],
 ): ShootView => ({
   name: 'lisbon',
+  title: 'Lisbon',
   about: 'Lisbon, May 2026',
   revision: 'one',
   album: null,

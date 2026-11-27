@@ -334,10 +334,14 @@ export const publish = Effect.fn('publish')(function* (
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
   const album = yield* destinationOf(target);
-  yield* ensureTag(tag);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
   let publication = publicationFor(before, album, albums);
+  // Noted before anything is uploaded, so that a publish that stopped after
+  // it made the album finds the album by its id when run again, rather than
+  // make another one.
+  yield* writeJson(Publication, open.files.publication, publication);
+  yield* ensureTag(tag);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {

@@ -20,6 +20,7 @@ const steps = ['scanned', 'culled', 'chosen', 'edited', 'published'] as const;
 
 export type Wanted = {
   readonly name: string;
+  readonly title: string;
   readonly about: string;
   readonly step: (typeof steps)[number];
   /** Whether the owner was asked to rate some of its moments. */
@@ -144,9 +145,9 @@ const removed = all.flatMap(
       : [],
 );
 
-const albumOf = ({ about, name }: Wanted): Album => ({
+const albumOf = ({ title, name }: Wanted): Album => ({
   id: `album-${name}`,
-  name: about,
+  name: title,
   server: 'https://photos.example.com',
   readAt,
   photos: inAlbum.map((told) => ({
@@ -314,6 +315,7 @@ export const writeShoot = async (shoots: string, wanted: Wanted) => {
   const shoot: Shoot = {
     name: wanted.name,
     source: join(root, 'no-photos-here'),
+    title: wanted.title,
     about: wanted.about,
     timeZone: 'Europe/Lisbon',
   };

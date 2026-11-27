@@ -232,7 +232,7 @@ export const Loaded = (props: Props) => {
   );
   const { held, large, order, pile, answers } = useShown(route, index);
   const isOnTable = route.screen === 'sheet';
-  useTitle(index.shoot.about ?? index.shoot.name);
+  useTitle(index.shoot.title ?? index.shoot.name);
   useLanding(shoot, index.shoot.photos, table.engineRef);
 
   useTableInstead(sheet, {

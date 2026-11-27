@@ -19,7 +19,7 @@ import {
 import { fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
-const first = 'Lisbon, May 2026';
+const first = 'Lisbon';
 
 const publishLisbon = async (...args: ReadonlyArray<string>) => {
   await pickLisbon();

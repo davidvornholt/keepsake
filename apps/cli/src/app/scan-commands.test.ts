@@ -3,13 +3,16 @@ import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  failureOf,
   fake,
   photosFolder,
   putPhotos,
   run,
   runOk,
+  scanLisbon,
   setUp,
   shootFile,
+  shootJson,
   tearDown,
 } from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
@@ -58,5 +61,31 @@ describe('a scan that stopped half-way', () => {
     expect(await Bun.file(shootFile('previews', 'A.jpg')).text()).toBe(
       'a picture',
     );
+  });
+});
+
+describe('a scan with --title', () => {
+  it('names the album, until a later scan names it otherwise', async () => {
+    const scanned = await scanLisbon();
+    expect(scanned).toMatchObject({
+      title: 'Lisbon',
+      about: 'Lisbon, May 2026',
+    });
+    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    expect(await shootJson('shoot.json')).toMatchObject({ title: 'Lisbon' });
+    await runOk('scan', photosFolder(), '--name', 'lisbon', '--title', 'Belém');
+    expect(await shootJson('shoot.json')).toMatchObject({
+      title: 'Belém',
+      about: 'Lisbon, May 2026',
+    });
+    const empty = await failureOf(
+      'scan',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--title',
+      ' ',
+    );
+    expect(empty._tag).toBe('InvalidInput');
   });
 });

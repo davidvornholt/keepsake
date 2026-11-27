@@ -94,6 +94,7 @@ type Outcome = Seen | { readonly file: string; readonly reason: string };
 type ScanOptions = {
   readonly folder: string;
   readonly name: Option.Option<string>;
+  readonly title: Option.Option<string>;
   readonly about: Option.Option<string>;
   readonly timeZone: Option.Option<string>;
 };
@@ -146,6 +147,13 @@ const makeNotes = Effect.fn('makeNotes')(function* (files: ShootFiles) {
   };
 });
 
+const titleOf = (title: string) =>
+  title.trim() === ''
+    ? Effect.fail(
+        new InvalidInput({ message: 'Give --title the name of the album.' }),
+      )
+    : Effect.succeed(title.trim());
+
 /** What a shoot is about, which a scan of another folder can't change. */
 const shootOf = Effect.fn('shootOf')(function* (
   options: ScanOptions,
@@ -161,9 +169,13 @@ const shootOf = Effect.fn('shootOf')(function* (
   const timeZone = Option.isSome(options.timeZone)
     ? yield* checkTimeZone(options.timeZone.value)
     : Option.getOrUndefined(before)?.timeZone;
+  const title = Option.isSome(options.title)
+    ? yield* titleOf(options.title.value)
+    : Option.getOrUndefined(before)?.title;
   return {
     name,
     source,
+    ...(title === undefined ? {} : { title }),
     ...(timeZone === undefined ? {} : { timeZone }),
     about: Option.getOrElse(options.about, () =>
       Option.isSome(before) ? before.value.about : null,
@@ -206,7 +218,7 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
   return yield* Effect.gen(function* () {
     yield* forgetStrays(files);
     const shoot = yield* shootOf(options, { name, source }, files);
-    const { about } = shoot;
+    const { title, about } = shoot;
     const found = yield* findPhotos(source);
     // Before any preview, so a scan of another folder can't take them for its
     // own when this one stops half-way.
@@ -236,6 +248,7 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
     return {
       shoot: name,
       source,
+      title: title ?? null,
       about,
       photos: photos.length,
       moments: moments.length,

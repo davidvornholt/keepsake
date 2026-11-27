@@ -33,7 +33,7 @@ const panel =
 const ThrowAway = () => {
   const { index, store } = useShootContext();
   const [isAsked, setIsAsked] = useState(false);
-  const name = index.shoot.about ?? index.shoot.name;
+  const name = index.shoot.title ?? index.shoot.name;
   return (
     <>
       <button

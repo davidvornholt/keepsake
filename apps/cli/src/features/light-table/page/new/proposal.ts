@@ -1,6 +1,6 @@
 // What the page proposes for a new album, so that the owner only has to
-// agree: what it is about, how many photos it may have, and what the
-// camera's clock says in another part of the world.
+// agree: its name, what it is about, how many photos it may have, and what
+// the camera's clock says in another part of the world.
 
 const months = [
   'January',
@@ -63,23 +63,31 @@ export const monthsOf = (from: string, to: string): string => {
   return `${months[first.month - 1] ?? ''} ${isNext ? 'and' : 'to'} ${end}`;
 };
 
+type FolderName = {
+  readonly name: string;
+  readonly within: ReadonlyArray<string>;
+};
+
 /**
- * What an album of a folder is about, from the name of the folder, or of
- * the one it lies in when its own says nothing, and from when its photos
- * were taken: "Gardens, March 2026".
+ * The name of an album of a folder, from the name of the folder, or of the
+ * one it lies in when its own says nothing: "Gardens". Empty when no name
+ * says anything.
  */
-export const aboutOf = (
-  folder: { readonly name: string; readonly within: ReadonlyArray<string> },
-  from: string,
-  to: string,
-): string => {
+export const titleOf = (folder: FolderName): string => {
   const name = [folder.name, ...folder.within.toReversed()].find(
     tellsSomething,
   );
-  return [name === undefined ? '' : tidy(name), monthsOf(from, to)]
+  return name === undefined ? '' : tidy(name);
+};
+
+/**
+ * What an album of a folder is about, from its name and from when its photos
+ * were taken: "Gardens, March 2026".
+ */
+export const aboutOf = (folder: FolderName, from: string, to: string): string =>
+  [titleOf(folder), monthsOf(from, to)]
     .filter((part) => part !== '')
     .join(', ');
-};
 
 /** About one photo in this many is good enough for an album. */
 const oneIn = 5;

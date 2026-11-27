@@ -161,7 +161,7 @@ const Rating = ({
   const questionId = useId();
   const close = () => goBack(sheet);
   useLights(engineRef, isLeaving ? null : 0);
-  useTitle('Rate', index.shoot.about ?? index.shoot.name);
+  useTitle('Rate', index.shoot.title ?? index.shoot.name);
   useKeys(isLeaving ? noKeys : keysOf(flow, view, close));
 
   return (

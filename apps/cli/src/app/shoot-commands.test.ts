@@ -22,6 +22,7 @@ describe('keepsake shoots', () => {
       shoots: [
         {
           shoot: 'lisbon',
+          title: 'Lisbon',
           about: 'Lisbon, May 2026',
           source: photosFolder(),
           photos: 4,

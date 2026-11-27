@@ -254,7 +254,7 @@ export const PhotoView = ({
   const at = own >= 0 ? own : order.findIndex(({ id }) => id === front);
   const number = index.numberOf.get(photo.id) ?? 0;
   useTable(engineRef, photo, front);
-  useTitle(`Photo ${number}`, index.shoot.about ?? index.shoot.name);
+  useTitle(`Photo ${number}`, index.shoot.title ?? index.shoot.name);
 
   useEffect(() => {
     const view = viewRef.current;

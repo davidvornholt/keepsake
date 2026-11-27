@@ -169,6 +169,7 @@ export const shootView = Effect.fn('shootView')(function* (
   const order = yield* orderOf(files, known);
   return {
     name: shoot.name,
+    title: shoot.title ?? null,
     about: shoot.about,
     revision,
     album:
@@ -245,6 +246,7 @@ export const shootInShort = Effect.fn('shootInShort')(function* (
     .map((photo) => takenThere(shoot, photo));
   return {
     name: shoot.name,
+    title: shoot.title ?? null,
     about: shoot.about,
     from: times[0] ?? null,
     to: times.at(-1) ?? null,

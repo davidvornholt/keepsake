@@ -15,6 +15,7 @@ const photos = join(home, 'photos');
 const wanted: ReadonlyArray<Wanted> = [
   {
     name: 'lisbon',
+    title: 'Lisbon',
     about: 'Lisbon, May 2026',
     month: '2026-05',
     step: 'published',
@@ -23,6 +24,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'porto',
+    title: 'Porto',
     about: 'Porto, June 2026',
     month: '2026-06',
     step: 'published',
@@ -31,6 +33,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'faro',
+    title: 'Faro',
     about: 'Faro, July 2026',
     month: '2026-07',
     step: 'edited',
@@ -38,6 +41,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'braga',
+    title: 'Braga',
     about: 'Braga, July 2026',
     month: '2026-07',
     step: 'culled',
@@ -45,6 +49,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'evora',
+    title: 'Évora',
     about: 'Évora, August 2026',
     month: '2026-08',
     step: 'scanned',
@@ -52,6 +57,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'sagres',
+    title: 'Sagres',
     about: 'Sagres, September 2026',
     month: '2026-09',
     step: 'chosen',
@@ -59,6 +65,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'aveiro',
+    title: 'Aveiro',
     about: 'Aveiro, September 2026',
     month: '2026-09',
     step: 'scanned',
@@ -67,6 +74,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'obidos',
+    title: 'Óbidos',
     about: 'Óbidos, October 2026',
     month: '2026-10',
     step: 'chosen',
@@ -75,6 +83,7 @@ const wanted: ReadonlyArray<Wanted> = [
   },
   {
     name: 'tomar',
+    title: 'Tomar',
     about: 'Tomar, November 2026',
     month: '2026-11',
     step: 'edited',
