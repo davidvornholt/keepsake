@@ -303,7 +303,8 @@ const stillOutdated = Effect.fn('stillOutdated')(function* (
 
 /**
  * Tells of the replaced uploads that are still outdated and forgets them once
- * told. Run it on the shoot it holds, so no publish changes them in between.
+ * told. Run it on the shoot it holds, so no publish changes them in between;
+ * it holds the choice too, so the page publishes nothing meanwhile.
  */
 export const tellOutdated = <E, R>(
   open: OpenShoot,
@@ -313,6 +314,7 @@ export const tellOutdated = <E, R>(
   stillOutdated(open, candidates).pipe(
     Effect.tap(tell),
     Effect.flatMap((outdated) => forgetOutdated(open, outdated)),
+    withChoice(open.files),
   );
 
 const publishNow = Effect.fn('publish')(function* (

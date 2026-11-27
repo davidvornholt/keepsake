@@ -10,6 +10,7 @@ import {
   tellOutdated,
 } from '../features/publish/publish.ts';
 import { judgeOf } from '../shared/judge.ts';
+import { withChoice } from '../shared/lock.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
@@ -237,6 +238,8 @@ export const publish = Command.make(
             emit({ ...published, outdated }),
           ),
         ),
+        // Until it told, so the page publishes nothing in between.
+        withChoice(open.files),
       ),
     ).pipe(Effect.provide(Spending.layer)),
 ).pipe(
