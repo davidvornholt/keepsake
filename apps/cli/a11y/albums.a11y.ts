@@ -12,6 +12,8 @@ const editAll = /^Edit 10 photos, about \$7\.50$/u;
 const coimbra = /Coimbra/u;
 const tavira = /Tavira/u;
 const stopped = /has stopped$/u;
+const englishName =
+  /its common English name where it has one, such as Vienna for Wien/u;
 const newAlbum = /^New album From/u;
 const newAlbumWithKey = /^New album N$/u;
 
@@ -83,9 +85,7 @@ test('finds the folder a new album is made of', async ({ page }) => {
     name: 'What is the album called?',
   });
   await expect(named).toBeFocused();
-  await expect(named).toHaveAccessibleDescription(
-    /its common English name where it has one, such as Vienna for Wien/u,
-  );
+  await expect(named).toHaveAccessibleDescription(englishName);
   await expect(page.getByText('09:00 on 18 October')).toBeVisible();
   await scan(page);
 });
