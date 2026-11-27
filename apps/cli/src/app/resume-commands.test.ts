@@ -65,12 +65,11 @@ describe('keepsake edit, after it was stopped', () => {
       asked('assessment').length === 2 ? failing() : rejected;
     expect((await editLisbon('B', '--versions', '1')).failed).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(2);
-    fakeModels.answers.assessment = () =>
-      asked('assessment').length === 3
-        ? rejected
-        : { assessments: [assessment(1)] };
+    fakeModels.answers.assessment = { assessments: [assessment(1)] };
     expect((await editLisbon('B', '--versions', '2')).edited).toBe(1);
     expect(fakeModels.edits).toHaveLength(2);
+    // The first attempt's review was kept, so only the second is asked again.
+    expect(asked('assessment')).toHaveLength(3);
   });
 });
 

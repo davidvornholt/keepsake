@@ -35,6 +35,9 @@ export const editFiles = (
   version: (number: number) => path.join(directory, `version-${number}.png`),
   /** The versions an attempt made, once all of them are saved. */
   batch: (attempt: number) => path.join(directory, `attempt-${attempt}.json`),
+  /** What the review of an attempt's versions found. */
+  review: (attempt: number) =>
+    path.join(directory, `attempt-${attempt}-review.json`),
   /** The signs it got wrong. */
   changedSigns: (number: number) =>
     path.join(directory, `version-${number}-signs.json`),
@@ -44,6 +47,12 @@ export const editFiles = (
   /** What is wrong with it when looking closely. */
   faults: (number: number) =>
     path.join(directory, `version-${number}-faults.json`),
+  /**
+   * What one look at it found: at first, and after each time what was found
+   * was mended.
+   */
+  inspection: (number: number, round: number) =>
+    path.join(directory, `version-${number}-inspection-${round}.json`),
   /** The same without what could be mended. */
   versionMended: (number: number) =>
     path.join(directory, `version-${number}-mended.png`),
