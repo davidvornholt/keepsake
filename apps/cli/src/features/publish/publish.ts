@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { Effect, type Option } from 'effect';
+import { Effect, Option } from 'effect';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
 import { Publication, type PublishedPhoto } from '../../shared/domain.ts';
-import { StepMissing } from '../../shared/errors/errors.ts';
+import { InvalidInput, StepMissing } from '../../shared/errors/errors.ts';
 import {
   albumAssets,
   createAlbum,
@@ -237,8 +237,16 @@ const publicationFor = (
   };
 };
 
-/** The album to publish to, made if it is new. */
-const destinationOf = Effect.fn('destinationOf')(function* (target: Target) {
+/** The album to publish to, made if it is new and may be made. */
+const destinationOf = Effect.fn('destinationOf')(function* (
+  target: Target,
+  makesAlbum: boolean,
+) {
+  if (target.id === undefined && !makesAlbum) {
+    return yield* new InvalidInput({
+      message: `${target.name} is no longer in Immich, so nothing was published.`,
+    });
+  }
   if (target.id === undefined) {
     const made = yield* createAlbum(target.name);
     return { id: made.id, name: made.name, owned: true };
@@ -321,6 +329,7 @@ const publishNow = Effect.fn('publish')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   chosenAlbum: Option.Option<string>,
+  makesAlbum: boolean,
 ) {
   const { name } = open.shoot;
   const albums = yield* listAlbums;
@@ -334,7 +343,7 @@ const publishNow = Effect.fn('publish')(function* (
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
-  const album = yield* destinationOf(target);
+  const album = yield* destinationOf(target, makesAlbum);
   yield* ensureTag(tag);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
@@ -369,4 +378,19 @@ export const publish = (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   chosenAlbum: Option.Option<string>,
-) => publishNow(open, names, chosenAlbum).pipe(withChoice(open.files));
+) => publishNow(open, names, chosenAlbum, true).pipe(withChoice(open.files));
+
+/**
+ * Uploads the photos named to the album keepsake published to, if that is
+ * still in Immich. Says whether it was: no album is made in its place.
+ */
+export const publishToAlbum = (open: OpenShoot, names: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const albums = yield* listAlbums;
+    const before = yield* knownPublication(open, albums);
+    if (!albums.some(({ id }) => id === before?.albumId)) {
+      return false;
+    }
+    yield* publishNow(open, names, Option.none(), false);
+    return true;
+  }).pipe(withChoice(open.files));

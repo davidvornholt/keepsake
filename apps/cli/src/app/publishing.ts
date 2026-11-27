@@ -1,11 +1,11 @@
-import { Context, Effect, Layer, Option } from 'effect';
+import { Context, Effect, Layer } from 'effect';
 import { Publishing } from '../features/light-table/choices.ts';
-import { publish } from '../features/publish/publish.ts';
+import { publishToAlbum } from '../features/publish/publish.ts';
 import { takeOut } from '../features/publish/take-out.ts';
 
 type Needs =
   | Effect.Services<ReturnType<typeof takeOut>>
-  | Effect.Services<ReturnType<typeof publish>>;
+  | Effect.Services<ReturnType<typeof publishToAlbum>>;
 
 /**
  * Lets the page take photos out of the album and publish them, with the
@@ -29,7 +29,7 @@ export const publishingLayer = Layer.effect(
     return Publishing.of({
       takeOut: (open, photos, because) =>
         plainly(takeOut(open, photos, because)),
-      publish: (open, photos) => plainly(publish(open, photos, Option.none())),
+      publish: (open, photos) => plainly(publishToAlbum(open, photos)),
     });
   }),
 );

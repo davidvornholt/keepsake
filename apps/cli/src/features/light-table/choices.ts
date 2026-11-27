@@ -265,8 +265,9 @@ const isFinished = (open: OpenShoot, photo: string) =>
 
 /**
  * Chooses a photo, and publishes it when it is finished and there is an
- * album, so that it comes back into the album as it was or goes into it for
- * the first time. Without an album it waits for the owner to order one.
+ * album in Immich, so that it comes back into the album as it was or goes
+ * into it for the first time. Without an album it waits for the owner to
+ * order one, and none is made for it.
  */
 const putIn = Effect.fn('putIn')(function* (
   open: OpenShoot,

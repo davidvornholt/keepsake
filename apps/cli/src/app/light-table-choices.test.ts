@@ -147,6 +147,21 @@ describe('putting a photo in on the page', () => {
     expect(fakeTools.albums).toEqual([]);
   });
 
+  it('makes no album in place of one deleted in Immich', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    fakeTools.albums = [];
+    const uploads = fakeTools.uploads.length;
+    const picked = await serving(async (address) => {
+      await choose(address, { photo: 'A2', wants: 'in' });
+      return pickedOf(address);
+    });
+    expect(picked).toContain('A2');
+    expect(await standingOf('A2')).toMatchObject({ kind: 'picked' });
+    expect(fakeTools.albums).toEqual([]);
+    expect(fakeTools.uploads).toHaveLength(uploads);
+  });
+
   it('can be ordered edited when it isn’t finished', async () => {
     await publishLisbon();
     await serving(async (address) => {
