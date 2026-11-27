@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
 export type FakeAsset = {
   readonly id: string;
@@ -24,16 +23,8 @@ export type FakeAlbum = {
 export type FakeImmich = {
   /** Files the photos command has sent to Immich, in the order it got them. */
   readonly uploads: Array<string>;
-  /**
-   * The assets in Immich, with the file, the checksum of its bytes, and the
-   * bytes themselves, which `photos download` saves, where a test gave them.
-   */
-  readonly library: Array<{
-    id: string;
-    file: string;
-    checksum: string;
-    bytes?: Uint8Array;
-  }>;
+  /** The assets in Immich, with the file and the checksum of its bytes. */
+  readonly library: Array<{ id: string; file: string; checksum: string }>;
   /** The albums in Immich, the first of which is created as `album-1`. */
   readonly albums: Array<FakeAlbum>;
   /** Assets Immich refuses to put into an album or take out of one. */
@@ -117,17 +108,16 @@ const removeAssets = (
 
 /** Immich knows a file again by its checksum, wherever the file is. */
 const assetFor = (immich: FakeImmich, file: string) => {
-  const bytes = existsSync(file)
-    ? new Uint8Array(readFileSync(file))
-    : new TextEncoder().encode(file);
-  const checksum = createHash('sha1').update(bytes).digest('hex');
+  const checksum = createHash('sha1')
+    .update(existsSync(file) ? readFileSync(file) : file)
+    .digest('hex');
   const known = immich.library.find((asset) => asset.checksum === checksum);
   if (known !== undefined) {
     return { status: 'duplicate', assetId: known.id, trashed: false };
   }
   immich.uploads.push(file);
   const id = `asset-${immich.uploads.length}`;
-  immich.library.push({ id, file, checksum, bytes });
+  immich.library.push({ id, file, checksum });
   return { status: 'created', assetId: id };
 };
 
@@ -173,20 +163,6 @@ const markFavorite = (
   return {};
 };
 
-/** Saves the bytes of an asset into a directory, as `photos download` does. */
-const download = (
-  immich: FakeImmich,
-  [, id = '', , directory = '']: ReadonlyArray<string>,
-) => {
-  const asset = immich.library.find((one) => one.id === id);
-  if (asset?.bytes === undefined) {
-    throw new Error(`No original of ${id}`);
-  }
-  const fileName = baseOf(asset.file);
-  writeFileSync(join(directory, fileName), asset.bytes);
-  return [{ id, fileName }];
-};
-
 /** What the photos command answers, from the Immich that it reaches. */
 export const answerPhotos = (
   immich: FakeImmich,
@@ -213,9 +189,6 @@ export const answerPhotos = (
     default:
       if (args[0] === 'update') {
         return markFavorite(immich, args);
-      }
-      if (args[0] === 'download') {
-        return download(immich, args);
       }
       return args[0] === 'upload' ? upload(immich, args) : {};
   }

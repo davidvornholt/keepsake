@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { copyFile, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import {
   editLisbon,
-  fake,
-  judge,
   pickLisbon,
-  putPhotos,
   run,
   runOk,
   setUp,
@@ -16,6 +12,14 @@ import {
 } from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
 import { whileServing } from './light-table-fixtures.ts';
+import {
+  editLater,
+  inImmich,
+  laterAlbum,
+  laterFile,
+  laterFinal,
+  publishLater,
+} from './shared-album-fixtures.ts';
 
 // Two shoots of one place publish to one album, and their camera files have
 // the same names, as camera counters start again.
@@ -23,45 +27,20 @@ import { whileServing } from './light-table-fixtures.ts';
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
-const laterFile = (...parts: ReadonlyArray<string>) =>
-  join(fake.home, 'data', 'keepsake', 'shoots', 'later', ...parts);
-
-const finished = ['A1', 'B', 'C'];
-
-const laterFinal = (photo: string) =>
-  laterFile('edits', photo, `${photo}-keepsake.jpg`);
-
-/**
- * A second shoot of the same place, with the same file names, finished as
- * `finish` has it.
- */
-const editLater = async (finish: (photo: string) => Promise<unknown>) => {
-  const folder = join(fake.home, 'later-photos');
-  await putPhotos(folder);
-  await runOk('scan', folder, '--name', 'later', '--title', 'Lisbon');
-  await Bun.write(laterFile('judge.json'), JSON.stringify({ model: judge }));
-  await runOk('cull', 'later');
-  await runOk('pick', 'later');
-  await runOk('edit', 'later', '--review-model', judge);
-  await Promise.all(finished.map(finish));
-};
-
-/** The second shoot, published with other photos than the first shoot's. */
-const publishLater = async () => {
-  await editLater((photo) => Bun.write(laterFinal(photo), `later ${photo}`));
-  return await runOk('publish', 'later');
-};
-
-const laterAlbum = async () =>
-  JSON.parse(await readFile(laterFile('album.json'), 'utf8'));
-
-const inImmich = () => (fakeTools.albums[0]?.assets ?? []).map(({ id }) => id);
-
 const assetsOf = (photos: ReadonlyArray<{ readonly asset: string }>) =>
   photos.map(({ asset }) => asset);
 
 const albumOf = async (read: Promise<{ photos: unknown }>) =>
   (await read).photos;
+
+/** Finishes the other shoot's photos as the first shoot's are. */
+const sameAsLisbon = (photo: string) =>
+  copyFile(
+    shootFile('edits', photo, `${photo}-keepsake.jpg`),
+    laterFinal(photo),
+  );
+
+const because = ['--because', 'It is blurred.'];
 
 describe('keepsake publish, of two shoots into one album', () => {
   it('counts only its own uploads, also of photos with the same name', async () => {
@@ -94,14 +73,8 @@ describe('keepsake publish, of two shoots into one album', () => {
     await editLisbon();
     await runOk('publish', 'lisbon');
     // The same finished files, which Immich has once.
-    await editLater((photo) =>
-      copyFile(
-        shootFile('edits', photo, `${photo}-keepsake.jpg`),
-        laterFinal(photo),
-      ),
-    );
+    await editLater(sameAsLisbon);
     await runOk('publish', 'later');
-    const because = ['--because', 'It is blurred.'];
     await runOk('take-out', 'lisbon', 'B', ...because);
     expect(inImmich()).toContain('asset-3');
     expect(assetsOf((await laterAlbum()).photos)).toContain('asset-3');
@@ -110,6 +83,57 @@ describe('keepsake publish, of two shoots into one album', () => {
     await Bun.write(shootFile('edits', 'A1', 'A1-keepsake.jpg'), 'another A1');
     const again = await runOk('publish', 'lisbon');
     expect(again).toMatchObject({ published: 1, outdated: [] });
+  });
+
+  it('leaves an upload that an older record of the other shoot names', async () => {
+    await pickLisbon();
+    await editLisbon();
+    await runOk('publish', 'lisbon');
+    await editLater(sameAsLisbon);
+    await runOk('publish', 'later');
+    // From before keepsake kept album ids: `album.json` has the id.
+    const { albumId: _, ...older } = JSON.parse(
+      await readFile(laterFile('publication.json'), 'utf8'),
+    );
+    await writeFile(laterFile('publication.json'), JSON.stringify(older));
+    await runOk('take-out', 'lisbon', 'B', ...because);
+    expect(inImmich()).toContain('asset-3');
+    // Nor does the album count when keepsake can't tell which it is.
+    await rm(laterFile('album.json'));
+    await runOk('take-out', 'lisbon', 'C', ...because);
+    expect(inImmich()).toContain('asset-5');
+  });
+
+  it('leaves the other shoot’s upload when its own of that file fails', async () => {
+    await pickLisbon();
+    await editLisbon();
+    await editLater(sameAsLisbon);
+    // The first shoot waits once Immich put its A1 into the album, and the
+    // other publishes the same file meanwhile, whose camera's file fails.
+    const waiting = Promise.withResolvers<void>();
+    const going = Promise.withResolvers<void>();
+    const laterCamera = laterFile('edits', 'A1', 'A1.jpg');
+    const camera = shootFile('edits', 'A1', 'A1.jpg');
+    fakeTools.pause = ({ args }) => {
+      if (args[0] !== 'upload') {
+        return;
+      }
+      if (args[1] === laterCamera) {
+        fakeTools.broken.add(laterCamera);
+        return;
+      }
+      if (args[1] === camera) {
+        waiting.resolve();
+        return going.promise;
+      }
+    };
+    const first = run('publish', 'lisbon');
+    await waiting.promise;
+    expect((await run('publish', 'later'))._tag).toBe('Failure');
+    expect(inImmich()).toContain('asset-1');
+    going.resolve();
+    expect((await first)._tag).toBe('Success');
+    expect(inImmich()).toEqual(['asset-1', 'asset-3', 'asset-5']);
   });
 
   it('makes one album for two shoots that publish at once', async () => {

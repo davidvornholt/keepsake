@@ -6,6 +6,8 @@ import { removeFromAlbum } from '../../shared/immich.ts';
 import { withChoice } from '../../shared/lock.ts';
 import {
   assetsInUse,
+  isAdded,
+  isCreated,
   readPublication,
   uploadsOfOthers,
 } from '../../shared/publication.ts';
@@ -32,7 +34,7 @@ export const unpublish = (
     // also one of another shoot, or have been in the album before.
     const others = yield* uploadsOfOthers(open);
     const isShared =
-      now.wasThere === true ||
+      !isAdded(now) ||
       others.inAlbum(publication.albumId, now.asset) ||
       publication.photos.some(
         (one) => one.photo !== photo && one.asset === now.asset,
@@ -56,7 +58,7 @@ export const unpublish = (
     const inUse = assetsInUse(restored);
     const outdated = new Set([
       ...(publication.outdated ?? []),
-      ...(now.wasThere === true ? [] : [now.asset]),
+      ...(isAdded(now) && isCreated(now) ? [now.asset] : []),
     ]);
     yield* writeJson(Publication, open.files.publication, {
       ...restored,

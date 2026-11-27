@@ -10,11 +10,7 @@ import {
 import { dirname } from 'node:path';
 import { Effect, Layer, PlatformError, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
-import {
-  answerPhotos,
-  type FakeAlbum,
-  type FakeImmich,
-} from './fake-photos.ts';
+import { answerPhotos, type FakeAlbum } from './fake-photos.ts';
 
 /** A program that was run. */
 export type Run = {
@@ -68,8 +64,8 @@ export const fakeTools = {
   files: [] as Array<{ readonly file: string; readonly second: number }>,
   /** Files the photos command has sent to Immich, in the order it got them. */
   uploads: [] as Array<string>,
-  /** The assets in Immich, as `FakeImmich` has them. */
-  library: [] as FakeImmich['library'],
+  /** The assets in Immich, with the file and the checksum of its bytes. */
+  library: [] as Array<{ id: string; file: string; checksum: string }>,
   /** The albums in Immich, the first of which is created as `album-1`. */
   albums: [] as Array<FakeAlbum>,
   /** Assets Immich refuses to put into an album or take out of one. */

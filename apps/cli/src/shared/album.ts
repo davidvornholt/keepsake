@@ -1,5 +1,5 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
-import { reconcileUploads } from './album-uploads.ts';
+import { adoptNamed } from './adoption.ts';
 import { Album, AlbumPhoto, Removed } from './domain.ts';
 import {
   type Asset,
@@ -9,7 +9,7 @@ import {
   immichServer,
 } from './immich.ts';
 import { withAlbum } from './lock.ts';
-import { type AlbumRecord, readPublication, uploadsOf } from './publication.ts';
+import { type AlbumRecord, readPublication } from './publication.ts';
 import { isOutOf, readAllRemoved } from './standing.ts';
 import { type OpenShoot, readJson, writeJson } from './store.ts';
 
@@ -42,8 +42,8 @@ const photosOfAssets = (
  * Which photo of the shoot each asset of the album is. Only the uploads the
  * shoot's record names count, since the album may hold other shoots' photos
  * and the owner's, whose file names can be those of this shoot's photos. An
- * upload found by its bytes, or still on its way, counts for a photo that has
- * no other in the album.
+ * upload taken on, or still on its way, counts for a photo that has no other
+ * in the album.
  */
 const photosIn = (record: AlbumRecord, assets: ReadonlyArray<Asset>) => {
   const inAlbum = new Map<string, AlbumPhoto>();
@@ -62,8 +62,8 @@ const photosIn = (record: AlbumRecord, assets: ReadonlyArray<Asset>) => {
     }
   };
   add(record.photos, true);
-  add(record.found ?? [], false);
-  add(uploadsOf({ ...record, photos: [], found: [] }), false);
+  add(record.adopted ?? [], false);
+  add(record.sending ?? [], false);
   return [...inAlbum.values()];
 };
 
@@ -84,7 +84,7 @@ const noteRemoved = Effect.fn('noteRemoved')(function* (
   // Only what the record knows for certain: an upload on its way may have
   // been taken back, and a name alone may be another shoot's photo.
   const known = new Set(
-    [...record.photos, ...(record.found ?? [])].map(({ photo }) => photo),
+    [...record.photos, ...(record.adopted ?? [])].map(({ photo }) => photo),
   );
   const gone = [...known].filter(
     (photo) =>
@@ -120,11 +120,9 @@ const refreshNow = Effect.fn('refreshAlbum')(function* (
   const server = yield* immichServer;
   const assets = yield* albumAssets(found.id);
   const before = Option.getOrNull(yield* readJson(Album, open.files.album));
-  const known = yield* reconcileUploads(open, record, {
-    albumId: found.id,
-    assets,
-    before,
-  });
+  const known = isCurrent
+    ? yield* adoptNamed(open, record, { albumId: found.id, assets, before })
+    : record;
   const photos = photosIn(known, assets);
   const album: Album = {
     id: found.id,

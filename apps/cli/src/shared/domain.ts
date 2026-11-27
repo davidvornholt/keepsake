@@ -250,6 +250,18 @@ export const EditRecord = Schema.Struct({
 });
 export type EditRecord = typeof EditRecord.Type;
 
+/**
+ * What Immich answered to the shoot's upload of a file: whether it made a new
+ * asset of it, and whether the shoot put the asset into the album. Immich
+ * keeps a file once, so the asset may be the owner's or another shoot's, and
+ * be in the album already. Records from before keepsake noted this have
+ * neither: all their uploads were keepsake's own files, which it put there.
+ */
+const Ownership = {
+  created: Schema.optionalKey(Schema.Boolean),
+  added: Schema.optionalKey(Schema.Boolean),
+};
+
 /** A photo keepsake uploaded to an album. */
 export const PublishedPhoto = Schema.Struct({
   photo: Schema.String,
@@ -257,38 +269,37 @@ export const PublishedPhoto = Schema.Struct({
   cameraAsset: Schema.String,
   /** The SHA-256 of the file that was published. */
   digest: Schema.String,
-  /** Earlier uploads of the photo, which may wait in the album for the trash. */
-  replaced: Schema.optionalKey(Schema.Array(Schema.String)),
   /**
-   * Whether the upload was in the album before keepsake sent the file, as
-   * Immich has the same file once, so keepsake never takes it out or trashes it.
+   * Earlier uploads of the photo that keepsake made and put into the album,
+   * which may wait there for the trash.
    */
-  wasThere: Schema.optionalKey(Schema.Boolean),
+  replaced: Schema.optionalKey(Schema.Array(Schema.String)),
+  ...Ownership,
 });
 export type PublishedPhoto = typeof PublishedPhoto.Type;
 
 /**
- * An upload of a photo that a publish is sending, noted before it is sent
- * with the SHA-256 of its file, and with its asset once Immich answered and if
- * the publish put it into the album. It is noted under `photos` once all of
- * the photo is sent.
+ * The upload of a photo whose finished file Immich took, noted as soon as it
+ * answered, before the rest of the photo is sent. It is noted under `photos`
+ * once all of the photo is sent.
  */
 export const SendingPhoto = Schema.Struct({
   photo: Schema.String,
-  digest: Schema.String,
-  asset: Schema.optionalKey(Schema.String),
+  asset: Schema.String,
+  ...Ownership,
 });
 export type SendingPhoto = typeof SendingPhoto.Type;
 
 /**
- * An upload in the album that a publish from before keepsake noted every
- * upload put there, found to be the photo's by the checksum of its file.
+ * An upload that a publish from before keepsake noted every upload found by
+ * its file's name, `<photo>-keepsake.jpg`, and that keepsake took on once as
+ * the photo's. It is keepsake's own.
  */
-export const FoundPhoto = Schema.Struct({
+export const AdoptedPhoto = Schema.Struct({
   photo: Schema.String,
   asset: Schema.String,
 });
-export type FoundPhoto = typeof FoundPhoto.Type;
+export type AdoptedPhoto = typeof AdoptedPhoto.Type;
 
 /** What keepsake published to an album it published to before the last. */
 export const EarlierAlbum = Schema.Struct({
@@ -301,7 +312,7 @@ export const EarlierAlbum = Schema.Struct({
   owned: Schema.optionalKey(Schema.Boolean),
   photos: Schema.Array(PublishedPhoto),
   sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
-  found: Schema.optionalKey(Schema.Array(FoundPhoto)),
+  adopted: Schema.optionalKey(Schema.Array(AdoptedPhoto)),
 });
 export type EarlierAlbum = typeof EarlierAlbum.Type;
 
@@ -315,7 +326,13 @@ export const Publication = Schema.Struct({
   /** What was published to this album, and to no other. */
   photos: Schema.Array(PublishedPhoto),
   sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
-  found: Schema.optionalKey(Schema.Array(FoundPhoto)),
+  adopted: Schema.optionalKey(Schema.Array(AdoptedPhoto)),
+  /**
+   * Whether the uploads that `album.json` named by their file's name were
+   * taken on, which happens once, so nothing is found by name after it.
+   * Missing in records from before keepsake noted every upload.
+   */
+  namesAdopted: Schema.optionalKey(Schema.Boolean),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
   outdated: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The other albums keepsake published to, by their id. */

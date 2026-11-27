@@ -5,6 +5,7 @@ import {
   Album,
   Publication,
   type PublishedPhoto,
+  type SendingPhoto,
 } from '../../shared/domain.ts';
 import {
   InvalidInput,
@@ -23,6 +24,7 @@ import {
   signedInUser,
   stackPhotos,
   tagPhoto,
+  uploadInto,
   uploadPhoto,
 } from '../../shared/immich.ts';
 import {
@@ -33,7 +35,16 @@ import {
 } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
-import { albumsOf, readPublication } from '../../shared/publication.ts';
+import {
+  type AlbumRecord,
+  albumsOf,
+  isAdded,
+  isCreated,
+  isPutInto,
+  madeFor,
+  readPublication,
+  type Upload,
+} from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
   exists,
@@ -49,7 +60,6 @@ import {
   publicationFor,
   withSending,
   withSent,
-  withSentAsset,
 } from './record.ts';
 import { takeBack } from './take-back.ts';
 import {
@@ -70,6 +80,8 @@ type Job = {
   readonly photo: string;
   readonly digest: string;
   readonly before: Published | undefined;
+  /** The upload the photo is in the album now, also one taken on. */
+  readonly earlier: Upload | undefined;
 };
 
 const digestOf = (file: string) =>
@@ -112,7 +124,7 @@ const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   target: Target,
-  published: ReadonlyArray<Published>,
+  record: AlbumRecord | undefined,
 ) {
   const photos = yield* photosToSend(open, names, target);
   const finished = yield* Effect.filter(photos, (photo) =>
@@ -126,14 +138,15 @@ const jobs = Effect.fn('jobs')(function* (
     });
   }
   return yield* Effect.forEach(finished, (photo) =>
-    Effect.map(
-      digestOf(open.files.edit(photo).final),
-      (digest): Job => ({
+    Effect.map(digestOf(open.files.edit(photo).final), (digest): Job => {
+      const before = record?.photos.find((one) => one.photo === photo);
+      return {
         photo,
         digest,
-        before: published.find((earlier) => earlier.photo === photo),
-      }),
-    ),
+        before,
+        earlier: before ?? record?.adopted?.find((one) => one.photo === photo),
+      };
+    }),
   );
 });
 
@@ -158,8 +171,8 @@ const carryFavorite = (
 /** Where a photo is sent: the album, and what has to happen on the way. */
 type Sending = {
   readonly album: string;
-  /** What the album has, which stays in it unless keepsake put it there. */
-  readonly there: Set<string>;
+  /** The assets keepsake made for the shoot, also in albums it left. */
+  readonly made: Set<string>;
   /** Notes how far the upload is, before the rest of the photo is sent. */
   readonly note: (
     change: (publication: Publication) => Publication,
@@ -169,58 +182,59 @@ type Sending = {
 const send = Effect.fn('send')(function* (
   open: OpenShoot,
   job: Job,
-  { album, there, note }: Sending,
+  { album, made, note }: Sending,
 ) {
-  const { photo, digest, before } = job;
+  const { photo, digest, before, earlier } = job;
   const files = open.files.edit(photo);
-  yield* note((publication) => withSending(publication, photo, digest));
-  const asset = yield* uploadPhoto(files.final, album);
+  const upload = yield* uploadInto(files.final, album);
+  const { asset } = upload;
   const noted = yield* readPublication(open);
-  const sending = noted?.sending ?? [];
-  // This photo put it there, or an earlier attempt of it that stopped.
-  const isAdded =
-    !there.has(asset) ||
-    sending.some((one) => one.photo === photo && one.asset === asset);
-  // The shoot put it there, also as another photo with the same file.
-  const ours = new Set(
-    [
-      ...(noted?.photos ?? []).filter((one) => one.wasThere !== true),
-      ...(noted?.found ?? []),
-      ...sending,
-    ].flatMap(({ asset: one }) => (one === undefined ? [] : [one])),
-  );
-  const wasThere = !(isAdded || ours.has(asset));
-  yield* note((publication) =>
-    withSentAsset(publication, photo, asset, isAdded),
-  );
-  const isReplaced = before !== undefined && before.asset !== asset;
+  // Immich says whether this upload put the file into the album. One that it
+  // found there is the shoot's when the shoot put it there before, also as
+  // another photo with the same file, and otherwise the owner's or another
+  // shoot's.
+  if (upload.created) {
+    made.add(asset);
+  }
+  const sending: SendingPhoto = {
+    photo,
+    asset,
+    created: made.has(asset),
+    added: upload.added || isPutInto(noted, album, asset),
+  };
+  // What this photo put there, also in an attempt that stopped, goes back out.
+  const isTakenBack =
+    upload.added ||
+    (noted?.sending ?? []).some(
+      (one) => one.photo === photo && one.asset === asset && isAdded(one),
+    );
+  yield* note((publication) => withSending(publication, sending));
+  const isReplaced = earlier !== undefined && earlier.asset !== asset;
   // A photo that isn't published whole doesn't stay in the album.
   const cameraAsset = yield* Effect.gen(function* () {
     const camera = yield* uploadPhoto(files.camera, null);
     yield* stackPhotos(asset, camera);
     yield* tagPhoto(tag, asset);
     if (isReplaced) {
-      yield* carryFavorite(open, album, before.asset, asset);
+      yield* carryFavorite(open, album, earlier.asset, asset);
     }
     return camera;
   }).pipe(
     Effect.catch((error) =>
-      isAdded ? takeBack(album, asset, error.message) : Effect.fail(error),
+      isTakenBack ? takeBack(album, asset, error.message) : Effect.fail(error),
     ),
   );
-  there.add(asset);
-  const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
-  // An upload that was in the album before is another's, not keepsake's.
-  const isOurs = isReplaced && before.wasThere !== true;
+  const replaced = (before?.replaced ?? []).filter((one) => one !== asset);
+  // Only an upload keepsake made and put there waits there for the trash.
+  const isOutdated = isReplaced && isAdded(earlier) && isCreated(earlier);
   return {
     photo,
     asset,
     cameraAsset,
     digest,
-    replaced: isOurs
-      ? [...replaced.filter((one) => one !== asset), before.asset]
-      : replaced.filter((one) => one !== asset),
-    ...(wasThere ? { wasThere } : {}),
+    replaced: isOutdated ? [...replaced, earlier.asset] : replaced,
+    created: sending.created,
+    added: sending.added,
   } satisfies Published;
 });
 
@@ -280,13 +294,9 @@ const albumNow = Effect.fn('albumNow')(function* (
   const record = records.find(
     ({ albumId }) => albumId !== undefined && albumId === target.id,
   );
-  return {
-    published: record?.photos ?? [],
-    there:
-      record === undefined
-        ? null
-        : yield* refreshAlbum(open, record, record === records[0]),
-  };
+  return record === undefined
+    ? null
+    : yield* refreshAlbum(open, record, record === records[0]);
 });
 
 /**
@@ -320,19 +330,22 @@ const publishNow = Effect.fn('publish')(function* (
   const before = yield* knownPublication(open, albums);
   yield* giveRemovalsTheirAlbum(open, before?.albumId);
   const target = yield* targetOf(open, before, chosenAlbum, albums);
-  const { published, there } = yield* albumNow(open, before, target);
+  const there = yield* albumNow(open, before, target);
+  // Read again, as reading the album may have taken on uploads.
+  const known = yield* knownPublication(open, albums);
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
-  const ready = yield* jobs(open, names, target, published);
+  const record = albumsOf(known).find(
+    ({ albumId }) => albumId !== undefined && albumId === target.id,
+  );
+  const ready = yield* jobs(open, names, target, record);
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
   const album = yield* destinationOf(open, target, makesAlbum);
-  const uploads = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
-  // Read again, as reading the album may have found uploads it didn't know.
-  const known = yield* knownPublication(open, albums);
+  const made = madeFor(known);
   let publication = publicationFor(known, album, albums);
   yield* switchTo(open, publication);
   yield* ensureTag(tag);
@@ -341,13 +354,13 @@ const publishNow = Effect.fn('publish')(function* (
     Effect.gen(function* () {
       const done = yield* send(open, job, {
         album: album.id,
-        there: uploads,
+        made,
         note: (change) => {
           publication = change(publication);
           return writeJson(Publication, open.files.publication, publication);
         },
       });
-      publication = withSent(publication, done, job.before);
+      publication = withSent(publication, done, job.earlier);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;
     }),

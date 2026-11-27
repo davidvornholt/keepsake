@@ -136,8 +136,13 @@ const notAdded = (asset: string, album: (typeof Uploaded.Type)['album']) => {
   return unchanged.reason === 'duplicate' ? undefined : unchanged.reason;
 };
 
-/** Uploads a file and returns its asset's id, also when Immich had it. */
-export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
+/**
+ * Uploads a file into an album, and says what Immich did: the asset's id,
+ * also when Immich had the file, whether it made a new asset of it, and
+ * whether this upload put the asset into the album rather than finding it
+ * there.
+ */
+export const uploadInto = Effect.fn('uploadInto')(function* (
   file: string,
   album: string | null,
 ) {
@@ -164,8 +169,16 @@ export const uploadPhoto = Effect.fn('uploadPhoto')(function* (
       message: `Immich took ${file} as ${result.assetId} but did not put it into the album: ${refused}`,
     });
   }
-  return result.assetId;
+  return {
+    asset: result.assetId,
+    created: result.status === 'created',
+    added: answer.album?.added.includes(result.assetId) === true,
+  };
 });
+
+/** Uploads a file and returns its asset's id, also when Immich had it. */
+export const uploadPhoto = (file: string, album: string | null) =>
+  Effect.map(uploadInto(file, album), ({ asset }) => asset);
 
 /** Puts photos on top of each other, so the timeline shows the first. */
 export const stackPhotos = (top: string, below: string) =>
@@ -236,10 +249,6 @@ export const removeFromAlbum = Effect.fn('removeFromAlbum')(function* (
   // Immich's reason for a photo that wasn't in the album.
   return unchanged.filter(({ reason }) => reason !== 'not_found');
 });
-
-/** Saves the file Immich keeps of an upload into a directory. */
-export const downloadOriginal = (asset: string, directory: string) =>
-  photos(Schema.Unknown, ['download', asset, '--to', directory]);
 
 /** Gives a photo the favorite mark, or takes it away. */
 export const markFavorite = (asset: string, isFavorite: boolean) =>

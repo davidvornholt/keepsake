@@ -12,7 +12,9 @@ import { albumAssets, removeFromAlbum } from '../../shared/immich.ts';
 import { withAlbum, withChoice } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import {
+  isAdded,
   readPublication,
+  uploadsOf,
   uploadsOfOthers,
   withUploads,
 } from '../../shared/publication.ts';
@@ -53,9 +55,14 @@ const versionsIn = Effect.fn('versionsIn')(function* (
     };
   }
   const there = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
-  const published = (yield* readPublication(open))?.photos ?? [];
+  const record = yield* readPublication(open);
+  const published = record?.photos ?? [];
+  // What the shoot didn't put into the album stays in it: Immich found the
+  // file there when it was uploaded.
+  const uploads = record === null ? [] : uploadsOf(record);
+  const added = new Set(uploads.filter(isAdded).map(({ asset }) => asset));
   const elses = new Set(
-    published.flatMap(({ asset, wasThere }) => (wasThere ? [asset] : [])),
+    uploads.flatMap(({ asset }) => (added.has(asset) ? [] : [asset])),
   );
   const current = [...album.photos, ...published];
   const known = [
@@ -120,9 +127,9 @@ const letGoOf = Effect.fn('letGoOf')(function* (
   const kept = withUploads(
     { ...published, photos: published.photos.filter(isKept) },
     published.albumId,
-    ({ sending, found }) => ({
+    ({ sending, adopted }) => ({
       sending: sending?.filter(isKept),
-      found: found?.filter(isKept),
+      adopted: adopted?.filter(isKept),
     }),
   );
   yield* writeJson(Publication, open.files.publication, {
