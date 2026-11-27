@@ -7,7 +7,6 @@ import {
 } from '../../shared/store.ts';
 import { settle } from './choices.ts';
 
-/** How long a choice that waits waits before it is tried again. */
 const pause = Duration.seconds(2);
 
 /**
