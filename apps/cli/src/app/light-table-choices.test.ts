@@ -245,6 +245,28 @@ describe('a choice while a command works on the shoot', () => {
     expect(inImmich()).toEqual(['A1', 'C']);
   });
 
+  it('is still done when the shoot couldn’t be forgotten meanwhile', async () => {
+    await publishLisbon();
+    const [forgot, after] = await serving(async (address) => {
+      const status = await whileHeld(
+        async () => {
+          await choose(address, { photo: 'B', wants: 'out' });
+          return statusOf(send('DELETE', `${address}/api/shoots/lisbon`));
+        },
+        'lisbon',
+        withChoice,
+      );
+      const done = await eventually(
+        () => choicesOf(address),
+        (choices) => choices.length === 0,
+        patiently,
+      );
+      return [status, done];
+    });
+    expect([forgot, after]).toEqual([400, []]);
+    expect(inImmich()).toEqual(['A1', 'C']);
+  });
+
   it('waits to publish a photo while it is edited', async () => {
     await publishLisbon();
     await editLisbon('A2');

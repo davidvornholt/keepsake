@@ -238,8 +238,9 @@ export const makeAnswers = (has: Has) => ({
   forget: (name: string) =>
     Effect.gen(function* () {
       yield* has.preparations.stop(name);
-      yield* has.settling.stop(name);
       yield* forgetShoot(name);
+      // Only once it is gone, so what waits is still done when it stays.
+      yield* has.settling.stop(name);
       yield* has.shoots.forget(name);
       return nothing();
     }),
