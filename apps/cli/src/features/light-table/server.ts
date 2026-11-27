@@ -229,9 +229,14 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
           hostname: '127.0.0.1',
           port,
           idleTimeout: patience,
-          // The page reloads while it is being worked on.
-          // biome-ignore lint/style/noProcessEnv: the build puts its value here, so the binary needs no environment
-          development: process.env.NODE_ENV !== 'production',
+          // Out of development, Bun would share a port that is in use.
+          reusePort: false,
+          // The page reloads while it is being worked on. Not in tests,
+          // which serve it often: Bun keeps each server's file watchers.
+          development: !['production', 'test'].includes(
+            // biome-ignore lint/style/noProcessEnv: the build puts its value here, so the binary needs no environment
+            process.env.NODE_ENV ?? '',
+          ),
           routes,
         }),
       catch: (error) =>
