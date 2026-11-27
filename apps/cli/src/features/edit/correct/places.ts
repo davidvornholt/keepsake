@@ -98,13 +98,14 @@ export const Place = Schema.Struct({
 export type Place = typeof Place.Type;
 
 export const Change = Schema.Struct({
-  /**
-   * Whether the photo as a whole has to change, also where marks keep other
-   * changes to them, as what is to come back is only in the camera's picture.
-   */
+  /** Whether the photo as a whole has to change. */
   everywhere: Schema.Boolean,
   places: Schema.Array(Place),
-  /** Whether something the edit took out is to come back. */
+  /**
+   * Whether something the edit took out is to come back. Only the camera's
+   * picture still shows it, so all of the photo changes, also where marks keep
+   * other changes to them.
+   */
   bringsBack: Schema.Boolean.pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(false)),
   ),
