@@ -71,6 +71,8 @@ export const Before = Schema.Struct({
   removed: Schema.Array(Removed),
   picked: Schema.Boolean,
   published: Schema.NullOr(PublishedPhoto),
+  /** Whether it was in the album then, which the swap leaves it in. */
+  inAlbum: Schema.optionalKey(Schema.Boolean),
 });
 export type Before = typeof Before.Type;
 

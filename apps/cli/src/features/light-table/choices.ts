@@ -284,6 +284,30 @@ const takeOutOne = Effect.fn('takeOutOne')(function* (
   yield* withdrawOpen(open.files, leaving.photo);
 });
 
+// Notes, under the choice's lock and before the swap changes anything,
+// where the photo that comes in stands, so it can go back there.
+const noteBefore = Effect.fn('noteBefore')(function* (
+  open: OpenShoot,
+  known: Standings,
+  comesIn: Choice,
+) {
+  if (comesIn.before !== undefined) {
+    return comesIn.before;
+  }
+  const inAlbum = known.of.get(comesIn.photo)?.kind === 'album';
+  const before = yield* beforeOf(open, comesIn.photo, inAlbum);
+  const all = yield* readChoices(open.files);
+  yield* saveChoices(
+    open.files,
+    all.map((one) =>
+      one.action === comesIn.action && one.wants === 'in'
+        ? { ...one, before }
+        : one,
+    ),
+  );
+  return before;
+});
+
 /**
  * Does one action, and says for each of its photos why it couldn't be
  * done, or nothing while it has to wait. A photo that was to take the place
@@ -311,7 +335,8 @@ const doAction = Effect.fn('doAction')(function* (
   if (edited.has(comesIn.photo) && (yield* isFinished(open, comesIn.photo))) {
     return outcomes;
   }
-  const before = comesIn.before ?? (yield* beforeOf(open, comesIn.photo));
+  const before =
+    leaving === undefined ? null : yield* noteBefore(open, known, comesIn);
   const isIn = yield* outcomeOf(putIn(open, known, comesIn.photo));
   outcomes.set(comesIn.photo, isIn);
   if (leaving === undefined) {
@@ -322,7 +347,7 @@ const doAction = Effect.fn('doAction')(function* (
       ? yield* outcomeOf(takeOutOne(open, known, leaving))
       : insteadFailed;
   outcomes.set(leaving.photo, isOut);
-  if (isIn === null && isOut !== null) {
+  if (isIn === null && isOut !== null && before !== null) {
     const undone = yield* outcomeOf(undoPutIn(open, comesIn.photo, before));
     outcomes.set(
       comesIn.photo,
@@ -332,36 +357,11 @@ const doAction = Effect.fn('doAction')(function* (
   return outcomes;
 });
 
-/**
- * Notes where the photo that comes in for another stands, before anything
- * of the swap is done, so it can go back there also after a restart.
- */
-const withBefore = Effect.fn('withBefore')(function* (
-  open: OpenShoot,
-  all: ReadonlyArray<Choice>,
-) {
-  const swaps = new Set(
-    all.flatMap(({ action, wants }) => (wants === 'out' ? [action] : [])),
-  );
-  const isNew = (one: Choice) =>
-    one.wants === 'in' && swaps.has(one.action) && one.before === undefined;
-  if (!all.some(isNew)) {
-    return all;
-  }
-  const noted = yield* Effect.forEach(all, (one) =>
-    isNew(one)
-      ? Effect.map(beforeOf(open, one.photo), (before) => ({ ...one, before }))
-      : Effect.succeed(one),
-  );
-  yield* saveChoices(open.files, noted);
-  return noted;
-});
-
 const doAll = Effect.fn('doAll')(function* (open: OpenShoot) {
   const { files } = open;
   const model = yield* judgeOf(open, Option.none());
   const known = yield* standings(open, model);
-  const all = yield* withBefore(open, yield* readChoices(files));
+  const all = yield* readChoices(files);
   const edited = new Set((yield* readActivity(files))?.photos ?? []);
   const outcomes = new Map<string, Outcome>();
   // Each is done again until it is noted as done, which finishes what the

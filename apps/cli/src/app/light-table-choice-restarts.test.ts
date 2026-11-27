@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { copyFile, writeFile } from 'node:fs/promises';
+import { copyFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import process from 'node:process';
 import { BunServices } from '@effect/platform-bun';
 import { ConfigProvider, Effect, Option } from 'effect';
 import { choose as choosing, settle } from '../features/light-table/choices.ts';
@@ -9,6 +10,7 @@ import { judgeOf } from '../shared/judge.ts';
 import { standings } from '../shared/standing.ts';
 import { openShoot } from '../shared/store.ts';
 import {
+  choicesOf,
   choose,
   inImmich,
   outReason,
@@ -169,6 +171,30 @@ describe('a put-in the page stopped as Immich took the photo', () => {
     expect(published?.cameraAsset).toBeString();
     expect(ran('stacks', published?.asset, published?.cameraAsset)).toBe(true);
     expect(ran('tags', 'add', published?.asset)).toBe(true);
+  });
+});
+
+describe('a swap that waits while the photo is edited', () => {
+  it('leaves a publish made meanwhile, when the other stays', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const activity = shootFile('activity.json');
+    const record = { process: process.pid, step: 'edit', done: 0, total: 1 };
+    await writeFile(activity, JSON.stringify({ ...record, photos: ['A2'] }));
+    const waited = await whileServing(async (address) => {
+      await swap(address);
+      const waiting = await choicesOf(address);
+      await runOk('publish', 'lisbon', 'A2');
+      fakeTools.refused.add(assetOfA1);
+      await rm(activity, { force: true });
+      await settled(address);
+      return waiting;
+    });
+    expect(waited).toMatchObject([{ failed: null }, { failed: null }]);
+    expect(inImmich()).toEqual(['A1', 'B', 'C', 'A2']);
+    expect(await standingOf('A2')).toMatchObject({ kind: 'album' });
+    const { photos } = await shootJson('publication.json');
+    expect(photos.map(({ photo }: { photo: string }) => photo)).toContain('A2');
   });
 });
 

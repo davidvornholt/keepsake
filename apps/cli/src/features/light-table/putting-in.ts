@@ -112,6 +112,7 @@ export const keepOut = (open: OpenShoot, photo: string, because: string) =>
 export const beforeOf = Effect.fn('beforeOf')(function* (
   open: OpenShoot,
   photo: string,
+  inAlbum: boolean,
 ) {
   const list = Option.getOrNull(yield* readJson(PickList, open.files.picks));
   const publication = yield* readPublication(open);
@@ -121,6 +122,7 @@ export const beforeOf = Effect.fn('beforeOf')(function* (
     ),
     picked: list?.picks.some((one) => one.photo === photo) ?? false,
     published: publication?.photos.find((one) => one.photo === photo) ?? null,
+    inAlbum,
   } satisfies Before;
 });
 
@@ -131,11 +133,14 @@ export const undoPutIn = Effect.fn('undoPutIn')(function* (
   before: Before,
 ) {
   const { files } = open;
-  yield* (yield* Publishing).unpublish(
-    open,
-    photo,
-    before.published ?? undefined,
-  );
+  // What the album had before stays.
+  if (before.inAlbum !== true) {
+    yield* (yield* Publishing).unpublish(
+      open,
+      photo,
+      before.published ?? undefined,
+    );
+  }
   yield* Effect.gen(function* () {
     const all = yield* removalsOf(files);
     yield* writeJson(Removals, files.removed, [
