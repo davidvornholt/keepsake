@@ -6,7 +6,7 @@ import {
   tidyBox,
   wholePicture,
 } from '../../../shared/boxes.ts';
-import { Box } from '../../../shared/domain.ts';
+import { Box, type Removal } from '../../../shared/domain.ts';
 import { Vision } from '../../../shared/vision.ts';
 import { inParts, inPhoto } from '../parts.ts';
 import { listed } from '../removals.ts';
@@ -176,6 +176,17 @@ const inMarks = (
     );
     return distinct.map((box) => ({ ...place, box }));
   });
+
+/** What of what was removed lies in the marks, with the little around each. */
+export const markedRemovals = (
+  removed: ReadonlyArray<Removal>,
+  areas: ReadonlyArray<Box>,
+): ReadonlyArray<string> =>
+  removed
+    .filter(({ box }) =>
+      markedAreas(areas).some((mark) => insideOf(box, mark).length > 0),
+    )
+    .map(({ what }) => what);
 
 /** What may change of a photo: the marks, with a little around each. */
 export const markedAreas = (areas: ReadonlyArray<Box>): ReadonlyArray<Box> =>

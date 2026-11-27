@@ -17,7 +17,13 @@ import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
 
 import { type CorrectionFiles, correct } from './correct/correct.ts';
-import { Change, findPlaces, inMarked, type Place } from './correct/places.ts';
+import {
+  Change,
+  findPlaces,
+  inMarked,
+  markedRemovals,
+  type Place,
+} from './correct/places.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
@@ -214,17 +220,19 @@ const keptOnFaces = ({
       );
 
 /** Edits all of a photo anew. The edit it has stays until that is better. */
-const changeAll = Effect.fn('changeAll')(function* ({
-  job,
-  former,
-  files,
-  wish,
-}: ToChange) {
+const changeAll = Effect.fn('changeAll')(function* (
+  { job, former, files, wish }: ToChange,
+  /** What the marks show of what is to come back, for this edit only. */
+  back: ReadonlyArray<string> = [],
+) {
   const { crop, input, record: recordFile, wish: wishFile } = job.files;
   const wanted = bothWishes(yield* wishIn(wishFile), wish);
   const anew: Job = {
     ...job,
-    wish: wanted,
+    wish:
+      back.length === 0
+        ? wanted
+        : `${sentence(wanted)} What they marked to come back: ${back.map(sentence).join(' ')}`,
     files: { ...files, crop, input, record: recordFile },
   };
   const made = yield* bestEdit(anew);
@@ -263,7 +271,10 @@ const change = Effect.fn('change')(function* (toChange: ToChange) {
     return { record: toChange.former, notDone: [nothing] } satisfies Edited;
   }
   return everywhere
-    ? yield* changeAll(toChange)
+    ? yield* changeAll(
+        toChange,
+        found.bringsBack ? markedRemovals(removed, areas) : [],
+      )
     : yield* changePlaces(toChange, places);
 });
 

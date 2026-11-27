@@ -36,28 +36,60 @@ const editWithoutCranes = async () => {
   await editLisbon('B');
 };
 
+/** The owner marked a place of B with a note and handed it over. */
+const mark = (text: string, box: object) =>
+  Bun.write(
+    shootFile('marks', 'one.json'),
+    JSON.stringify({
+      id: 'one',
+      photo: 'B',
+      note: text,
+      boxes: [box],
+      madeAt: '2026-04-01T10:00:00Z',
+      handedOverAt: '2026-04-01T11:00:00Z',
+      answer: null,
+      seenAt: null,
+    }),
+  );
+
+const bringsBack = () => {
+  fakeModels.answers.places = {
+    everywhere: false,
+    bringsBack: true,
+    places: [],
+  };
+};
+
+const editMarked = () => editLisbon('--mark', 'one', '--budget', '5');
+
 describe('keepsake edit, bringing back what it took out', () => {
+  it.each([
+    { box: atCrane, meant: crane, other: otherCrane },
+    { box: atOtherCrane, meant: otherCrane, other: crane },
+  ])(
+    'names what is in the mark for that edit only: $meant',
+    async ({ box, meant, other }) => {
+      await editWithoutCranes();
+      await mark('Bring this back', box);
+      bringsBack();
+      await editMarked();
+      const wish = textsOf(asked('removals')[1] ?? { texts: [] });
+      expect(wish).toContain(
+        `“Bring this back. What they marked to come back: ${meant}.”`,
+      );
+      expect(wish).not.toContain(`back: ${other}`);
+      expect(fakeModels.edits[1]?.prompt).toContain(`come back: ${meant}.`);
+      expect(await shootJson('edits', 'B', 'wish.json')).toEqual({
+        wish: 'Bring this back',
+      });
+    },
+  );
+
   it('edits the photo anew from the camera’s, also for a mark', async () => {
     await editWithoutCranes();
-    await Bun.write(
-      shootFile('marks', 'one.json'),
-      JSON.stringify({
-        id: 'one',
-        photo: 'B',
-        note,
-        boxes: [atCrane],
-        madeAt: '2026-04-01T10:00:00Z',
-        handedOverAt: '2026-04-01T11:00:00Z',
-        answer: null,
-        seenAt: null,
-      }),
-    );
-    fakeModels.answers.places = {
-      everywhere: false,
-      bringsBack: true,
-      places: [],
-    };
-    const result = await editLisbon('--mark', 'one', '--budget', '5');
+    await mark(note, atCrane);
+    bringsBack();
+    const result = await editMarked();
     expect(result.notDone).toEqual([]);
     expect(textsOf(asked('places')[0] ?? { texts: [] })).toContain(
       `- ${crane}\n- ${otherCrane}`,
@@ -65,7 +97,7 @@ describe('keepsake edit, bringing back what it took out', () => {
     expect(fakeModels.edits).toHaveLength(2);
     expect(fakeModels.edits[1]?.prompt).not.toContain('Change only');
     expect(textsOf(asked('removals')[1] ?? { texts: [] })).toContain(
-      `“${note}”`,
+      `“${note}. What they marked to come back: ${crane}.”`,
     );
     expect(asked('crops')).toHaveLength(1);
     expect(await shootJson('edits', 'B', 'wish.json')).toEqual({ wish: note });

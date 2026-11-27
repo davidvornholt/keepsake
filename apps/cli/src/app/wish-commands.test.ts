@@ -64,6 +64,24 @@ describe('keepsake edit, with something to remove', () => {
     }
   });
 
+  it('takes out a landmark that the owner asked to remove', async () => {
+    await pickLisbon();
+    const mast = 'the tall white mast of the harbour behind her';
+    const box = { left: 0.6, top: 0.1, right: 0.7, bottom: 0.6 };
+    fakeModels.answers.removals = { remove: [{ what: mast, box }] };
+    await editLisbon('B', '--wish', 'Remove the mast');
+    expect(fakeModels.edits[0]?.prompt).toContain(
+      'leave it as it is, unless I ask below for it to be removed',
+    );
+    expect(fakeModels.edits[0]?.prompt).toContain(
+      'this is what I want: Remove the mast.',
+    );
+    for (const name of ['assessment', 'faults'] as const) {
+      expect(textsOf(name)).toContain('what they asked for comes first');
+      expect(textsOf(name)).toContain('“Remove the mast”');
+    }
+  });
+
   it('does what the user wants and keeps the crop', async () => {
     await pickLisbon();
     await editLisbon('B');

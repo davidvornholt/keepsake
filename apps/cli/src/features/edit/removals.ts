@@ -100,6 +100,14 @@ export const withoutUnwanted = (
 export const keepingFirst =
   'Keeping the subject, someone who is with the people the photo was taken of, and what tells the place, such as a landmark, a sight or a distinctive mast or tower that stands there for good, comes before this list.';
 
+/** What to know about versions made as the user wanted. */
+export const aboutWish = (wish: string | null): ReadonlyArray<string> =>
+  wish === null
+    ? []
+    : [
+        `Whoever took the photo wanted this, so it is no fault, but it is one when it wasn’t done: “${wish}”`,
+      ];
+
 /** What to know about versions something was removed from. */
 export const aboutRemoved = (
   removed: ReadonlyArray<string>,
@@ -107,5 +115,5 @@ export const aboutRemoved = (
   removed.length === 0
     ? []
     : [
-        `The edit was asked to remove the following and to continue what is behind it. Taking away just that is no fault and changes neither the moment nor the place, the people or the text. It is a fault when any of it is still there, when a trace, a smear or a gap shows where it was, or when something else was put there:\n${listed(removed)}\n${keepingFirst} Where the list names any of that, it is no fault that it is still there, and a fault when it is gone.`,
+        `The edit was asked to remove the following and to continue what is behind it. Taking away just that is no fault and changes neither the moment nor the place, the people or the text. It is a fault when any of it is still there, when a trace, a smear or a gap shows where it was, or when something else was put there:\n${listed(removed)}\n${keepingFirst} Where the list names any of that, it is no fault that it is still there, and a fault when it is gone, unless whoever took the photo asked for it to be removed: what they asked for comes first.`,
       ];

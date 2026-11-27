@@ -61,9 +61,14 @@ const mend = Effect.fn('mend')(function* (
 const mostRounds = 2;
 
 /** What a version shows that nobody should see, and what is left of it. */
-const inspection = (files: EditFiles, prepared: Prepared, checked: ToCheck) =>
+const inspection = (
+  files: EditFiles,
+  prepared: Prepared,
+  checked: ToCheck,
+  wish: string | null,
+) =>
   Effect.gen(function* () {
-    const about = { crop: prepared.crop.box, removed: prepared.removed };
+    const about = { crop: prepared.crop.box, removed: prepared.removed, wish };
     const mended = files.versionMended(checked.number);
     const inspected = (version: string) =>
       inspect({ original: files.input, version }, about);
@@ -93,11 +98,13 @@ export const flawless = Effect.fn('flawless')(function* (
   files: EditFiles,
   prepared: Prepared,
   checked: ToCheck,
+  /** What the user wants to be done. */
+  wish: string | null,
 ) {
   const { found, left } = yield* remembered(
     Inspection,
     files.faults(checked.number),
-    inspection(files, prepared, checked),
+    inspection(files, prepared, checked, wish),
   );
   const wrong = seriousOf(left ?? found);
   return {

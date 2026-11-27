@@ -4,7 +4,7 @@ import type { Box, Person, Sign } from '../../shared/domain.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 import { aboutBeyond } from './beyond.ts';
-import { aboutRemoved } from './removals.ts';
+import { aboutRemoved, aboutWish } from './removals.ts';
 
 const pictureSide = 1536;
 const closeUpSide = 1024;
@@ -74,14 +74,6 @@ type Shown = {
   readonly removed: ReadonlyArray<string>;
   readonly wish: string | null;
 };
-
-/** What to know about versions made as the user wanted. */
-const aboutWish = (wish: string | null): ReadonlyArray<string> =>
-  wish === null
-    ? []
-    : [
-        `Whoever took the photo wanted this, so it is no fault, but it is one when it wasn’t done: “${wish}”`,
-      ];
 
 /** What to know about the signs of versions. */
 const aboutSigns = (signs: ReadonlyArray<Sign>): ReadonlyArray<string> =>

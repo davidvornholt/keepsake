@@ -99,6 +99,7 @@ const attempt = Effect.fn('attempt')(function* (
       files,
       prepared,
       version,
+      wish,
     );
     if (problems.length === 0) {
       return { best: file, notes } satisfies Outcome;
