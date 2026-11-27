@@ -1,11 +1,23 @@
-import { Effect, Result, Stream } from 'effect';
+import { Effect, Fiber, Result, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { ToolFailed } from './errors/errors.ts';
 
-const collect = <E, R>(stream: Stream.Stream<Uint8Array, E, R>) =>
-  Stream.runCollect(stream).pipe(
-    Effect.map((chunks) => new Uint8Array(Buffer.concat([...chunks]))),
+/** Reads a stream in the background, keeping what has arrived so far. */
+const reading = Effect.fn('reading')(function* <E, R>(
+  stream: Stream.Stream<Uint8Array, E, R>,
+) {
+  const chunks: Array<Uint8Array> = [];
+  const fiber = yield* Effect.forkScoped(
+    Stream.runForEach(stream, (chunk) => Effect.sync(() => chunks.push(chunk))),
   );
+  return { fiber, read: () => new Uint8Array(Buffer.concat(chunks)) };
+});
+
+/**
+ * How long to keep reading a program a signal stopped. A program it started
+ * may still hold its output open, so its end is not awaited.
+ */
+const drainAfterSignal = '200 millis';
 
 /** How much of a failing program's error output goes into the message. */
 const shownError = 400;
@@ -23,6 +35,16 @@ type RunOptions = {
 
 const notRun = (command: string, { message }: { readonly message: string }) =>
   failed(command, `${message}. Is ${command} installed and on the PATH?`);
+
+/** Why a program that ran has no exit code, such as the signal that stopped it. */
+const stopped = (
+  command: string,
+  error: { readonly message: string; readonly cause?: unknown },
+) =>
+  failed(
+    command,
+    error.cause instanceof Error ? error.cause.message : error.message,
+  );
 
 /**
  * Runs a program without a shell and returns what it printed, and its exit
@@ -50,20 +72,24 @@ export const runToolToEnd = Effect.fn('runToolToEnd')(
         extendEnv: true,
       }),
     );
-    const [stdout, stderr, ending] = yield* Effect.all(
-      [
-        collect(handle.stdout),
-        collect(handle.stderr),
-        Effect.result(handle.exitCode),
-      ],
-      { concurrency: 'unbounded' },
-    );
+    const stdout = yield* reading(handle.stdout);
+    const stderr = yield* reading(handle.stderr);
+    const ending = yield* Effect.result(handle.exitCode);
+    const output = Fiber.joinAll([stdout.fiber, stderr.fiber]);
+    if (Result.isSuccess(ending)) {
+      yield* output;
+    } else {
+      // The signal may have left the program's own children behind, so they
+      // are stopped now, and what they print after this moment is lost.
+      yield* Effect.forkScoped(handle.kill());
+      yield* Effect.ignore(Effect.timeout(output, drainAfterSignal));
+    }
     return {
-      stdout,
-      stderr: new TextDecoder().decode(stderr).trim(),
+      stdout: stdout.read(),
+      stderr: new TextDecoder().decode(stderr.read()).trim(),
       ending: Result.mapBoth(ending, {
         onSuccess: Number,
-        onFailure: (error) => notRun(command, error),
+        onFailure: (error) => stopped(command, error),
       }),
     };
   },

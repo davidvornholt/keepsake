@@ -271,7 +271,10 @@ const exitCodeOf = (run: Run, error: string) => {
           _tag: 'Unknown',
           module: 'ChildProcess',
           method: 'exitCode',
-          description: `Process interrupted due to receipt of signal: '${signal}'`,
+          // As the real spawner does, the signal is in the cause.
+          cause: new Error(
+            `Process interrupted due to receipt of signal: '${signal}'`,
+          ),
         }),
       );
 };
