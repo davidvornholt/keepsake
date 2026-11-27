@@ -9,7 +9,6 @@ import {
   publish as publishShoot,
   tellOutdated,
 } from '../features/publish/publish.ts';
-import { checkTitled } from '../features/publish/target.ts';
 import { scan } from '../features/scan/scan.ts';
 import { ModelFailed } from '../shared/errors/errors.ts';
 import { askReviewer } from '../shared/review-vision.ts';
@@ -76,10 +75,6 @@ export const run = Command.make(
       const scanned = yield* scan(flags);
       const { shoot } = scanned;
       yield* Effect.gen(function* () {
-        if (flags.publish) {
-          // Before the cull and the edits, which may cost money.
-          yield* workOn(shoot, checkTitled);
-        }
         if (!flags.unedited) {
           yield* checkPrices(imageModel);
         }

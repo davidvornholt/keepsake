@@ -123,21 +123,6 @@ describe('keepsake publish, to a new album', () => {
     expect(fakeTools.uploads).toEqual([]);
   });
 
-  it('needs a title or an album for a shoot that has none', async () => {
-    await pickLisbon();
-    await editLisbon();
-    // A shoot from before keepsake kept titles.
-    const { title: _, ...untitled } = await shootJson('shoot.json');
-    await Bun.write(shootFile('shoot.json'), JSON.stringify(untitled));
-    const failure = await failureOf('publish', 'lisbon');
-    expect(failure._tag).toBe('InvalidInput');
-    expect(failure.message).toContain('--title');
-    expect(fakeTools.albums).toEqual([]);
-    expect(fakeTools.uploads).toEqual([]);
-    const result = await runOk('publish', 'lisbon', '--album', 'Lisboa');
-    expect(result).toMatchObject({ album: { name: 'Lisboa' }, published: 3 });
-  });
-
   it('finds the album it made when it stopped before the first upload', async () => {
     await pickLisbon();
     await editLisbon();

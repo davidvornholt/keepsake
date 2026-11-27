@@ -41,9 +41,6 @@ describe('what is printed under an album', () => {
     expect(sentenceOf(shoot({ newAnswers: 1 }))).toBe(
       'The harbor, 1 May to 4 May 2026, 43 photos, 8 in the album, 1 new answer',
     );
-    expect(sentenceOf(shoot({ title: null, newAnswers: 1 }))).toBe(
-      'harbor, 1 May to 4 May 2026, 43 photos, 8 in the album, 1 new answer',
-    );
   });
 });
 

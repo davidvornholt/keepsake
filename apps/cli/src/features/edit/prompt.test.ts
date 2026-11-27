@@ -28,7 +28,12 @@ const pick: Pick = {
   subject: 'bird',
   description: 'A heron stands in shallow water',
 };
-const shoot = { name: 'lisbon', source: '/photos', about: 'Lisbon' };
+const shoot = {
+  name: 'lisbon',
+  source: '/photos',
+  title: 'Lisbon',
+  about: 'Lisbon',
+};
 const wanted = {
   shoot,
   photo,

@@ -28,7 +28,7 @@ export const scanFlags = {
   ),
   title: optionalString(
     'title',
-    'The name of the album in Immich and on the page: the place or event the photos show, in English, without the date or the country, such as "Mainau Island"',
+    'The name of the album in Immich and on the page, required for a new shoot: the place or event the photos show, in English, without the date or the country, such as "Mainau Island"',
   ),
   about: optionalString(
     'about',

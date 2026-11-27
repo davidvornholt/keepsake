@@ -171,7 +171,7 @@ export const Album = ({
     filters: everything,
   };
   const share = useFurthest(shoot);
-  const name = shoot.title ?? shoot.name;
+  const name = shoot.title;
   return (
     <a
       className="group block p-3"

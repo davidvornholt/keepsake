@@ -33,7 +33,12 @@ const withShoot = <A, E>(
       const files = yield* shootFiles('lisbon');
       return yield* work({
         files,
-        shoot: { name: 'lisbon', source: '/photos', about: null },
+        shoot: {
+          name: 'lisbon',
+          source: '/photos',
+          title: 'Lisbon',
+          about: null,
+        },
         photos: new Map(),
         moments: [],
       });

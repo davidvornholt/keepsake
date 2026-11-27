@@ -142,8 +142,8 @@ export type Question = {
 /** GET /api/shoots/<shoot> */
 export type ShootView = {
   readonly name: string;
-  /** The album's name: "Lisbon". Null for shoots from before there was one. */
-  readonly title: string | null;
+  /** The album's name: "Lisbon". */
+  readonly title: string;
   /** Where and when, for the models: "Lisbon, May 2026" */
   readonly about: string | null;
   /** Changes whenever anything below does. */
@@ -193,7 +193,7 @@ export type ShootView = {
 export type ShootList = {
   readonly shoots: ReadonlyArray<{
     readonly name: string;
-    readonly title: string | null;
+    readonly title: string;
     readonly about: string | null;
     /** When the first and the last photo were taken; null until there are any. */
     readonly from: string | null;

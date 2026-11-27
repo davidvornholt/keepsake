@@ -82,7 +82,7 @@ export const Title = ({ index }: { readonly index: Index }) => (
     </a>
     <div className="min-w-0">
       <h1 className="type-name truncate text-[1.0625rem] text-lamp">
-        {index.shoot.title ?? index.shoot.name}
+        {index.shoot.title}
       </h1>
       <p className="type-edge mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-quiet max-sm:h-[1lh] max-sm:overflow-hidden">
         {totalsOf(index).map(({ text, isMinor }) => (

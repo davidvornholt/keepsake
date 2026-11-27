@@ -172,10 +172,15 @@ const shootOf = Effect.fn('shootOf')(function* (
   const title = Option.isSome(options.title)
     ? yield* titleOf(options.title.value)
     : Option.getOrUndefined(before)?.title;
+  if (title === undefined) {
+    return yield* new InvalidInput({
+      message: `${name} is a new shoot, so it needs --title "<album name>".`,
+    });
+  }
   return {
     name,
     source,
-    ...(title === undefined ? {} : { title }),
+    title,
     ...(timeZone === undefined ? {} : { timeZone }),
     about: Option.getOrElse(options.about, () =>
       Option.isSome(before) ? before.value.about : null,
@@ -248,7 +253,7 @@ export const scan = Effect.fn('scan')(function* (options: ScanOptions) {
     return {
       shoot: name,
       source,
-      title: title ?? null,
+      title,
       about,
       photos: photos.length,
       moments: moments.length,

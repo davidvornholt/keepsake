@@ -69,26 +69,6 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
   }
 });
 
-const untitled = (open: OpenShoot) =>
-  new InvalidInput({
-    message: `${open.shoot.name} has no title to name a new album after. Give it one with --title "<album name>" on \`keepsake scan\` or \`keepsake run\`, or name an album with \`keepsake publish --album\`.`,
-  });
-
-/**
- * Fails for a shoot that has no title and no album yet, since keepsake would
- * have nothing to name a new album after.
- */
-export const checkTitled = Effect.fn('checkTitled')(function* (
-  open: OpenShoot,
-) {
-  if (
-    open.shoot.title === undefined &&
-    (yield* readPublication(open)) === null
-  ) {
-    return yield* untitled(open);
-  }
-});
-
 /**
  * The album keepsake published to before, unless another is named. Albums are
  * found by their id, so one renamed in Immich stays the album. A shoot's first
@@ -115,8 +95,7 @@ export const targetOf = Effect.fn('targetOf')(function* (
     return known ?? (yield* uniqueNamed(albums, name)) ?? fresh(name);
   }
   if (before === null) {
-    const { title } = open.shoot;
-    return title === undefined ? yield* untitled(open) : fresh(title);
+    return fresh(open.shoot.title);
   }
   return withId(before.albumId) ?? (yield* gone(before));
 });

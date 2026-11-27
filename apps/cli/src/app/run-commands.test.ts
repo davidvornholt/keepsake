@@ -105,7 +105,7 @@ describe('keepsake run', () => {
     expect(fakeModels.asked).toHaveLength(questions);
   });
 
-  it('asks nothing when it would have no album to publish to', async () => {
+  it('asks nothing for a new shoot without a title', async () => {
     const failure = await failureOf(
       'run',
       photosFolder(),
@@ -115,7 +115,6 @@ describe('keepsake run', () => {
       judge,
       '--review-model',
       judge,
-      '--publish',
     );
     expect(failure._tag).toBe('InvalidInput');
     expect(failure.message).toContain('--title');
