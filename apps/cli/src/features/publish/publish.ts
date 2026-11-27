@@ -145,8 +145,8 @@ const send = Effect.fn('send')(function* (
   open: OpenShoot,
   job: Job,
   album: string,
-  /** The uploads in the album before. */
-  there: ReadonlySet<string>,
+  /** What the album has, which stays in it. */
+  there: Set<string>,
 ) {
   const { photo, digest, before } = job;
   const files = open.files.edit(photo);
@@ -168,6 +168,7 @@ const send = Effect.fn('send')(function* (
         : Effect.ignore(removeFromAlbum(album, [asset])),
     ),
   );
+  there.add(asset);
   const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
   return {
     photo,
@@ -320,13 +321,13 @@ const publishNow = Effect.fn('publish')(function* (
   const target = yield* targetOf(open, before, chosenAlbum, albums);
   const { published, there } = yield* albumNow(open, before, target);
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
-  const uploads = new Set(there?.photos.map(({ asset }) => asset));
   const ready = yield* jobs(open, names, target, published);
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
   const album = yield* destinationOf(target, makesAlbum);
+  const uploads = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
   let publication = publicationFor(before, album, albums);

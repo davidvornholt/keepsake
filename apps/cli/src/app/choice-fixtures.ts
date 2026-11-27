@@ -74,3 +74,23 @@ export const pauseUploadOf = (photo: string) => {
   };
   return { reached: reached.promise, resume: () => resumed.resolve() };
 };
+
+/**
+ * Lets Immich take a photo's finished file and then not the camera's own,
+ * and calls `meanwhile` as it is asked for that.
+ */
+export const failCameraUploadOf = (
+  photo: string,
+  meanwhile: () => void = () => undefined,
+) => {
+  const camera = `/${photo}/${photo}.jpg`;
+  fakeTools.pause = ({ args }) => {
+    if (args[0] === 'upload' && args[1]?.endsWith(camera)) {
+      fakeTools.broken.add(camera);
+      meanwhile();
+    }
+  };
+  fakeTools.late = () => {
+    fakeTools.broken.delete(camera);
+  };
+};
