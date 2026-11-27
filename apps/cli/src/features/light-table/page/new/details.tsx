@@ -297,8 +297,9 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
         What is the album called?
       </label>
       <p className="mt-2 max-w-[36rem] text-quiet" id={`${titleId}-more`}>
-        The place or the event the photos show. Leave out the date and the
-        country, since Immich shows them.
+        The place or the event the photos show, by its common English name where
+        it has one, such as Vienna for Wien. Leave out the date and the country,
+        since Immich shows them.
       </p>
       <input
         ref={titleRef}

@@ -79,9 +79,13 @@ test('finds the folder a new album is made of', async ({ page }) => {
   await page.getByRole('searchbox', { name: 'Search folders' }).fill('tav');
   await expect(folders.getByRole('link')).toHaveCount(1);
   await folders.getByRole('link', { name: tavira }).click();
-  await expect(
-    page.getByRole('textbox', { name: 'What is the album called?' }),
-  ).toBeFocused();
+  const named = page.getByRole('textbox', {
+    name: 'What is the album called?',
+  });
+  await expect(named).toBeFocused();
+  await expect(named).toHaveAccessibleDescription(
+    /its common English name where it has one, such as Vienna for Wien/u,
+  );
   await expect(page.getByText('09:00 on 18 October')).toBeVisible();
   await scan(page);
 });
