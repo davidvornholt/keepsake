@@ -244,11 +244,27 @@ describe('the page, before an album is made', () => {
           name: 'Lisbon',
           first: '2025-04-01',
           last: '2025-04-03',
-          sharedBy: null,
+          whose: 'own',
         },
-        { name: 'Porto', first: null, last: null, sharedBy: null },
-        { name: 'Porto', first: null, last: null, sharedBy: 'Friend' },
+        { name: 'Porto', first: null, last: null, whose: 'own' },
+        {
+          name: 'Porto',
+          first: null,
+          last: null,
+          whose: { sharedBy: 'Friend' },
+        },
       ],
+    });
+  });
+
+  it('says whose albums photos can’t tell', async () => {
+    fakeTools.user = null;
+    fakeTools.albums = [{ id: 'spring', name: 'Lisbon', assets: [] }];
+    const listed = await whileServing(async (address) =>
+      (await fetch(`${address}/api/albums`)).json(),
+    );
+    expect(listed).toEqual({
+      albums: [{ name: 'Lisbon', first: null, last: null, whose: 'unknown' }],
     });
   });
 });

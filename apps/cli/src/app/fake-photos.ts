@@ -31,6 +31,8 @@ export type FakeImmich = {
   readonly refused: ReadonlySet<string>;
   /** Assets moved to the trash, in the order they were. */
   readonly trashed: Array<string>;
+  /** The account `photos status` names, null when its key may not read it. */
+  readonly user: string | null;
 };
 
 const baseOf = (file: string) => file.slice(file.lastIndexOf('/') + 1);
@@ -44,12 +46,12 @@ const albumOf = (immich: FakeImmich, id: string) => {
 };
 
 /** The account the photos command is signed in to. */
-const user = 'Owner';
+export const account = 'Owner';
 
 const named = ({ id, name, owner, taken }: FakeAlbum) => ({
   id,
   name,
-  owner: owner ?? user,
+  owner: owner ?? account,
   firstTakenOn: taken?.first ?? null,
   lastTakenOn: taken?.last ?? null,
 });
@@ -208,7 +210,7 @@ export const answerPhotos = (
     case 'tags list':
       return [];
     case 'status undefined':
-      return { server: 'https://photos.example.com', user };
+      return { server: 'https://photos.example.com', user: immich.user };
     default:
       if (args[0] === 'update') {
         return markFavorite(immich, args);

@@ -1,7 +1,12 @@
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, Publication, Shoot } from '../../shared/domain.ts';
 import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
-import { isOwnAlbum, listAlbums, signedInUser } from '../../shared/immich.ts';
+import {
+  isOwnAlbum,
+  listAlbums,
+  type NamedAlbum,
+  signedInUser,
+} from '../../shared/immich.ts';
 import { checkTimeZone } from '../../shared/local-time.ts';
 import { exclusively } from '../../shared/lock.ts';
 import { nameFor } from '../../shared/shoot-names.ts';
@@ -63,6 +68,19 @@ const claim = <E, R>(
     return isMade ? name : yield* claim(wanted, [...taken, name], make);
   });
 
+/** Whose an album is, as `publish` tells it. */
+const whoseOf = (
+  album: NamedAlbum,
+  user: string | null,
+): AlbumList['albums'][number]['whose'] => {
+  const isOwn = isOwnAlbum(album, user);
+  const owner = album.owner ?? null;
+  if (isOwn === undefined || owner === null) {
+    return 'unknown';
+  }
+  return isOwn ? 'own' : { sharedBy: owner };
+};
+
 /** The albums in Immich, which a new album may join if they are the owner's. */
 export const existingAlbums = Effect.gen(function* () {
   const albums = yield* listAlbums;
@@ -72,9 +90,7 @@ export const existingAlbums = Effect.gen(function* () {
       name: album.name,
       first: album.firstTakenOn ?? null,
       last: album.lastTakenOn ?? null,
-      // As `publish` sees it: an album whose owner photos can't tell is theirs.
-      sharedBy:
-        isOwnAlbum(album, user) === false ? (album.owner ?? null) : null,
+      whose: whoseOf(album, user),
     })),
   } satisfies AlbumList;
 });

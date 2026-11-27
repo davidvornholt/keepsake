@@ -10,7 +10,7 @@ import {
 import { dirname } from 'node:path';
 import { Effect, Layer, PlatformError, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
-import { answerPhotos, type FakeAlbum } from './fake-photos.ts';
+import { account, answerPhotos, type FakeAlbum } from './fake-photos.ts';
 
 /** A program that was run. */
 export type Run = {
@@ -72,6 +72,8 @@ export const fakeTools = {
   refused: new Set<string>(),
   /** Assets moved to the trash, in the order they were. */
   trashed: [] as Array<string>,
+  /** The account `photos status` names, null when its key may not read it. */
+  user: account as string | null,
   /** RAW files whose pictures can't be read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
@@ -98,6 +100,7 @@ export const resetTools = () => {
   fakeTools.albums = [];
   fakeTools.refused = new Set();
   fakeTools.trashed = [];
+  fakeTools.user = account;
   fakeTools.broken = new Set();
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;

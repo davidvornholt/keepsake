@@ -5,9 +5,10 @@ import { sideButton } from '../ui/classes.ts';
 import { useLoaded } from './use-loaded.ts';
 
 // The first publish of a shoot joins the owner's one album in Immich that has
-// its title, and publishes nothing when several of theirs have it, so the
-// owner learns that while they still choose the name. Names are told apart
-// as keepsake does: without case or spaces at the ends.
+// its title, and publishes nothing when several of theirs have it, or one
+// whose owner photos can't tell, so the owner learns that while they still
+// choose the name. Names are told apart as keepsake does: without case or
+// spaces at the ends.
 
 type Album = AlbumList['albums'][number];
 
@@ -18,7 +19,11 @@ const whenOf = ({ first, last }: Album) =>
 
 /** What becomes of the photos in Immich, said under the name. */
 const said = (albums: ReadonlyArray<Album>) => {
-  const own = albums.filter(({ sharedBy }) => sharedBy === null);
+  const unknown = albums.find(({ whose }) => whose === 'unknown');
+  if (unknown !== undefined) {
+    return `Immich has an album called ${unknown.name}, with ${whenOf(unknown)}, and Keepsake can’t tell whether it is yours or one shared with you, so it won’t publish the photos. Give this album another name.`;
+  }
+  const own = albums.filter(({ whose }) => whose === 'own');
   const [first] = own;
   if (first !== undefined && own.length === 1) {
     return `Immich has an album called ${first.name} already, with ${whenOf(first)}. The photos join it when they are published.`;
@@ -27,9 +32,9 @@ const said = (albums: ReadonlyArray<Album>) => {
     return `Immich has ${count(own.length, 'album')} called ${first.name}, with ${own.map(whenOf).join('; ')}. Keepsake can’t tell which one the photos should join, so it won’t publish them. Give this album another name, or rename all but one of them in Immich.`;
   }
   const [shared] = albums;
-  return shared === undefined
+  return shared === undefined || typeof shared.whose !== 'object'
     ? ''
-    : `${shared.sharedBy} shared an album called ${shared.name} with you, with ${whenOf(shared)}. The photos go into a new album of your own instead.`;
+    : `${shared.whose.sharedBy} shared an album called ${shared.name} with you, with ${whenOf(shared)}. The photos go into a new album of your own instead.`;
 };
 
 export const Joining = ({
