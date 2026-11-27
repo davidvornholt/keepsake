@@ -2,6 +2,7 @@ import { Effect, FileSystem, Option, Schema } from 'effect';
 import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
 import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
+import { withPhoto } from '../../shared/lock.ts';
 import { askReviewer, ReviewVision } from '../../shared/review-vision.ts';
 import {
   atomically,
@@ -158,7 +159,7 @@ const changePlaces = Effect.fn('changePlaces')(function* (
   const caption = captionOf(job, description ?? job.description, true);
   yield* atomically(files.final, (draft) =>
     finish(file, job.camera, draft, caption),
-  );
+  ).pipe(withPhoto(job.open.files, job.photo.id));
   const record: EditRecord = {
     ...former,
     // Also where it was the camera's own picture before.
@@ -309,7 +310,7 @@ export const editPhoto = Effect.fn('editPhoto')(function* (
   }
   // What this command made before it stopped stays, since it cost money.
   if (!isResumed) {
-    yield* forget(files, options);
+    yield* forget(files, options).pipe(withPhoto(open.files, photo.id));
     yield* noted(null);
   }
   const job = jobFor(yield* wishIn(files.wish));

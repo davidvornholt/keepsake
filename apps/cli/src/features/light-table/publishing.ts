@@ -18,7 +18,7 @@ export class Publishing extends Context.Service<
     ) => Effect.Effect<void, Failure>;
     readonly publish: (
       open: OpenShoot,
-      photos: ReadonlyArray<string>,
+      photo: string,
     ) => Effect.Effect<void, Failure>;
     /**
      * Takes a photo just published back out of the album, and lets what

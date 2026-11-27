@@ -88,7 +88,7 @@ export const putIn = Effect.fn('putIn')(function* (
 ) {
   const hasAlbum = (yield* readPublication(open)) !== null;
   if (hasAlbum && (yield* isFinished(open, photo))) {
-    yield* (yield* Publishing).publish(open, [photo]);
+    yield* (yield* Publishing).publish(open, photo);
   }
   yield* bringBack(open, photo);
   yield* pickPhoto(open, known, photo);

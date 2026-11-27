@@ -16,7 +16,7 @@ import {
   tagPhoto,
   uploadPhoto,
 } from '../../shared/immich.ts';
-import { withAlbum, withChoice } from '../../shared/lock.ts';
+import { withAlbum, withChoice, withPhoto } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
 import {
@@ -381,16 +381,18 @@ export const publish = (
 ) => publishNow(open, names, chosenAlbum, true).pipe(withChoice(open.files));
 
 /**
- * Uploads the photos named to the album keepsake published to, if that is
- * still in Immich. Says whether it was: no album is made in its place.
+ * Uploads a photo to the album keepsake published to, if that is still in
+ * Immich. Says whether it was: no album is made in its place.
  */
-export const publishToAlbum = (open: OpenShoot, names: ReadonlyArray<string>) =>
+export const publishToAlbum = (open: OpenShoot, photo: string) =>
   Effect.gen(function* () {
     const albums = yield* listAlbums;
     const before = yield* knownPublication(open, albums);
     if (!albums.some(({ id }) => id === before?.albumId)) {
       return false;
     }
-    yield* publishNow(open, names, Option.none(), false);
+    yield* publishNow(open, [photo], Option.none(), false).pipe(
+      withPhoto(open.files, photo),
+    );
     return true;
   }).pipe(withChoice(open.files));

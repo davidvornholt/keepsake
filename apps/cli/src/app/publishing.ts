@@ -31,7 +31,7 @@ export const publishingLayer = Layer.effect(
     return Publishing.of({
       takeOut: (open, photos, because) =>
         plainly(takeOut(open, photos, because)),
-      publish: (open, photos) => plainly(publishToAlbum(open, photos)),
+      publish: (open, photo) => plainly(publishToAlbum(open, photo)),
       unpublish: (open, photo, before) =>
         plainly(unpublish(open, photo, before)),
     });

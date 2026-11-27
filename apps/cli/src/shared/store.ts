@@ -185,6 +185,12 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
      * the owner can change the choice while photos are edited.
      */
     choiceLock: path.join(locks, `${name}.choice`),
+    /**
+     * Held while a photo's finished file changes, by `edit`, and while the
+     * page publishes it, so what is published is what was hashed.
+     */
+    photoLock: (photo: string) =>
+      path.join(locks, `${name}.photo-${editFolderName(photo)}`),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** The agent that waits for marks, and the one the page started last. */

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BunServices } from '@effect/platform-bun';
@@ -55,6 +57,40 @@ describe('a photo put in while publish tells of replaced uploads', () => {
     expect(
       publication.photos.map(({ photo }: { photo: string }) => photo),
     ).toContain('A2');
+  });
+});
+
+/** Which file a path is, which a file written in its place isn't. */
+const fileAt = (path: string) => (existsSync(path) ? statSync(path).ino : null);
+
+/** How long an edit that isn't held up takes to begin on a photo. */
+const whileEditBegins = 1500;
+
+describe('a photo the page publishes while it is edited again', () => {
+  it('is published as it was hashed, and edited after', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const final = shootFile('edits', 'A2', 'A2-keepsake.jpg');
+    const upload = pauseUploadOf('A2');
+    const [hashed, during] = await whileServing(async (address) => {
+      const choosing = choose(address, { photo: 'A2', wants: 'in' });
+      await upload.reached;
+      const before = { file: fileAt(final), bytes: readFileSync(final) };
+      const editing = editLisbon('A2', '--again');
+      await Promise.race([editing, Bun.sleep(whileEditBegins)]);
+      const meanwhile = fileAt(final);
+      upload.resume();
+      await choosing;
+      await editing;
+      await settled(address);
+      return [before, meanwhile];
+    });
+    expect(during).toBe(hashed.file);
+    const publication = await shootJson('publication.json');
+    expect(
+      publication.photos.find(({ photo }: { photo: string }) => photo === 'A2')
+        ?.digest,
+    ).toBe(createHash('sha256').update(hashed.bytes).digest('hex'));
   });
 });
 

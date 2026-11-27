@@ -230,3 +230,17 @@ export const withChoice =
 /** The same, or none when such work is going on now. */
 export const withChoiceIfFree = (files: ShootFiles) =>
   holding(files.choiceLock);
+
+/**
+ * Runs work that changes a photo's finished file, or publishes it, after
+ * other such work on that photo. Work on other photos goes on meanwhile.
+ */
+export const withPhoto =
+  (files: ShootFiles, photo: string) =>
+  <A, E, R>(work: Effect.Effect<A, E, R>) =>
+    waitingFor(
+      files.photoLock(photo),
+      choicePause,
+      choiceTries,
+      `the photo ${photo}`,
+    )(work);
