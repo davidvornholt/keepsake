@@ -3,6 +3,7 @@ import { readActivity } from '../../shared/activity.ts';
 import type { Photo, Verdict } from '../../shared/domain.ts';
 import { judgeOf } from '../../shared/judge.ts';
 import { takenThere } from '../../shared/local-time.ts';
+import { isHeld } from '../../shared/lock.ts';
 import { holdForOneEdit } from '../../shared/models.ts';
 import { readRatings, readToRate } from '../../shared/ratings.ts';
 import {
@@ -143,15 +144,22 @@ const photoViews = Effect.fn('photoViews')(function* (
   );
 });
 
+/** What the server itself does with a shoot now. */
+export type Doing = {
+  /** Whether it carries out what was handed over. */
+  readonly isWorking: boolean;
+  /** Whether it does what the owner chose, which holds the choice meanwhile. */
+  readonly isSettling: boolean;
+};
+
 /** Everything the page shows of a shoot. */
 export const shootView = Effect.fn('shootView')(function* (
   gallery: Gallery,
-  isWorking: boolean,
+  doing: Doing,
 ) {
   const { open } = gallery;
   const { files, shoot } = open;
   const model = yield* modelOf(open);
-  const revision = yield* revisionOf(open, model);
   const known = yield* standings(open, model);
   const { album, picks } = known;
   const spending = yield* readJson(SpendingRecord, files.spending);
@@ -165,7 +173,7 @@ export const shootView = Effect.fn('shootView')(function* (
     name: shoot.name,
     title: shoot.title,
     about: shoot.about,
-    revision,
+    ...(yield* changedSince(open, doing)),
     album:
       album === null
         ? null
@@ -187,13 +195,6 @@ export const shootView = Effect.fn('shootView')(function* (
     stacks: stacksOf(photos),
     marks: yield* readMarks(files),
     choices: yield* choicesOf(files),
-    activity: yield* readActivity(files),
-    preparation: yield* readPreparation(files),
-    carrying: yield* carryingOf(
-      files,
-      yield* roughlyUnsettled(files),
-      isWorking,
-    ),
     added: yield* readAdded(files),
     ordered:
       order === null
@@ -206,7 +207,7 @@ export const shootView = Effect.fn('shootView')(function* (
 /** What may have changed since the page was given a shoot. */
 export const changedSince = Effect.fn('changedSince')(function* (
   open: OpenShoot,
-  isWorking: boolean,
+  { isWorking, isSettling }: Doing,
 ) {
   const { files } = open;
   return {
@@ -218,6 +219,9 @@ export const changedSince = Effect.fn('changedSince')(function* (
       yield* roughlyUnsettled(files),
       isWorking,
     ),
+    // The server holds the choice only while it does what was chosen, and
+    // a choice made meanwhile is done right after.
+    isChoiceBusy: !isSettling && (yield* isHeld(files.choiceLock)),
   } satisfies Changed;
 });
 

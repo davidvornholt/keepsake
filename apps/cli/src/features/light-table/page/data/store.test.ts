@@ -220,10 +220,8 @@ describe('undoing a choice that is on its way', () => {
   });
 
   it('knows a cancelled choice that was still on its way once the cancellation is undone', async () => {
-    const working = {
-      ...shootWith(),
-      activity: { step: 'Editing', done: 0, total: 1, photos: ['z'] },
-    };
+    // Another command changes the choice, so it waits.
+    const working = { ...shootWith(), isChoiceBusy: true };
     const store = await hearted(working);
     const choosing = store.choose(takeOut);
     const shown = store.get().index?.shoot.choices.at(0)?.action ?? null;

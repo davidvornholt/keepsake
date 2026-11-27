@@ -50,6 +50,14 @@ const quietOnce = (isQuiet = false) => {
   return { promise, settle };
 };
 
+/** What goes on in the shoot now, as keepsake said. */
+const goingOnIn = ({
+  activity,
+  preparation,
+  carrying,
+  isChoiceBusy,
+}: ShootView) => ({ activity, preparation, carrying, isChoiceBusy });
+
 export const makeCore = (name: string) => {
   const held = makeHeld();
   const { set, get } = held;
@@ -80,7 +88,6 @@ export const makeCore = (name: string) => {
     if (inFlight > 0) {
       return;
     }
-    const { activity, preparation, carrying } = shoot;
     const { problem } = get();
     known = shoot;
     isAhead = false;
@@ -88,9 +95,7 @@ export const makeCore = (name: string) => {
     set({
       status: 'ready',
       index: indexOf(shoot),
-      activity,
-      preparation,
-      carrying,
+      ...goingOnIn(shoot),
       // It answers again, so the notice that it doesn't has had its day,
       // unless a change was lost meanwhile.
       problem: problem === unreachable ? lost : problem,

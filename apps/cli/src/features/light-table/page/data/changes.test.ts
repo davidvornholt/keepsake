@@ -4,6 +4,7 @@ import { actionFor } from '../marks/act.ts';
 import {
   draftOf,
   isDraft,
+  isHeldBack,
   replacedBy,
   tidyLabels,
   wantedOf,
@@ -51,16 +52,46 @@ const chosen = samplePhoto('a', { standing: { kind: 'picked' } });
 const behind = sampleBehind('b', 'a');
 const further = sampleBehind('c', 'a');
 const because = 'You chose b instead.';
-const working = { now, action: 'draft-choice-1', isWorking: true };
-const idle = { now, action: 'draft-choice-1', isWorking: false };
+const working = { now, action: 'draft-choice-1', waits: true };
+const idle = { now, action: 'draft-choice-1', waits: false };
 const swap = { photo: 'b', wants: 'in', because, instead: 'a' } as const;
 const putIn = (photo: string) =>
   ({ photo, wants: 'in', because: null, instead: null }) as const;
 const takeOut = (photo: string, why: string | null = null) =>
   ({ photo, wants: 'out', because: why, instead: null }) as const;
 
+describe('isHeldBack', () => {
+  const finished = samplePhoto('d', {
+    standing: { kind: 'left-out', because: null },
+    edit: sampleEdit('d'),
+  });
+  const shoot = sampleShoot([chosen, behind, finished]);
+  const free = { isChoiceBusy: false, activity: null };
+  const editing = (...photos: ReadonlyArray<string>) => ({
+    isChoiceBusy: false,
+    activity: { photos },
+  });
+
+  it('holds back any choice while a command changes the choice', () => {
+    const busy = { isChoiceBusy: true, activity: null };
+    expect(isHeldBack(shoot, takeOut('a'), busy)).toBe(true);
+    expect(isHeldBack(shoot, swap, busy)).toBe(true);
+  });
+
+  it('holds back a finished photo that comes in while it is edited', () => {
+    expect(isHeldBack(shoot, putIn('d'), editing('d'))).toBe(true);
+    expect(isHeldBack(shoot, putIn('d'), free)).toBe(false);
+  });
+
+  it('doesn’t hold back what an edit of other photos leaves alone', () => {
+    expect(isHeldBack(shoot, takeOut('a'), editing('a', 'd'))).toBe(false);
+    expect(isHeldBack(shoot, putIn('d'), editing('a'))).toBe(false);
+    expect(isHeldBack(shoot, swap, editing('b'))).toBe(false);
+  });
+});
+
 describe('withChoice', () => {
-  it('waits while a command works, as one with what it replaces', () => {
+  it('waits when keepsake makes it wait, as one with what it replaces', () => {
     const shoot = sampleShoot([chosen, behind]);
     const { choices, photos } = withChoice(shoot, swap, working);
     expect(choices).toMatchObject([

@@ -12,7 +12,7 @@ import {
   saveLooks,
   warmUp,
 } from './pictures.ts';
-import { changedSince, shootInShort, shootView } from './view.ts';
+import { changedSince, type Doing, shootInShort, shootView } from './view.ts';
 
 /** How long an answer about what changed is taken as current. */
 const currentFor = 900;
@@ -64,8 +64,8 @@ const makeWarming = () => {
   });
 };
 
-/** Whether the server works on what was handed over of a shoot now. */
-type IsWorking = (name: string) => boolean;
+/** What the server itself does with a shoot now. */
+type DoingOf = (name: string) => Doing;
 
 /**
  * The view of a shoot. What a command or the server is doing changes without
@@ -73,7 +73,7 @@ type IsWorking = (name: string) => boolean;
  * every time.
  */
 const makeView = (
-  isWorking: IsWorking,
+  doingOf: DoingOf,
   views: Map<string, View>,
   warmOnce: ReturnType<typeof makeWarming>,
 ) => {
@@ -85,7 +85,7 @@ const makeView = (
     if (known?.revision === revision) {
       return known.made;
     }
-    const made = yield* shootView(gallery, isWorking(gallery.open.shoot.name));
+    const made = yield* shootView(gallery, doingOf(gallery.open.shoot.name));
     yield* saveLooks(gallery);
     yield* warmOnce(gallery);
     return made;
@@ -95,7 +95,7 @@ const makeView = (
     const { name } = gallery.open.shoot;
     const { revision, ...now } = yield* changedSince(
       gallery.open,
-      isWorking(name),
+      doingOf(name),
     );
     const live = JSON.stringify(now);
     const known = views.get(name);
@@ -150,7 +150,7 @@ const readable = Effect.gen(function* () {
 
 /** The shoots as the server has them, so it needn't read them every time. */
 export const makeShoots = Effect.fn('makeShoots')(function* (
-  isWorking: IsWorking,
+  doingOf: DoingOf,
   workers: Semaphore.Semaphore,
 ) {
   const galleries = new Map<string, Gallery>();
@@ -179,7 +179,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     }
     const open = yield* openShoot(name);
     yield* refreshAlbum(open);
-    const current = yield* changedSince(open, isWorking(name));
+    const current = yield* changedSince(open, doingOf(name));
     changes.set(name, { at: now, changed: current });
     return current;
   });
@@ -193,7 +193,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
           const gallery = yield* galleryOf(name);
           const inShort = yield* shootInShort(
             { ...gallery, workers: forCovers },
-            isWorking(name),
+            doingOf(name).isWorking,
           );
           yield* saveLooks(gallery);
           return [inShort];
@@ -213,7 +213,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     };
   });
 
-  const viewOf = makeView(isWorking, views, warmOnce);
+  const viewOf = makeView(doingOf, views, warmOnce);
   const view = (name: string) => Effect.flatMap(galleryOf(name), viewOf);
 
   return {

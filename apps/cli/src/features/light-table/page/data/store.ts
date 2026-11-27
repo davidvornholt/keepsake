@@ -273,13 +273,8 @@ const answering = (core: Core) => ({
 
 const listening = (core: Core) => {
   let stop: (() => void) | null = null;
-  const onChanged = ({
-    revision,
-    activity,
-    preparation,
-    carrying,
-  }: Changed) => {
-    core.set({ activity, preparation, carrying });
+  const onChanged = ({ revision, ...now }: Changed) => {
+    core.set(now);
     if (!core.isBusy() && revision !== core.get().index?.shoot.revision) {
       core.load();
     }

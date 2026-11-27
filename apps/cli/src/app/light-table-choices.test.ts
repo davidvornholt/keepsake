@@ -224,15 +224,27 @@ describe('putting a photo in on the page', () => {
   });
 });
 
-describe('a choice while a command works on the shoot', () => {
-  const patiently = 600;
+/** How many times to look for a choice that waited to be done. */
+const patiently = 600;
 
+describe('a choice while a command works on the shoot', () => {
   it('isn’t held up by an edit of other photos', async () => {
     await publishLisbon();
     await whileHeld(() =>
       serving((address) => choose(address, { photo: 'B', wants: 'out' })),
     );
     expect(inImmich()).toEqual(['A1', 'C']);
+  });
+
+  it('tells the page while another command changes the choice', async () => {
+    await publishLisbon();
+    const busy = await serving(async (address) => {
+      const isBusy = async () => (await shootOf(address)).isChoiceBusy;
+      const before = await isBusy();
+      const during = await whileHeld(isBusy, 'lisbon', withChoice);
+      return [before, during, await isBusy()];
+    });
+    expect(busy).toEqual([false, true, false]);
   });
 
   it('is on its way while the choice changes, and done after', async () => {
@@ -282,7 +294,9 @@ describe('a choice while a command works on the shoot', () => {
     expect([forgot, after]).toEqual([400, []]);
     expect(inImmich()).toEqual(['A1', 'C']);
   });
+});
 
+describe('a choice that waited', () => {
   it('goes on as a whole when its cancellation is undone', async () => {
     await publishLisbon();
     await editLisbon('A2');

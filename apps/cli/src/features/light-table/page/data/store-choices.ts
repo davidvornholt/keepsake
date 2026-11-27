@@ -1,6 +1,6 @@
 import type { NewChoice } from '../../contract.ts';
 import { sendChoice } from './api.ts';
-import { draftPrefix, withChoice } from './changes.ts';
+import { draftPrefix, isHeldBack, withChoice } from './changes.ts';
 import type { Core } from './store-core.ts';
 import type { Choosing, Undo } from './store-state.ts';
 
@@ -38,7 +38,7 @@ export const choosing = (core: Core) => {
         withChoice(shoot, wanted, {
           now: new Date().toISOString(),
           action: draft,
-          isWorking: core.get().activity !== null,
+          waits: isHeldBack(shoot, wanted, core.get()),
         }),
       );
     }

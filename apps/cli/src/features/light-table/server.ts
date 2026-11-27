@@ -240,10 +240,16 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   // One change at a time, since some read a file and write it again.
   const writing = yield* Semaphore.make(1);
   const runner = yield* makeRunner(keepsake, writing);
-  const shoots = yield* makeShoots(runner.isWorking, workers);
+  const settling = yield* makeSettling(writing);
+  const shoots = yield* makeShoots(
+    (name) => ({
+      isWorking: runner.isWorking(name),
+      isSettling: settling.isSettling(name),
+    }),
+    workers,
+  );
   const preparations = yield* makePreparations(keepsake);
   const folders = yield* makeFolders(photos);
-  const settling = yield* makeSettling(writing);
   const hidden = `/${crypto.randomUUID()}`;
   const routes = yield* routesOf(
     { shoots, folders, preparations, settling, workers, runner },

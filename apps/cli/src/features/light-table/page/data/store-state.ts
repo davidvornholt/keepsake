@@ -20,6 +20,8 @@ export type ShootState = {
   readonly preparation: Preparation | null;
   /** How what was handed over is carried out, as keepsake last said. */
   readonly carrying: CarryingOut;
+  /** Whether a command changes the choice now, as keepsake last said. */
+  readonly isChoiceBusy: boolean;
   readonly isConnected: boolean;
   /** What went wrong last, until it is dismissed. */
   readonly problem: string | null;
@@ -87,6 +89,7 @@ const initial: ShootState = {
   activity: null,
   preparation: null,
   carrying: { since: null, stopped: null },
+  isChoiceBusy: false,
   isConnected: true,
   problem: null,
   hint: null,

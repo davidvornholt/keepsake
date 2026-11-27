@@ -1,4 +1,5 @@
 import type {
+  Activity,
   CarryingOut,
   Choice,
   Mark,
@@ -171,10 +172,31 @@ const withDone = (
 };
 
 /**
+ * Whether keepsake makes a choice wait, as it does while a command changes
+ * the choice or the album, and while the finished photo that comes in is
+ * edited, so that the album gets the edit.
+ */
+export const isHeldBack = (
+  shoot: ShootView,
+  { photo, wants }: NewChoice,
+  {
+    isChoiceBusy,
+    activity,
+  }: {
+    readonly isChoiceBusy: boolean;
+    readonly activity: Pick<Activity, 'photos'> | null;
+  },
+): boolean =>
+  isChoiceBusy ||
+  (wants === 'in' &&
+    (activity?.photos.includes(photo) ?? false) &&
+    shoot.photos.some((one) => one.id === photo && one.edit !== null));
+
+/**
  * What the owner chose, in the place of what they chose for those photos
- * before. Keepsake does it at once unless a command works on the shoot, so
- * the page shows it done; while one works, it shows it waiting until
- * keepsake has done it, and what is so already waits for nothing.
+ * before. Keepsake does it at once unless it `waits`, so the page shows it
+ * done; when it waits, the page shows it waiting until keepsake has done
+ * it, and what is so already waits for nothing.
  */
 export const withChoice = (
   shoot: ShootView,
@@ -182,12 +204,12 @@ export const withChoice = (
   {
     now,
     action,
-    isWorking,
+    waits,
   }: {
     readonly now: string;
     /** What the page notes it under until keepsake gives it an action. */
     readonly action: string;
-    readonly isWorking: boolean;
+    readonly waits: boolean;
   },
 ): ShootView => {
   const part = (one: string, wanted: Choice['wants']): Choice => ({
@@ -208,7 +230,7 @@ export const withChoice = (
       .map((one) => one.action),
   );
   const others = shoot.choices.filter((one) => !replaced.has(one.action));
-  if (!isWorking) {
+  if (!waits) {
     return withDone({ ...shoot, choices: others }, parts, now);
   }
   const isInNow = (one: string) =>
