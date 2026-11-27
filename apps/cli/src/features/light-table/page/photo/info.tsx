@@ -123,6 +123,9 @@ const Edited = ({
               </li>
             ))}
           </ul>
+          <p className="mt-1.5 text-quiet">
+            To have any of it back, mark the photo to change and say what.
+          </p>
         </Part>
       )}
       {edit.review === '' ? null : (

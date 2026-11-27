@@ -1,6 +1,12 @@
 import { Effect } from 'effect';
-import { around, coverage, wholePicture } from '../../shared/boxes.ts';
-import type { Box, Outline, Person, Sign } from '../../shared/domain.ts';
+import { around, wholePicture } from '../../shared/boxes.ts';
+import type {
+  Box,
+  Outline,
+  Person,
+  Removal,
+  Sign,
+} from '../../shared/domain.ts';
 import {
   frameOf,
   type Raster,
@@ -8,6 +14,7 @@ import {
   sizeOf,
   writeRaster,
 } from '../../shared/pictures.ts';
+import { isOnFace } from '../../shared/removed.ts';
 import { edgesBeyond, isCompleted } from './beyond.ts';
 import { within } from './geometry.ts';
 import { keepPatch } from './patches/keep-patch.ts';
@@ -58,21 +65,6 @@ const boundsOf = ({ face, outline }: Person): Box =>
     ...outline.map(({ x, y }) => ({ left: x, top: y, right: x, bottom: y })),
   ]);
 
-const half = 0.5;
-
-/**
- * Whether most of what is to be removed is on someone's face. It stays then,
- * since a face always comes back as the photo shows it.
- */
-export const isOnFace = (people: ReadonlyArray<Person>, box: Box): boolean =>
-  people.some(({ face }) => {
-    const width =
-      Math.min(box.right, face.right) - Math.max(box.left, face.left);
-    const height =
-      Math.min(box.bottom, face.bottom) - Math.max(box.top, face.top);
-    return width > 0 && height > 0 && width * height > half * coverage(box);
-  });
-
 /** Why something on a face isn't removed. */
 export const keptOnFace =
   'It is on someone’s face, which keepsake keeps as the photo shows it';
@@ -85,6 +77,16 @@ export const removalsOnFaces = (
   removed.filter((_, index) => {
     const box = gone[index];
     return box !== undefined && isOnFace(people, box);
+  });
+
+/** What is removed indeed, as nothing on a face is, where the photo shows it. */
+export const carriedOut = (
+  { people, gone }: Pick<Originals, 'people' | 'gone'>,
+  removed: ReadonlyArray<string>,
+): ReadonlyArray<Removal> =>
+  removed.flatMap((what, index) => {
+    const box = gone[index];
+    return box === undefined || isOnFace(people, box) ? [] : [{ what, box }];
   });
 
 /** The texts and logos on a person. */
@@ -232,6 +234,48 @@ export const putBack = (
     }
   });
 };
+
+/**
+ * Where an edit shows what was removed from the photo, in fractions of the
+ * edit, as `putBack` finds it.
+ */
+export const removedIn = (
+  original: Raster,
+  edit: Raster,
+  {
+    crop,
+    removals,
+  }: {
+    /** What the edit shows of the photo. */
+    readonly crop: Box;
+    readonly removals: ReadonlyArray<Removal>;
+  },
+): ReadonlyArray<Removal> => {
+  const photo = frameOf(within(wholePicture, crop), original);
+  const placement = findPlacement(original, edit, photo);
+  return placement === null
+    ? removals
+    : removals.map(({ what, box }) => ({
+        what,
+        box: placedBox(box, placement, original),
+      }));
+};
+
+/** The same, from the files of the photo and of the edit. */
+export const removedFrom = Effect.fn('removedFrom')(function* (
+  files: { readonly original: string; readonly edit: string },
+  about: { readonly crop: Box; readonly removals: ReadonlyArray<Removal> },
+) {
+  if (about.removals.length === 0) {
+    return [];
+  }
+  const size = yield* sizeOf(files.original);
+  return removedIn(
+    yield* rasterOf(files.original, size),
+    yield* rasterOf(files.edit, size),
+    about,
+  );
+});
 
 /**
  * Writes a version of a photo in which the people and signs are the photo's

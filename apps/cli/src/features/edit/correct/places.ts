@@ -6,9 +6,10 @@ import {
   tidyBox,
   wholePicture,
 } from '../../../shared/boxes.ts';
-import { Box } from '../../../shared/domain.ts';
+import { Box, type Removal } from '../../../shared/domain.ts';
 import { Vision } from '../../../shared/vision.ts';
 import { inParts, inPhoto } from '../parts.ts';
+import { listed } from '../removals.ts';
 
 /** More places than this are hardly a change to single ones. */
 const mostPlaces = 12;
@@ -24,6 +25,9 @@ const Found = Schema.Struct({
   everywhere: Schema.Boolean.annotate({
     description:
       'True when the photo as a whole has to change, such as its light, its colours, its sharpness or its framing',
+  }),
+  bringsBack: Schema.Boolean.annotate({
+    description: 'True when they want back something the edit took out',
   }),
   places: Schema.Array(
     Schema.Struct({
@@ -63,10 +67,27 @@ const aboutMarked = (marked: number): string =>
     ? ''
     : ` They marked where: ${marked === 1 ? 'the last part shows what is' : `the last ${marked} parts show what is`} in their ${marked === 1 ? 'mark' : 'marks'}, with a little around it. They mean what is there, even where their words alone could mean something else, and drew the marks roughly.`;
 
-const question = (wish: string, marked: number) =>
+/**
+ * What the edit took out, which only an edit of the camera's picture can bring
+ * back as it was.
+ */
+const aboutTakenOut = (removed: ReadonlyArray<string>): string =>
+  removed.length === 0
+    ? ''
+    : `
+
+The edit took the following out of the photo, so it no longer shows them:
+${listed(removed)}
+When they want any of it back, say that it brings something back and list no places.`;
+
+const question = (
+  wish: string,
+  marked: number,
+  removed: ReadonlyArray<string>,
+) =>
   `Whoever took this photo wants this to be changed: “${wish}”${aboutMarked(marked)}
 
-When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.`;
+When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.${aboutTakenOut(removed)}`;
 
 /** A place in a photo and what has to be done there. */
 export const Place = Schema.Struct({
@@ -80,6 +101,14 @@ export const Change = Schema.Struct({
   /** Whether the photo as a whole has to change. */
   everywhere: Schema.Boolean,
   places: Schema.Array(Place),
+  /**
+   * Whether something the edit took out is to come back. Only the camera's
+   * picture still shows it, so all of the photo changes, also where marks keep
+   * other changes to them.
+   */
+  bringsBack: Schema.Boolean.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
+  ),
 });
 
 const areClose = (left: Box, right: Box): boolean =>
@@ -148,6 +177,17 @@ const inMarks = (
     return distinct.map((box) => ({ ...place, box }));
   });
 
+/** What of what was removed lies in the marks, with the little around each. */
+export const markedRemovals = (
+  removed: ReadonlyArray<Removal>,
+  areas: ReadonlyArray<Box>,
+): ReadonlyArray<string> =>
+  removed
+    .filter(({ box }) =>
+      markedAreas(areas).some((mark) => insideOf(box, mark).length > 0),
+    )
+    .map(({ what }) => what);
+
 /** What may change of a photo: the marks, with a little around each. */
 export const markedAreas = (areas: ReadonlyArray<Box>): ReadonlyArray<Box> =>
   areas.map(withMargin);
@@ -160,15 +200,21 @@ export const inMarked = (
   change: typeof Change.Type,
   areas: ReadonlyArray<Box>,
 ): typeof Change.Type =>
-  areas.length === 0
+  areas.length === 0 || change.bringsBack
     ? change
-    : { everywhere: false, places: inMarks(change.places, markedAreas(areas)) };
+    : {
+        everywhere: false,
+        places: inMarks(change.places, markedAreas(areas)),
+        bringsBack: false,
+      };
 
 /** Finds where a finished photo has to change for what the user wants. */
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
   wish: string,
   areas: ReadonlyArray<Box>,
+  /** What the edit took out. */
+  removed: ReadonlyArray<string>,
 ) {
   const vision = yield* Vision;
   const { parts, pieces } = yield* inParts(file, markedAreas(areas));
@@ -176,7 +222,7 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
     role,
     name: 'places',
     schema: Found,
-    pieces: [...pieces, question(wish, areas.length)],
+    pieces: [...pieces, question(wish, areas.length, removed)],
   });
   const places = apart(
     answer.places.flatMap(({ part, what, isRemoval, box }) => {
@@ -187,12 +233,15 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
+  if (answer.bringsBack) {
+    return { everywhere: true, places: [], bringsBack: true };
+  }
   // Kept to the marks once they are read, also where they were found before.
   if (areas.length > 0) {
-    return { everywhere: false, places };
+    return { everywhere: false, places, bringsBack: false };
   }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage
-    ? { everywhere: true, places: [] }
-    : { everywhere: false, places };
+    ? { everywhere: true, places: [], bringsBack: false }
+    : { everywhere: false, places, bringsBack: false };
 });
