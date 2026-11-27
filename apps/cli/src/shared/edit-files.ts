@@ -11,6 +11,8 @@ export const editFiles = (
   camera: path.join(directory, `${base}.jpg`),
   /** What the photo shows, if another model judged it. */
   description: path.join(directory, 'description.json'),
+  /** What the finished photo shows, where that isn't what was edited. */
+  shown: path.join(directory, 'shown.json'),
   crop: path.join(directory, 'crop.json'),
   /**
    * The cropped photo the image model gets. Unlike the camera's picture it

@@ -1,4 +1,5 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
+import { wholePicture } from '../../shared/boxes.ts';
 import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
 import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
@@ -15,7 +16,6 @@ import {
 import { wishIn, writeWish } from '../../shared/wishes.ts';
 import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
-
 import { type CorrectionFiles, correct } from './correct/correct.ts';
 import {
   Change,
@@ -24,6 +24,7 @@ import {
   markedRemovals,
   type Place,
 } from './correct/places.ts';
+import { descriptionOf } from './describe.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
@@ -163,7 +164,20 @@ const changePlaces = Effect.fn('changePlaces')(function* (
   if (file === null) {
     return { record: former, notDone } satisfies Edited;
   }
-  const caption = captionOf(job, description ?? job.description, true);
+  // What was described before is right only when everything was removed.
+  const isAsDescribed =
+    left.length === 0 && places.every(({ isRemoval }) => isRemoval);
+  const shown = isAsDescribed
+    ? (description ?? job.description)
+    : yield* askReviewer(
+        descriptionOf(
+          job.open.shoot,
+          { input: file, description: files.shown },
+          wholePicture,
+          [],
+        ),
+      );
+  const caption = captionOf(job, shown, true);
   yield* atomically(files.final, (draft) =>
     finish(file, job.camera, draft, caption),
   ).pipe(withPhoto(job.open.files, job.photo.id));

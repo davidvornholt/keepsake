@@ -20,7 +20,7 @@ const role =
  */
 export const descriptionOf = Effect.fn('descriptionOf')(function* (
   shoot: Shoot,
-  files: EditFiles,
+  files: Pick<EditFiles, 'description' | 'input'>,
   frame: Box,
   removed: ReadonlyArray<string>,
 ) {
