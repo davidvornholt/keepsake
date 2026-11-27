@@ -36,9 +36,15 @@ const forever = 'private, max-age=31536000, immutable';
 const nothing = () => new Response(null, { status: noContent });
 
 /** What the page sent. */
-const sent = <S extends Schema.Constraint>(schema: S, request: Request) =>
+const sent = <S extends Schema.Constraint>(
+  schema: S,
+  request: Request,
+  onExcessProperty: 'ignore' | 'error' = 'ignore',
+) =>
   Effect.tryPromise(() => request.json()).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+    Effect.flatMap((body) =>
+      Schema.decodeUnknownEffect(schema)(body, { onExcessProperty }),
+    ),
     Effect.mapError(
       () =>
         new InvalidInput({ message: 'The page sent something unexpected.' }),
@@ -243,7 +249,9 @@ export const makeAnswers = (has: Has) => ({
     pictureAnswer(has.shoots, named, request),
   mark: (name: string, request: Request) =>
     Effect.gen(function* () {
-      const wanted = yield* sent(NewMark, request);
+      // A page from before marks lost their kind would make a change of a
+      // take-out.
+      const wanted = yield* sent(NewMark, request, 'error');
       return Response.json(yield* makeMark(yield* openShoot(name), wanted));
     }),
   takeBack: (name: string, mark: string) =>

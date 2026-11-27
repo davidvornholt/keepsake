@@ -1,4 +1,4 @@
-import { DateTime, Effect, FileSystem, Option } from 'effect';
+import { DateTime, Effect, FileSystem, Option, Schema } from 'effect';
 import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
 import {
   type OpenShoot,
@@ -22,6 +22,18 @@ const storeFailed = (error: { readonly message: string }) =>
   new StoreFailed({ message: `Could not use the marks: ${error.message}` });
 
 /**
+ * A mark as it may be saved: marks had a kind once, and those of the kinds
+ * that are done on the page now are no longer for an agent.
+ */
+const StoredMark = Schema.Struct({
+  ...SavedMark.fields,
+  kind: Schema.optionalKey(Schema.String),
+});
+
+const isChange = ({ kind }: typeof StoredMark.Type) =>
+  kind === undefined || kind === 'change';
+
+/**
  * Every mark of a shoot, oldest first. A mark is handed over once a hand-over
  * that names it is saved, and not before.
  */
@@ -35,7 +47,7 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
   );
   const marks = yield* Effect.forEach(
     names.filter((name) => name.endsWith(extension) && !name.startsWith('.')),
-    (name) => readJson(SavedMark, `${files.marks}/${name}`),
+    (name) => readJson(StoredMark, `${files.marks}/${name}`),
     { concurrency: 'unbounded' },
   );
   const handedAt = new Map(
@@ -46,8 +58,9 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
   return (
     marks
       .flatMap(Option.toArray)
+      .filter(isChange)
       .map(
-        (mark): Mark => ({
+        ({ kind: _, ...mark }): Mark => ({
           ...mark,
           handedOverAt: handedAt.get(mark.id) ?? null,
         }),
