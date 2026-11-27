@@ -23,6 +23,14 @@ export const choose = (address: string, wanted: Wanted) =>
 export const choicesOf = async (address: string) =>
   (await shootOf(address)).choices;
 
+/** A choice as the page has it. */
+type Seen = {
+  readonly action: string;
+  readonly photo: string;
+  readonly wants: 'in' | 'out';
+  readonly failed: string | null;
+};
+
 /** How often to look whether what waits was done: for some seconds. */
 const patiently = 600;
 
@@ -30,7 +38,7 @@ const patiently = 600;
 export const settled = (address: string) =>
   eventually(
     () => choicesOf(address),
-    (choices: ReadonlyArray<{ readonly failed: string | null }>) =>
+    (choices: ReadonlyArray<Seen>) =>
       choices.every(({ failed }) => failed !== null),
     patiently,
   );

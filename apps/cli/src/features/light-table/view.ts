@@ -188,7 +188,7 @@ export const shootView = Effect.fn('shootView')(function* (
     photos,
     stacks: stacksOf(photos),
     marks: yield* readMarks(files),
-    choices: yield* choicesOf(files, known),
+    choices: yield* choicesOf(open, known),
     activity: yield* readActivity(files),
     preparation: yield* readPreparation(files),
     agent: yield* agentOf(files, canStartAgent),

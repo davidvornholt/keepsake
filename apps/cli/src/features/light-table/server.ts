@@ -3,13 +3,13 @@ import { Effect, type FileSystem, type Path, Semaphore } from 'effect';
 import type { ChildProcessSpawner } from 'effect/process';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { type Has, makeAnswers } from './answers.ts';
-import type { Publishing } from './choices.ts';
 import { eventsOf } from './events.ts';
 import { makeFolders } from './folders.ts';
 import { removeForgotten } from './new-shoot.ts';
 // biome-ignore lint/correctness/noUnresolvedImports: Bun turns an imported page into a bundle to serve
 import page from './page/index.html';
 import { makePreparations } from './preparation.ts';
+import type { Publishing } from './publishing.ts';
 import { makeSettling } from './settling.ts';
 import { makeShoots } from './shoots.ts';
 

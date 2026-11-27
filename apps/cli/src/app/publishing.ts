@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
-import { Publishing } from '../features/light-table/choices.ts';
+import { Publishing } from '../features/light-table/publishing.ts';
 import { publishToAlbum } from '../features/publish/publish.ts';
 import { takeOut } from '../features/publish/take-out.ts';
 

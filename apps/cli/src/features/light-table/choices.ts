@@ -1,50 +1,25 @@
-import { Context, DateTime, Effect, FileSystem, Option, Schema } from 'effect';
+import { DateTime, Effect, FileSystem, Option, Schema } from 'effect';
 import { readActivity } from '../../shared/activity.ts';
-import { PickList, Removed } from '../../shared/domain.ts';
 import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
 import { judgeOf } from '../../shared/judge.ts';
-import { withAlbum, withChoiceIfFree } from '../../shared/lock.ts';
+import { withChoiceIfFree } from '../../shared/lock.ts';
 import { readPublication } from '../../shared/publication.ts';
+import { type Standings, standings } from '../../shared/standing.ts';
 import {
-  isOutOf,
-  readAllRemoved,
-  type Standings,
-  standings,
-} from '../../shared/standing.ts';
-import {
-  exists,
   type OpenShoot,
   readJson,
   type ShootFiles,
   writeJson,
 } from '../../shared/store.ts';
-import { pickOf } from '../../shared/verdicts.ts';
 import { withdrawOpen } from './marks.ts';
+import { Publishing } from './publishing.ts';
+import { isFinished, keepOut, putIn, verdictOf } from './putting-in.ts';
 import { Choice, type NewChoice } from './schemas.ts';
 
 // Taking a photo out and putting one in cost nothing, so the page does them
 // at once rather than hand them to an agent. Only while a command changes
 // the choice or the album, or edits the photo that is to be published, they
 // wait, and the page shows them on their way.
-
-/**
- * What takes photos out of the album and publishes them, which is the
- * publish feature's work. The entrypoint gives it to the page.
- */
-export class Publishing extends Context.Service<
-  Publishing,
-  {
-    readonly takeOut: (
-      open: OpenShoot,
-      photos: ReadonlyArray<string>,
-      because: string,
-    ) => Effect.Effect<void, { readonly message: string }>;
-    readonly publish: (
-      open: OpenShoot,
-      photos: ReadonlyArray<string>,
-    ) => Effect.Effect<void, { readonly message: string }>;
-  }
->()('@keepsake/cli/features/light-table/Publishing') {}
 
 const Choices = Schema.Array(Choice);
 const idLength = 8;
@@ -73,20 +48,58 @@ const isInNow = (known: Standings, photo: string) => {
   return kind === 'album' || kind === 'picked';
 };
 
+/** Where the photos stand, and which of them go in only with the album. */
+type Progress = {
+  readonly known: Standings;
+  /** Finished photos that are in only once they are in the album. */
+  readonly toPublish: ReadonlySet<string>;
+};
+
+/** Where the photos of these choices stand, and what they need to be done. */
+const progressOf = Effect.fn('progressOf')(function* (
+  open: OpenShoot,
+  known: Standings,
+  choices: ReadonlyArray<Pick<Choice, 'photo' | 'wants'>>,
+) {
+  const hasAlbum = (yield* readPublication(open)) !== null;
+  const comingIn = choices.flatMap(({ photo, wants }) =>
+    hasAlbum && wants === 'in' ? [photo] : [],
+  );
+  const finished = yield* Effect.filter(comingIn, (photo) =>
+    isFinished(open, photo),
+  );
+  return { known, toPublish: new Set(finished) } satisfies Progress;
+});
+
+/**
+ * Whether what a choice asks for is so: the photo out for the reason the
+ * owner gave, or in, and in the album when it is to be published.
+ */
+const isDone =
+  ({ known, toPublish }: Progress) =>
+  ({ photo, wants, because }: Choice) => {
+    const standing = known.of.get(photo);
+    if (wants === 'out') {
+      return standing?.kind === 'taken-out' && standing.because === because;
+    }
+    return (
+      standing?.kind === 'album' ||
+      (standing?.kind === 'picked' && !toPublish.has(photo))
+    );
+  };
+
 /** Whether a choice waits: it isn't so yet, and nothing kept it from being done. */
-const isWaiting = (known: Standings) => (choice: Choice) =>
-  choice.failed === null &&
-  isInNow(known, choice.photo) !== (choice.wants === 'in');
+const isWaiting = (progress: Progress) => (choice: Choice) =>
+  choice.failed === null && !isDone(progress)(choice);
 
 /** What is still to be done, and what couldn't be, as the page shows it. */
 export const choicesOf = Effect.fn('choicesOf')(function* (
-  files: ShootFiles,
+  open: OpenShoot,
   known: Standings,
 ) {
-  const waits = isWaiting(known);
-  return (yield* readChoices(files)).filter(
-    (choice) => choice.failed !== null || waits(choice),
-  );
+  const all = yield* readChoices(open.files);
+  const waits = isWaiting(yield* progressOf(open, known, all));
+  return all.filter((choice) => choice.failed !== null || waits(choice));
 });
 
 const invalid = (message: string) => new InvalidInput({ message });
@@ -95,10 +108,6 @@ const reasonOf = (because: string | null) =>
   (because?.trim() ?? '') === ''
     ? invalid('Say why the photo goes out.')
     : null;
-
-/** The verdict on the moment of a photo, which a photo needs to be chosen. */
-const verdictOf = (known: Standings, photo: string) =>
-  [...known.verdicts.values()].find(({ photos }) => photos.includes(photo));
 
 /** Whether a photo is in, or will be once what waits is done. */
 const isInAfter =
@@ -170,7 +179,8 @@ export const choose = Effect.fn('choose')(function* (
 ) {
   const { files } = open;
   const all = yield* readChoices(files);
-  const waiting = all.filter(isWaiting(known));
+  const progress = yield* progressOf(open, known, [...all, wanted]);
+  const waiting = all.filter(isWaiting(progress));
   const refused = check(open, known, waiting, wanted);
   if (refused !== null) {
     return yield* refused;
@@ -208,7 +218,7 @@ export const choose = Effect.fn('choose')(function* (
   );
   yield* saveChoices(files, [
     ...all.filter((one) => !replaced.has(one.action)),
-    ...parts.filter(isWaiting(known)),
+    ...parts.filter(isWaiting(progress)),
   ]);
 });
 
@@ -224,65 +234,6 @@ export const dismissChoice = Effect.fn('dismissChoice')(function* (
   );
 });
 
-/** Lets a photo out of the album count again for it, where it was taken out. */
-const bringBack = (open: OpenShoot, photo: string) =>
-  Effect.gen(function* () {
-    const album = (yield* readPublication(open))?.albumId;
-    const all = yield* readAllRemoved(open, album);
-    const isOut = (one: Removed) => one.photo === photo && isOutOf(album)(one);
-    if (all.some(isOut)) {
-      yield* writeJson(
-        Schema.Array(Removed),
-        open.files.removed,
-        all.filter((one) => !isOut(one)),
-      );
-    }
-  }).pipe(withAlbum(open.files));
-
-/** Makes a photo one of the chosen, if it isn't. */
-const pickPhoto = Effect.fn('pickPhoto')(function* (
-  open: OpenShoot,
-  known: Standings,
-  photo: string,
-) {
-  const list = Option.getOrNull(yield* readJson(PickList, open.files.picks));
-  const verdict = verdictOf(known, photo);
-  if (list === null || verdict === undefined) {
-    return yield* invalid('Nothing is chosen yet, so it can’t be chosen.');
-  }
-  if (!list.picks.some((one) => one.photo === photo)) {
-    yield* writeJson(PickList, open.files.picks, {
-      ...list,
-      picks: [...list.picks, pickOf(verdict, photo)],
-    });
-  }
-});
-
-const isFinished = (open: OpenShoot, photo: string) =>
-  Effect.gen(function* () {
-    const files = open.files.edit(photo);
-    return (yield* exists(files.record)) && (yield* exists(files.final));
-  });
-
-/**
- * Chooses a photo, and publishes it when it is finished and there is an
- * album in Immich, so that it comes back into the album as it was or goes
- * into it for the first time. Without an album it waits for the owner to
- * order one, and none is made for it.
- */
-const putIn = Effect.fn('putIn')(function* (
-  open: OpenShoot,
-  known: Standings,
-  photo: string,
-) {
-  yield* bringBack(open, photo);
-  yield* pickPhoto(open, known, photo);
-  const hasAlbum = (yield* readPublication(open)) !== null;
-  if (hasAlbum && (yield* isFinished(open, photo))) {
-    yield* (yield* Publishing).publish(open, [photo]);
-  }
-});
-
 /** Why a photo couldn't be done, or null when it was. */
 type Outcome = string | null;
 
@@ -294,17 +245,31 @@ const outcomeOf = <E extends { readonly message: string }, R>(
     Effect.catch((error) => Effect.succeed<Outcome>(error.message)),
   );
 
-/** The choices of one action each: the photo that comes in first. */
-const actionsOf = (waiting: ReadonlyArray<Choice>) =>
-  [...Map.groupBy(waiting, ({ action }) => action).values()].map((parts) =>
-    parts.toSorted(
-      (left, right) =>
-        Number(right.wants === 'in') - Number(left.wants === 'in'),
-    ),
-  );
+/** The choices of one action each. */
+const actionsOf = (waiting: ReadonlyArray<Choice>) => [
+  ...Map.groupBy(waiting, ({ action }) => action).values(),
+];
 
 const insteadFailed =
   'The photo that was to take its place couldn’t be put in.';
+
+/**
+ * Takes a photo out, or keeps it out when it is out already, as a pick may
+ * have left it meanwhile. What the owner wanted changed of it goes with it.
+ */
+const takeOutOne = Effect.fn('takeOutOne')(function* (
+  open: OpenShoot,
+  known: Standings,
+  leaving: Choice,
+) {
+  const because = leaving.because ?? '';
+  if (isInNow(known, leaving.photo)) {
+    yield* (yield* Publishing).takeOut(open, [leaving.photo], because);
+  } else {
+    yield* keepOut(open, leaving.photo, because);
+  }
+  yield* withdrawOpen(open.files, leaving.photo);
+});
 
 /**
  * Does one action, and says for each of its photos why it couldn't be
@@ -316,31 +281,32 @@ const doAction = Effect.fn('doAction')(function* (
   edited: ReadonlySet<string>,
   parts: ReadonlyArray<Choice>,
 ) {
-  const [first] = parts;
-  const comesIn = first?.wants === 'in' ? first : undefined;
+  const comesIn = parts.find(({ wants }) => wants === 'in');
+  const leaving = parts.find(({ wants }) => wants === 'out');
   const outcomes = new Map<string, Outcome>();
-  if (comesIn !== undefined) {
-    // Its finished photo may be changing now, so it is published after.
-    if (edited.has(comesIn.photo) && (yield* isFinished(open, comesIn.photo))) {
-      return outcomes;
+  if (comesIn === undefined) {
+    if (leaving !== undefined) {
+      outcomes.set(
+        leaving.photo,
+        yield* outcomeOf(takeOutOne(open, known, leaving)),
+      );
     }
-    outcomes.set(
-      comesIn.photo,
-      yield* outcomeOf(putIn(open, known, comesIn.photo)),
-    );
+    return outcomes;
   }
-  const isIn = comesIn === undefined ? null : outcomes.get(comesIn.photo);
-  const publishing = yield* Publishing;
-  for (const leaving of parts.filter(({ wants }) => wants === 'out')) {
-    // What the owner wanted changed of it goes with it.
-    const takingOut = publishing
-      .takeOut(open, [leaving.photo], leaving.because ?? '')
-      .pipe(Effect.andThen(withdrawOpen(open.files, leaving.photo)));
-    outcomes.set(
-      leaving.photo,
-      isIn === null ? yield* outcomeOf(takingOut) : insteadFailed,
-    );
+  // Its finished photo may be changing now, so it is published after.
+  if (edited.has(comesIn.photo) && (yield* isFinished(open, comesIn.photo))) {
+    return outcomes;
   }
+  const isIn = yield* outcomeOf(putIn(open, known, comesIn.photo));
+  outcomes.set(comesIn.photo, isIn);
+  if (leaving === undefined) {
+    return outcomes;
+  }
+  const isOut =
+    isIn === null
+      ? yield* outcomeOf(takeOutOne(open, known, leaving))
+      : insteadFailed;
+  outcomes.set(leaving.photo, isOut);
   return outcomes;
 });
 
@@ -351,7 +317,8 @@ const doAll = Effect.fn('doAll')(function* (open: OpenShoot) {
   const all = yield* readChoices(files);
   const edited = new Set((yield* readActivity(files))?.photos ?? []);
   const outcomes = new Map<string, Outcome>();
-  for (const parts of actionsOf(all.filter(isWaiting(known)))) {
+  const progress = yield* progressOf(open, known, all);
+  for (const parts of actionsOf(all.filter(isWaiting(progress)))) {
     for (const [photo, outcome] of yield* doAction(
       open,
       known,
@@ -361,7 +328,7 @@ const doAll = Effect.fn('doAll')(function* (open: OpenShoot) {
       outcomes.set(photo, outcome);
     }
   }
-  const after = yield* standings(open, model);
+  const after = yield* progressOf(open, yield* standings(open, model), all);
   const left = all
     .flatMap((one) => {
       const outcome = outcomes.get(one.photo);
