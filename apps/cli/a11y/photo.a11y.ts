@@ -152,8 +152,13 @@ test('puts a photo in at once, and takes a wish for its edit', async ({
   await expect(marks(page)).toHaveText([wishFor, takeOut]);
   await scan(page);
   await page.keyboard.press('c');
-  const note = page.getByRole('textbox', { name: 'What should change?' });
+  const note = page.getByRole('textbox', {
+    name: 'What do you want of the edit?',
+  });
   await expect(note).toBeFocused();
+  // Boxes show places of an edit, and the photo has none yet.
+  await expect(large(page).locator('[data-boxes]')).toHaveCount(0);
+  await expect(page.getByText('Drag on the photo')).toHaveCount(0);
   await note.fill('Warmer light.');
   await page.keyboard.press('Enter');
   const said = large(page).getByText('To be changed: Warmer light.').first();

@@ -157,7 +157,9 @@ export const useComposing = (photo: PhotoView) => {
   return {
     draft,
     setDraft,
-    canDraw: draft !== null,
+    // The first edit of a photo finds its own places, so only a finished
+    // photo has places to show.
+    canDraw: draft !== null && photo.edit !== null,
     isSaved: (saved?.note ?? '') !== '',
     selected,
     select: setSelected,

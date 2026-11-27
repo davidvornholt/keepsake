@@ -77,6 +77,7 @@ export const Below = ({
         <MarkBar onPencil={marking.onPencil} photo={photo} />
       ) : (
         <Composer
+          canDraw={composing.canDraw}
           canUndo={composing.canUndo}
           draft={composing.draft}
           isSaved={composing.isSaved}
