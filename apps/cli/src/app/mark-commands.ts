@@ -3,6 +3,7 @@ import { Argument, Command, Flag } from 'effect/cli';
 import {
   agreedDollars,
   claimUnsettled,
+  isForAgent,
   type Only,
   orderAmong,
   unsettledOf,
@@ -102,7 +103,8 @@ const listed = Effect.fn('listed')(function* (
     handOvers: unsettled.map(({ id }) => id),
     found: every.filter(
       (mark) =>
-        (all || isWaiting(mark)) && (only === null || named.has(mark.id)),
+        (all || (isWaiting(mark) && isForAgent(known)(mark))) &&
+        (only === null || named.has(mark.id)),
     ),
     album: yield* ordered(open, known, only),
     agreedDollars: yield* agreedDollars(open.files, known, only),

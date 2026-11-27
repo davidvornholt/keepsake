@@ -1,5 +1,5 @@
 import type { Mark, PhotoView } from '../../contract.ts';
-import type { Index } from '../data/derive.ts';
+import { type Index, isChosen } from '../data/derive.ts';
 
 // The changes an agent is to act on, as a list to go over before they are
 // handed over, and to follow afterwards; and what handing over costs, with
@@ -64,7 +64,8 @@ const linesOf = (index: Index): ReadonlyArray<Line> => {
     .filter((mark) => mark.answer === null)
     .flatMap((mark): ReadonlyArray<Line> => {
       const photo = byId.get(mark.photo);
-      if (photo === undefined) {
+      // A photo that went out of the album is edited no more.
+      if (photo === undefined || !isChosen(photo)) {
         return [];
       }
       const line = { mark, photo };

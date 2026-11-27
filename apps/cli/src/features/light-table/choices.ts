@@ -19,6 +19,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { pickOf } from '../../shared/verdicts.ts';
+import { withdrawOpen } from './marks.ts';
 import { Choice, type NewChoice } from './schemas.ts';
 
 // Taking a photo out and putting one in cost nothing, so the page does them
@@ -331,13 +332,13 @@ const doAction = Effect.fn('doAction')(function* (
   const isIn = comesIn === undefined ? null : outcomes.get(comesIn.photo);
   const publishing = yield* Publishing;
   for (const leaving of parts.filter(({ wants }) => wants === 'out')) {
+    // What the owner wanted changed of it goes with it.
+    const takingOut = publishing
+      .takeOut(open, [leaving.photo], leaving.because ?? '')
+      .pipe(Effect.andThen(withdrawOpen(open.files, leaving.photo)));
     outcomes.set(
       leaving.photo,
-      isIn === null
-        ? yield* outcomeOf(
-            publishing.takeOut(open, [leaving.photo], leaving.because ?? ''),
-          )
-        : insteadFailed,
+      isIn === null ? yield* outcomeOf(takingOut) : insteadFailed,
     );
   }
   return outcomes;

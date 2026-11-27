@@ -50,6 +50,16 @@ describe('ledgerOf', () => {
     expect(ledger.news).toBe(1);
   });
 
+  it('leaves out what is about a photo that went out of the album', () => {
+    const ofOut = [
+      sampleMark('8', { photo: 'd', note: 'Warmer' }),
+      sampleMark('9', { photo: 'd', note: 'Lighter', ...handedOver }),
+    ];
+    const out = ledgerOf(indexOf(sampleShoot(photos, [...marks, ...ofOut])));
+    expect(out.open.map(({ mark }) => mark.id)).toEqual(['3', '4']);
+    expect(out.waiting.map(({ mark }) => mark.id)).toEqual(['5']);
+  });
+
   it('counts what costs money', () => {
     expect(ledger.open.map(({ costs }) => costs)).toEqual([true, true]);
     expect(ledger.ordersAlbum).toBe(false);

@@ -27,6 +27,17 @@ const pickedOf = (known: Standings): ReadonlyArray<string> =>
     kind === 'picked' ? [photo] : [],
   );
 
+/**
+ * Whether what the owner wrote about a photo is for an agent: a photo that
+ * went out of the album is edited no more.
+ */
+export const isForAgent =
+  (known: Standings) =>
+  ({ photo }: Mark): boolean => {
+    const kind = known.of.get(photo)?.kind;
+    return kind === 'album' || kind === 'picked';
+  };
+
 const isOrder = ({ album, fulfilledAt }: HandOverRecord) =>
   album !== null && fulfilledAt === null;
 
@@ -72,7 +83,9 @@ export const unsettledOf = Effect.fn('unsettledOf')(function* (
   only: Only = null,
 ) {
   const waiting = new Set(
-    (yield* readMarks(files)).filter(isWaiting).map(({ id }) => id),
+    (yield* readMarks(files))
+      .filter((mark) => isWaiting(mark) && isForAgent(known)(mark))
+      .map(({ id }) => id),
   );
   return (yield* handOversOf(files, known)).filter(
     (record) =>
@@ -183,7 +196,9 @@ export const handOver = Effect.fn('handOver')(function* (
   known: Standings,
   wanted: HandOver,
 ) {
-  const marks = (yield* readMarks(files)).filter(isOpen);
+  const marks = (yield* readMarks(files)).filter(
+    (mark) => isOpen(mark) && isForAgent(known)(mark),
+  );
   const picked = pickedOf(known);
   const isOrdered = (yield* orderOf(files, known)) !== null;
   const orderable = isOrdered || picked.length === 0 ? null : picked;

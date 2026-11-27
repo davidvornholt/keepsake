@@ -169,6 +169,20 @@ export const takeBack = Effect.fn('takeBack')(function* (
   yield* remove(files, mark);
 });
 
+/**
+ * Lets go of what the owner wrote about a photo and didn't hand over, as
+ * when the photo went out of the album.
+ */
+export const withdrawOpen = Effect.fn('withdrawOpen')(function* (
+  files: ShootFiles,
+  photo: string,
+) {
+  const open = (yield* readMarks(files)).filter(
+    (mark) => mark.photo === photo && isOpen(mark),
+  );
+  yield* Effect.forEach(open, (mark) => remove(files, mark));
+});
+
 /** Notes what an agent did about a mark. */
 export const answerMark = Effect.fn('answerMark')(function* (
   files: ShootFiles,
