@@ -20,6 +20,8 @@ export type ShootState = {
   readonly preparation: Preparation | null;
   /** How what was handed over is carried out, as keepsake last said. */
   readonly carrying: CarryingOut;
+  /** Whether a command changes the choice now, as keepsake last said. */
+  readonly isChoiceBusy: boolean;
   readonly isConnected: boolean;
   /** What went wrong last, until it is dismissed. */
   readonly problem: string | null;
@@ -87,6 +89,7 @@ const initial: ShootState = {
   activity: null,
   preparation: null,
   carrying: { since: null, stopped: null },
+  isChoiceBusy: false,
   isConnected: true,
   problem: null,
   hint: null,
@@ -99,6 +102,8 @@ type Marks = ReadonlyArray<Mark>;
 export const makeHeld = () => {
   let state = initial;
   let undos: ReadonlyArray<Undo> = [];
+  /** How many times keepsake told what goes on now, as it does every second. */
+  let told = 0;
   const listeners = new Set<() => void>();
 
   const set = (next: Partial<ShootState>) => {
@@ -117,6 +122,12 @@ export const makeHeld = () => {
         listeners.delete(listener);
       };
     },
+    /** Takes what keepsake tells goes on now. */
+    hear: (now: Partial<ShootState>) => {
+      told += 1;
+      set(now);
+    },
+    told: () => told,
     undos: () => undos,
     setUndos: (next: ReadonlyArray<Undo>) => {
       undos = next;

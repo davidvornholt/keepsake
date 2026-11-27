@@ -220,10 +220,7 @@ describe('undoing a choice that is on its way', () => {
   });
 
   it('knows a cancelled choice that was still on its way once the cancellation is undone', async () => {
-    const working = {
-      ...shootWith(),
-      activity: { step: 'Editing', done: 0, total: 1, photos: ['z'] },
-    };
+    const working = { ...shootWith(), isChoiceBusy: true };
     const store = await hearted(working);
     const choosing = store.choose(takeOut);
     const shown = store.get().index?.shoot.choices.at(0)?.action ?? null;
@@ -303,5 +300,88 @@ describe('reading the shoot', () => {
     slowRead.answer(new Error('offline'));
     await slow;
     expect(store.get().problem).toBeNull();
+  });
+});
+
+/** Waits until `isSo` says yes. */
+const until = async (isSo: () => boolean) => {
+  if (!isSo()) {
+    await Bun.sleep(1);
+    await until(isSo);
+  }
+};
+
+describe('what goes on now', () => {
+  const realEventSource = globalThis.EventSource;
+  /** What the page does when keepsake tells what changed. */
+  let tell: (changed: unknown) => void = () => undefined;
+
+  beforeEach(() => {
+    const events = () => ({
+      addEventListener: (
+        type: string,
+        listener: (event: MessageEvent) => void,
+      ) => {
+        if (type === 'changed') {
+          tell = (changed) =>
+            listener(
+              new MessageEvent('changed', { data: JSON.stringify(changed) }),
+            );
+        }
+      },
+      close: () => {
+        tell = () => undefined;
+      },
+    });
+    // A stand-in for the events, which the store makes with new.
+    globalThis.EventSource = function (this: unknown) {
+      return events();
+    } as unknown as typeof EventSource;
+  });
+
+  afterEach(() => {
+    globalThis.EventSource = realEventSource;
+  });
+
+  it('stays as keepsake told it after a read began', async () => {
+    const store = makeShootStore('lisbon');
+    const shoot = shootWith();
+    store.start();
+    await answerWith('GET', shoot);
+    await until(() => store.get().status === 'ready');
+    const reading = store.reload();
+    const read = await next('GET');
+    const { revision, activity, preparation, carrying } = shoot;
+    tell({ revision, activity, preparation, carrying, isChoiceBusy: true });
+    read.answer(Response.json(shoot));
+    await reading;
+    expect(store.get().isChoiceBusy).toBe(true);
+    store.stop();
+  });
+
+  it('goes by what keepsake tells, not by a read that the telling began', async () => {
+    const store = makeShootStore('lisbon');
+    const shoot = shootWith();
+    store.start();
+    await answerWith('GET', shoot);
+    await until(() => store.get().status === 'ready');
+    const { activity, preparation, carrying } = shoot;
+    tell({
+      revision: 'newer',
+      activity,
+      preparation,
+      carrying,
+      isChoiceBusy: false,
+    });
+    // A command took the choice meanwhile, and lets go of it before the
+    // next telling, which then has nothing new to tell.
+    await answerWith('GET', {
+      ...shoot,
+      revision: 'newer',
+      isChoiceBusy: true,
+    });
+    await until(() => store.get().index?.shoot.revision === 'newer');
+    expect(store.get().isChoiceBusy).toBe(false);
+    store.stop();
   });
 });
