@@ -12,6 +12,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { edgesBeyond } from './beyond.ts';
+import { shownIn } from './describe.ts';
 import { finish } from './finish.ts';
 import { flawless } from './flawless.ts';
 import { exactFrame } from './geometry.ts';
@@ -161,7 +162,22 @@ export const writeEdit = Effect.fn('writeEdit')(function* (
 ) {
   const { files } = job;
   const image = yield* ImageModel;
-  const caption = captionOf(job, description, best !== null);
+  // The camera's own picture still shows all that was to be removed, and a
+  // version what was on a face.
+  const gone =
+    best === null ? [] : carriedOut(originals, removed).map(({ what }) => what);
+  const shown =
+    gone.length === removed.length
+      ? description
+      : yield* askReviewer(
+          shownIn(
+            job.open.shoot,
+            files,
+            { file: files.input, frame: crop.box },
+            gone,
+          ),
+        );
+  const caption = captionOf(job, shown, best !== null);
   yield* atomically(files.final, (draft) =>
     Effect.gen(function* () {
       if (best !== null) {
