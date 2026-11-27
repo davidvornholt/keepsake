@@ -194,9 +194,7 @@ export const isHeldBack = (
 
 /**
  * What the owner chose, in the place of what they chose for those photos
- * before. Keepsake does it at once unless it `waits`, so the page shows it
- * done; when it waits, the page shows it waiting until keepsake has done
- * it, and what is so already waits for nothing.
+ * before. What is so already waits for nothing.
  */
 export const withChoice = (
   shoot: ShootView,

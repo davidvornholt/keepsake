@@ -220,7 +220,6 @@ describe('undoing a choice that is on its way', () => {
   });
 
   it('knows a cancelled choice that was still on its way once the cancellation is undone', async () => {
-    // Another command changes the choice, so it waits.
     const working = { ...shootWith(), isChoiceBusy: true };
     const store = await hearted(working);
     const choosing = store.choose(takeOut);

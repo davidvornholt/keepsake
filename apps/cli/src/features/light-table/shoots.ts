@@ -64,7 +64,6 @@ const makeWarming = () => {
   });
 };
 
-/** What the server itself does with a shoot now. */
 type DoingOf = (name: string) => Doing;
 
 /**
