@@ -303,11 +303,11 @@ describe('reading the shoot', () => {
   });
 });
 
-/** Waits until the store has read the shoot. */
-const ready = async (store: ReturnType<typeof makeShootStore>) => {
-  if (store.get().status !== 'ready') {
+/** Waits until `isSo` says yes. */
+const until = async (isSo: () => boolean) => {
+  if (!isSo()) {
     await Bun.sleep(1);
-    await ready(store);
+    await until(isSo);
   }
 };
 
@@ -348,7 +348,7 @@ describe('what goes on now', () => {
     const shoot = shootWith();
     store.start();
     await answerWith('GET', shoot);
-    await ready(store);
+    await until(() => store.get().status === 'ready');
     const reading = store.reload();
     const read = await next('GET');
     const { revision, activity, preparation, carrying } = shoot;
@@ -356,6 +356,32 @@ describe('what goes on now', () => {
     read.answer(Response.json(shoot));
     await reading;
     expect(store.get().isChoiceBusy).toBe(true);
+    store.stop();
+  });
+
+  it('goes by what keepsake tells, not by a read that the telling began', async () => {
+    const store = makeShootStore('lisbon');
+    const shoot = shootWith();
+    store.start();
+    await answerWith('GET', shoot);
+    await until(() => store.get().status === 'ready');
+    const { activity, preparation, carrying } = shoot;
+    tell({
+      revision: 'newer',
+      activity,
+      preparation,
+      carrying,
+      isChoiceBusy: false,
+    });
+    // A command took the choice meanwhile, and lets go of it before the
+    // next telling, which then has nothing new to tell.
+    await answerWith('GET', {
+      ...shoot,
+      revision: 'newer',
+      isChoiceBusy: true,
+    });
+    await until(() => store.get().index?.shoot.revision === 'newer');
+    expect(store.get().isChoiceBusy).toBe(false);
     store.stop();
   });
 });

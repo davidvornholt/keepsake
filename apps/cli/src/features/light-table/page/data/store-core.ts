@@ -85,7 +85,8 @@ export const makeCore = (name: string) => {
 
   /**
    * Takes what keepsake says, unless a change under way is newer, and what
-   * goes on unless keepsake told newer meanwhile.
+   * goes on until keepsake tells that every second, which is then all
+   * the page goes by.
    */
   const take = (shoot: ShootView, isLive: boolean) => {
     if (inFlight > 0) {
@@ -124,11 +125,10 @@ export const makeCore = (name: string) => {
     clearTimeout(again);
     reads += 1;
     const read = reads;
-    const told = held.told();
     try {
       const shoot = await readShoot(name);
       if (read === reads) {
-        take(shoot, held.told() === told);
+        take(shoot, held.told() === 0);
       }
     } catch (error) {
       const isMissing = await isGone(name, error, get().index !== null);
