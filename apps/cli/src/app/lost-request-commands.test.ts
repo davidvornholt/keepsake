@@ -67,17 +67,21 @@ beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
 describe('keepsake edit, when an image request gets no answer', () => {
-  it('counts it as spent when its connection breaks off', async () => {
-    await pickLisbon();
-    const sent = Promise.withResolvers<void>();
-    fakeModels.editAnswer = () => {
-      sent.resolve();
-      throw connectionError('ECONNRESET');
-    };
-    await editUntil(sent.promise, () => until(() => spentOn(imageModel) > 0));
-    expect(spentOn(imageModel)).toBeCloseTo(mostOfLastEdit());
-    expect(recordOf(imageModel).calls).toBe(1);
-  });
+  // Bun says `EPROTO` also when TLS breaks after the request was sent.
+  it.each(['ECONNRESET', 'EPROTO'])(
+    'counts it as spent when its connection breaks off (%s)',
+    async (code) => {
+      await pickLisbon();
+      const sent = Promise.withResolvers<void>();
+      fakeModels.editAnswer = () => {
+        sent.resolve();
+        throw connectionError(code);
+      };
+      await editUntil(sent.promise, () => until(() => spentOn(imageModel) > 0));
+      expect(spentOn(imageModel)).toBeCloseTo(mostOfLastEdit());
+      expect(recordOf(imageModel).calls).toBe(1);
+    },
+  );
 
   it('counts it as spent when keepsake is stopped while it waits', async () => {
     await pickLisbon();
@@ -90,8 +94,8 @@ describe('keepsake edit, when an image request gets no answer', () => {
     expect(spentOn(imageModel)).toBeCloseTo(mostOfLastEdit());
   });
 
-  // Refused, or the TLS handshake failed: nothing reached the model.
-  it.each(['ECONNREFUSED', 'EPROTO'])(
+  // Refused, or its certificate was: nothing reached the model.
+  it.each(['ECONNREFUSED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'])(
     'counts nothing when it couldn’t reach the model (%s)',
     async (code) => {
       await pickLisbon();

@@ -123,8 +123,9 @@ export const AnswerLost = Context.Reference<Effect.Effect<void>>(
 
 /**
  * What fetch says when a request couldn't reach the provider at all: the
- * name or the host wasn't found, nothing listened, or the TLS handshake or
- * the certificate failed before anything was sent.
+ * name or the host wasn't found, nothing listened, or the provider's
+ * certificate was refused before anything was sent. Not `EPROTO`, which Bun
+ * also reports for a broken TLS record after the request was sent.
  */
 const unreached = new Set([
   'ENOTFOUND',
@@ -132,7 +133,6 @@ const unreached = new Set([
   'ECONNREFUSED',
   'ENETUNREACH',
   'EHOSTUNREACH',
-  'EPROTO',
   'CERT_HAS_EXPIRED',
   'DEPTH_ZERO_SELF_SIGNED_CERT',
   'ERR_TLS_CERT_ALTNAME_INVALID',
