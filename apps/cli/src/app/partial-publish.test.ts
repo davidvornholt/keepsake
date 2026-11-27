@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { copyFile, readFile } from 'node:fs/promises';
-import { failCameraUploadOf } from './choice-fixtures.ts';
+import {
+  choose,
+  failCameraUploadOf,
+  publishLisbon,
+  settled,
+} from './choice-fixtures.ts';
 import {
   editLisbon,
   failureOf,
@@ -11,6 +16,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
+import { whileServing } from './light-table-fixtures.ts';
 
 // What stays in an album when Immich takes a photo's finished file and then
 // fails at the rest of it.
@@ -56,5 +62,19 @@ describe('a photo Immich took only part of', () => {
     failCameraUploadOf('B');
     await failureOf('publish', 'lisbon');
     expect(assetsOf('album-1')).toContain('asset-1');
+  });
+
+  it('says so when it can’t be taken back out', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    // The upload of A2, the first after those publish sent.
+    const asset = 'asset-7';
+    failCameraUploadOf('A2', () => fakeTools.refused.add(asset));
+    const [choice] = await whileServing(async (address) => {
+      await choose(address, { photo: 'A2', wants: 'in' });
+      return settled(address);
+    });
+    expect(choice?.failed).toContain(`${asset} is still in the album`);
+    expect(assetsOf('album-1')).toContain(asset);
   });
 });

@@ -19,7 +19,6 @@ import {
   listAlbums,
   markFavorite,
   type NamedAlbum,
-  removeFromAlbum,
   signedInUser,
   stackPhotos,
   tagPhoto,
@@ -39,6 +38,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { outdatedOf } from './outdated.ts';
+import { takeBack } from './take-back.ts';
 import {
   giveRemovalsTheirAlbum,
   knownPublication,
@@ -162,10 +162,10 @@ const send = Effect.fn('send')(function* (
     }
     return camera;
   }).pipe(
-    Effect.onError(() =>
+    Effect.catch((error) =>
       there.has(asset)
-        ? Effect.void
-        : Effect.ignore(removeFromAlbum(album, [asset])),
+        ? Effect.fail(error)
+        : takeBack(album, asset, error.message),
     ),
   );
   there.add(asset);
