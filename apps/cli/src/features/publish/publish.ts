@@ -329,7 +329,7 @@ export const tellOutdated = <E, R>(
  */
 const switchTo = (open: OpenShoot, publication: Publication) =>
   Effect.gen(function* () {
-    yield* writeJson(Publication, open.files.publication, publication);
+    // Forgotten first, so a failed removal leaves the old album current.
     const read = Option.getOrNull(yield* readJson(Album, open.files.album));
     if (read !== null && read.id !== publication.albumId) {
       const fs = yield* FileSystem.FileSystem;
@@ -337,6 +337,7 @@ const switchTo = (open: OpenShoot, publication: Publication) =>
         .remove(open.files.album, { force: true })
         .pipe(Effect.mapError(({ message }) => new StoreFailed({ message })));
     }
+    yield* writeJson(Publication, open.files.publication, publication);
   }).pipe(withAlbum(open.files));
 
 /** Uploads the picked photos, or those named, to an album in Immich. */

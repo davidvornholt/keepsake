@@ -112,3 +112,12 @@ describe('a scan with --title', () => {
     expect(empty._tag).toBe('InvalidInput');
   });
 });
+
+describe('a shoot that was never scanned', () => {
+  it('is told to be scanned with a title', async () => {
+    const failure = await failureOf('show', 'nowhere');
+    expect(failure.message).toContain(
+      'keepsake scan <folder> --name nowhere --title',
+    );
+  });
+});
