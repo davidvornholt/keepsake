@@ -1,17 +1,18 @@
-import { Effect, Fiber, Result, Stream } from 'effect';
+import type { PlatformError } from 'effect';
+import { Data, Effect, Result, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { ToolFailed } from './errors/errors.ts';
 
-/** Reads a stream in the background, keeping what has arrived so far. */
-const reading = Effect.fn('reading')(function* <E, R>(
-  stream: Stream.Stream<Uint8Array, E, R>,
-) {
-  const chunks: Array<Uint8Array> = [];
-  const fiber = yield* Effect.forkScoped(
-    Stream.runForEach(stream, (chunk) => Effect.sync(() => chunks.push(chunk))),
-  );
-  return { fiber, read: () => new Uint8Array(Buffer.concat(chunks)) };
-});
+/** Keeps each chunk of a program's output as it arrives. */
+const keep = (chunks: Array<Uint8Array>) => (chunk: Uint8Array) =>
+  Effect.sync(() => {
+    chunks.push(chunk);
+  });
+
+/** A program that ran but has no exit code, as when a signal stopped it. */
+class Stopped extends Data.TaggedError('Stopped')<{
+  readonly error: PlatformError.PlatformError;
+}> {}
 
 /**
  * How long to keep reading a program a signal stopped. A program it started
@@ -47,10 +48,10 @@ const stopped = (
   );
 
 /**
- * Runs a program without a shell and returns what it printed, and its exit
- * code or why it has none, as when a signal stopped it.
+ * Both entry points run this untraced, so that each run of a program pays for
+ * one span, as tests run thousands of them.
  */
-export const runToolToEnd = Effect.fn('runToolToEnd')(
+const toEnd = Effect.fnUntraced(
   function* (
     command: string,
     args: ReadonlyArray<string>,
@@ -72,31 +73,51 @@ export const runToolToEnd = Effect.fn('runToolToEnd')(
         extendEnv: true,
       }),
     );
-    const stdout = yield* reading(handle.stdout);
-    const stderr = yield* reading(handle.stderr);
-    const ending = yield* Effect.result(handle.exitCode);
-    const output = Fiber.joinAll([stdout.fiber, stderr.fiber]);
-    if (Result.isSuccess(ending)) {
-      yield* output;
-    } else {
-      // The signal may have left the program's own children behind, so they
-      // are stopped now, and what they print after this moment is lost.
-      yield* Effect.forkScoped(handle.kill());
-      yield* Effect.ignore(Effect.timeout(output, drainAfterSignal));
-    }
+    const out: Array<Uint8Array> = [];
+    const err: Array<Uint8Array> = [];
+    const ran = yield* Effect.all(
+      [
+        Stream.runForEach(handle.stdout, keep(out)),
+        Stream.runForEach(handle.stderr, keep(err)),
+        // The signal may have left the program's own children behind, holding
+        // its output open, so they are stopped now, and the output is read for
+        // a moment more. Failing then stops the reading.
+        Effect.catch(handle.exitCode, (error) =>
+          Effect.forkScoped(handle.kill()).pipe(
+            Effect.andThen(Effect.sleep(drainAfterSignal)),
+            Effect.andThen(Effect.fail(new Stopped({ error }))),
+          ),
+        ),
+      ],
+      { concurrency: 'unbounded' },
+    ).pipe(
+      Effect.map(([, , code]) => Result.succeed(Number(code))),
+      Effect.catchTag('Stopped', ({ error }) =>
+        Effect.succeed(Result.fail(stopped(command, error))),
+      ),
+    );
     return {
-      stdout: stdout.read(),
-      stderr: new TextDecoder().decode(stderr.read()).trim(),
-      ending: Result.mapBoth(ending, {
-        onSuccess: Number,
-        onFailure: (error) => stopped(command, error),
-      }),
+      stdout: new Uint8Array(Buffer.concat(out)),
+      stderr: new TextDecoder().decode(Buffer.concat(err)).trim(),
+      ending: ran,
     };
   },
   Effect.scoped,
   (effect, command) =>
     Effect.mapError(effect, (error) => notRun(command, error)),
 );
+
+/**
+ * Runs a program without a shell and returns what it printed, and its exit
+ * code or why it has none, as when a signal stopped it.
+ */
+export const runToolToEnd = Effect.fn('runToolToEnd')(function* (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: RunOptions = {},
+) {
+  return yield* toEnd(command, args, options);
+});
 
 /**
  * Runs a program without a shell and returns what it printed, whatever its
@@ -107,11 +128,7 @@ export const runTool = Effect.fn('runTool')(function* (
   args: ReadonlyArray<string>,
   options: RunOptions = {},
 ) {
-  const { stdout, stderr, ending } = yield* runToolToEnd(
-    command,
-    args,
-    options,
-  );
+  const { stdout, stderr, ending } = yield* toEnd(command, args, options);
   return { stdout, stderr, exitCode: yield* Effect.fromResult(ending) };
 });
 
