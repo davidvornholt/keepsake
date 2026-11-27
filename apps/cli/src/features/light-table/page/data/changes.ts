@@ -110,25 +110,48 @@ const laidOut = (
   return photos.map((photo) => laid.get(photo.id) ?? photo);
 };
 
+/**
+ * A photo of another moment that repeats one of these lies behind its front.
+ * The photo that comes instead of that front takes it over, as it usually
+ * stands for what the photo repeats.
+ */
+const followed = (
+  photos: ReadonlyArray<PhotoView>,
+  moments: ReadonlySet<string>,
+  parts: ReadonlyArray<Part>,
+): ReadonlyArray<PhotoView> => {
+  const comesIn = parts.find(({ wants }) => wants === 'in')?.photo;
+  const leaves = parts.find(({ wants }) => wants === 'out')?.photo;
+  if (comesIn === undefined || leaves === undefined) {
+    return photos;
+  }
+  return photos.map((photo) =>
+    photo.stack === leaves && !moments.has(photo.moment)
+      ? {
+          ...photo,
+          stack: comesIn,
+          standing: { kind: 'similar', to: comesIn, because: null },
+        }
+      : photo,
+  );
+};
+
 const withDone = (
   shoot: ShootView,
   parts: ReadonlyArray<Part>,
   now: string,
 ): ShootView => {
   const partOf = new Map(parts.map((part) => [part.photo, part]));
-  const photos = laidOut(
-    shoot.photos.map((photo) => {
-      const part = partOf.get(photo.id);
-      return part === undefined
-        ? photo
-        : { ...photo, standing: standingAfter(shoot, photo, part, now) };
-    }),
-    new Set(
-      shoot.photos.flatMap(({ id, moment }) =>
-        partOf.has(id) ? [moment] : [],
-      ),
-    ),
+  const moments = new Set(
+    shoot.photos.flatMap(({ id, moment }) => (partOf.has(id) ? [moment] : [])),
   );
+  const chosen = shoot.photos.map((photo) => {
+    const part = partOf.get(photo.id);
+    return part === undefined
+      ? photo
+      : { ...photo, standing: standingAfter(shoot, photo, part, now) };
+  });
+  const photos = followed(laidOut(chosen, moments), moments, parts);
   const isPicked = (id: string) =>
     photos.some((photo) => photo.id === id && photo.standing.kind === 'picked');
   return {

@@ -179,6 +179,20 @@ describe('the stacks after a choice', () => {
     });
   });
 
+  it('let the photo that comes instead stand for the photos of other moments behind the one it replaces', () => {
+    const repeats = sampleBehind('d', 'a', { moment: 'd' });
+    const shoot = sampleShoot([chosen, behind, repeats]);
+    const done = withChoice(shoot, swap, idle);
+    expect(done.stacks).toEqual([
+      { front: 'a', photos: ['a'] },
+      { front: 'b', photos: ['b', 'd'] },
+    ]);
+    const [, , d] = done.photos;
+    expect(d && actionFor(indexOf(done), d, 'swap')).toMatchObject({
+      wanted: { photo: 'd', instead: 'b' },
+    });
+  });
+
   it('lay the photos behind one taken out behind another chosen one', () => {
     const also = samplePhoto('c', {
       moment: 'a',
