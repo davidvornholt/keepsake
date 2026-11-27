@@ -4,7 +4,14 @@ import { Publication, type PublishedPhoto } from '../../shared/domain.ts';
 import { ToolFailed } from '../../shared/errors/errors.ts';
 import { removeFromAlbum } from '../../shared/immich.ts';
 import { withChoice } from '../../shared/lock.ts';
-import { assetsInUse, readPublication } from '../../shared/publication.ts';
+import {
+  assetsInUse,
+  isAdded,
+  madeFor,
+  readPublication,
+  uploadsOf,
+  uploadsOfOthers,
+} from '../../shared/publication.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
 
 /**
@@ -24,10 +31,16 @@ export const unpublish = (
     if (publication?.albumId === undefined || now === undefined) {
       return;
     }
-    // Immich has the same file once, so it may be another photo's upload.
-    const isShared = publication.photos.some(
-      (one) => one.photo !== photo && one.asset === now.asset,
-    );
+    // Immich has the same file once, so it may be another photo's upload,
+    // also one taken on or on its way, one of another shoot, or have been in
+    // the album before.
+    const others = yield* uploadsOfOthers(open);
+    const isShared =
+      !isAdded(now) ||
+      others.inAlbum(publication.albumId, now.asset) ||
+      uploadsOf(publication).some(
+        (one) => one.photo !== photo && one.asset === now.asset,
+      );
     const refused = isShared
       ? []
       : yield* removeFromAlbum(publication.albumId, [now.asset]);
@@ -45,7 +58,12 @@ export const unpublish = (
       ],
     };
     const inUse = assetsInUse(restored);
-    const outdated = new Set([...(publication.outdated ?? []), now.asset]);
+    const outdated = new Set([
+      ...(publication.outdated ?? []),
+      ...(isAdded(now) && madeFor(publication).has(now.asset)
+        ? [now.asset]
+        : []),
+    ]);
     yield* writeJson(Publication, open.files.publication, {
       ...restored,
       outdated: [...outdated].filter((asset) => !inUse.has(asset)),

@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { Effect, FileSystem, Option } from 'effect';
+import { adoptBeforeLeaving } from '../../shared/adoption.ts';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
 import {
   Album,
   Publication,
   type PublishedPhoto,
+  type SendingPhoto,
 } from '../../shared/domain.ts';
 import {
   InvalidInput,
@@ -13,6 +15,7 @@ import {
 } from '../../shared/errors/errors.ts';
 import {
   albumAssets,
+  albumNameKey,
   createAlbum,
   ensureTag,
   isOwnAlbum,
@@ -22,12 +25,25 @@ import {
   signedInUser,
   stackPhotos,
   tagPhoto,
+  uploadInto,
   uploadPhoto,
 } from '../../shared/immich.ts';
-import { withAlbum, withChoice, withPhoto } from '../../shared/lock.ts';
+import {
+  withAlbum,
+  withAlbumName,
+  withChoice,
+  withPhoto,
+} from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
-import { albumsOf } from '../../shared/publication.ts';
+import {
+  type AlbumRecord,
+  albumsOf,
+  isAdded,
+  isPutInto,
+  readPublication,
+  type Upload,
+} from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
   exists,
@@ -38,8 +54,15 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { outdatedOf } from './outdated.ts';
-import { takeBack } from './take-back.ts';
 import {
+  type Destination,
+  publicationFor,
+  withSending,
+  withSent,
+} from './record.ts';
+import { rollBack, type Sending } from './take-back.ts';
+import {
+  albumOfName,
   giveRemovalsTheirAlbum,
   knownPublication,
   type Target,
@@ -56,6 +79,8 @@ type Job = {
   readonly photo: string;
   readonly digest: string;
   readonly before: Published | undefined;
+  /** The upload the photo is in the album now, also one taken on. */
+  readonly earlier: Upload | undefined;
 };
 
 const digestOf = (file: string) =>
@@ -98,7 +123,7 @@ const jobs = Effect.fn('jobs')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   target: Target,
-  published: ReadonlyArray<Published>,
+  record: AlbumRecord | undefined,
 ) {
   const photos = yield* photosToSend(open, names, target);
   const finished = yield* Effect.filter(photos, (photo) =>
@@ -112,14 +137,15 @@ const jobs = Effect.fn('jobs')(function* (
     });
   }
   return yield* Effect.forEach(finished, (photo) =>
-    Effect.map(
-      digestOf(open.files.edit(photo).final),
-      (digest): Job => ({
+    Effect.map(digestOf(open.files.edit(photo).final), (digest): Job => {
+      const before = record?.photos.find((one) => one.photo === photo);
+      return {
         photo,
         digest,
-        before: published.find((earlier) => earlier.photo === photo),
-      }),
-    ),
+        before,
+        earlier: before ?? record?.adopted?.find((one) => one.photo === photo),
+      };
+    }),
   );
 });
 
@@ -144,112 +170,78 @@ const carryFavorite = (
 const send = Effect.fn('send')(function* (
   open: OpenShoot,
   job: Job,
-  album: string,
-  /** What the album has, which stays in it. */
-  there: Set<string>,
+  sending: Sending,
 ) {
-  const { photo, digest, before } = job;
+  const { album, note } = sending;
+  const { photo, digest, before, earlier } = job;
   const files = open.files.edit(photo);
-  const asset = yield* uploadPhoto(files.final, album);
-  const isReplaced = before !== undefined && before.asset !== asset;
+  const upload = yield* uploadInto(files.final, album);
+  const { asset } = upload;
+  const noted = yield* readPublication(open);
+  // Immich says whether this upload put the file into the album. One that it
+  // found there is the shoot's when the shoot put it there before, also as
+  // another photo with the same file, and otherwise the owner's or another
+  // shoot's.
+  const sent: SendingPhoto = {
+    photo,
+    asset,
+    added: upload.added || isPutInto(noted, album, asset),
+  };
+  // What this photo put there, also in an attempt that stopped, goes back out.
+  const isTakenBack =
+    upload.added ||
+    (noted?.sending ?? []).some(
+      (one) => one.photo === photo && one.asset === asset && isAdded(one),
+    );
+  yield* note((publication) => withSending(publication, sent, upload.created));
+  const isReplaced = earlier !== undefined && earlier.asset !== asset;
   // A photo that isn't published whole doesn't stay in the album.
   const cameraAsset = yield* Effect.gen(function* () {
     const camera = yield* uploadPhoto(files.camera, null);
     yield* stackPhotos(asset, camera);
     yield* tagPhoto(tag, asset);
     if (isReplaced) {
-      yield* carryFavorite(open, album, before.asset, asset);
+      yield* carryFavorite(open, album, earlier.asset, asset);
     }
     return camera;
   }).pipe(
-    Effect.catch((error) =>
-      there.has(asset)
-        ? Effect.fail(error)
-        : takeBack(album, asset, error.message),
+    // Rolling back fails with what failed, and says what stays.
+    Effect.tapError((error) =>
+      isTakenBack ? rollBack(open, sent, sending, error.message) : Effect.void,
     ),
   );
-  there.add(asset);
-  const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
+  const replaced = (before?.replaced ?? []).filter((one) => one !== asset);
+  // An upload the shoot put there stays noted, so taking the photo out takes
+  // it out too. Only one keepsake made waits there for the trash.
+  const isNoted = isReplaced && isAdded(earlier);
   return {
     photo,
     asset,
     cameraAsset,
     digest,
-    replaced: isReplaced
-      ? [...replaced.filter((one) => one !== asset), before.asset]
-      : replaced,
+    replaced: isNoted ? [...replaced, earlier.asset] : replaced,
+    added: sent.added,
   } satisfies Published;
 });
 
-/** The publication with a photo's upload in it, and the one it replaced. */
-const withSent = (
-  publication: Publication,
-  done: Published,
-  before: Published | undefined,
-): Publication => {
-  const sent = {
-    ...publication,
-    photos: [
-      ...publication.photos.filter(({ photo }) => photo !== done.photo),
-      done,
-    ],
-  };
-  const isReplaced = before !== undefined && before.asset !== done.asset;
-  return {
-    ...sent,
-    outdated: outdatedOf({
-      ...sent,
-      outdated: [
-        ...(sent.outdated ?? []),
-        ...(isReplaced ? [before.asset] : []),
-      ],
+/** An album that is in Immich, and whether it is the account's own. */
+const existing = (album: NamedAlbum) =>
+  Effect.map(
+    signedInUser,
+    (user): Destination => ({
+      id: album.id,
+      name: album.name,
+      owned: isOwnAlbum(album, user),
     }),
-  };
-};
-
-/** The album keepsake publishes to, and whether it is the account's own. */
-type Destination = {
-  readonly id: string;
-  readonly name: string;
-  readonly owned: boolean | undefined;
-};
+  );
 
 /**
- * The publication keepsake goes on with for the album it publishes to. It
- * forgets the albums of the account's own that are gone, which were deleted,
- * so what they showed is not in use anymore.
+ * The album to publish to, made if it is new and may be made. A new album of
+ * a name is looked for again and made while no other publish does that for
+ * the name, so shoots of one title that publish at once share one album.
  */
-const publicationFor = (
-  before: Publication | null,
-  album: Destination,
-  albums: ReadonlyArray<NamedAlbum>,
-): Publication => {
-  const records = albumsOf(before);
-  const isDeleted = (albumId: string, owned: boolean | undefined) =>
-    owned === true && !albums.some(({ id }) => id === albumId);
-  return {
-    album: album.name,
-    albumId: album.id,
-    ...(album.owned === undefined ? {} : { owned: album.owned }),
-    photos: records.find(({ albumId }) => albumId === album.id)?.photos ?? [],
-    outdated: before?.outdated ?? [],
-    elsewhere: records.flatMap(({ album: name, albumId, owned, photos }) =>
-      albumId === undefined || albumId === album.id || isDeleted(albumId, owned)
-        ? []
-        : [
-            {
-              album: name,
-              albumId,
-              ...(owned === undefined ? {} : { owned }),
-              photos,
-            },
-          ],
-    ),
-  };
-};
-
-/** The album to publish to, made if it is new and may be made. */
 const destinationOf = Effect.fn('destinationOf')(function* (
+  open: OpenShoot,
   target: Target,
   makesAlbum: boolean,
 ) {
@@ -259,11 +251,20 @@ const destinationOf = Effect.fn('destinationOf')(function* (
     });
   }
   if (target.id === undefined) {
-    const made = yield* createAlbum(target.name);
-    return { id: made.id, name: made.name, owned: true };
+    const { name, lookup } = target;
+    return yield* Effect.gen(function* () {
+      const found =
+        lookup === null
+          ? undefined
+          : yield* albumOfName(yield* listAlbums, name, lookup);
+      if (found !== undefined) {
+        return yield* existing(found);
+      }
+      const made = yield* createAlbum(name);
+      return { id: made.id, name: made.name, owned: true };
+    }).pipe(withAlbumName(open.files, albumNameKey(name)));
   }
-  const { id, name } = target;
-  return { id, name, owned: isOwnAlbum(target, yield* signedInUser) };
+  return yield* existing(target);
 });
 
 /**
@@ -279,13 +280,9 @@ const albumNow = Effect.fn('albumNow')(function* (
   const record = records.find(
     ({ albumId }) => albumId !== undefined && albumId === target.id,
   );
-  return {
-    published: record?.photos ?? [],
-    there:
-      record === undefined
-        ? null
-        : yield* refreshAlbum(open, record, record === records[0]),
-  };
+  return record === undefined
+    ? null
+    : yield* refreshAlbum(open, record, record === records[0]);
 });
 
 /**
@@ -319,25 +316,40 @@ const publishNow = Effect.fn('publish')(function* (
   const before = yield* knownPublication(open, albums);
   yield* giveRemovalsTheirAlbum(open, before?.albumId);
   const target = yield* targetOf(open, before, chosenAlbum, albums);
-  const { published, there } = yield* albumNow(open, before, target);
+  // What `album.json` named of an album the shoot leaves is taken on first,
+  // as switching to another album forgets it.
+  if (target.id !== before?.albumId) {
+    yield* adoptBeforeLeaving(open, albums);
+  }
+  const there = yield* albumNow(open, before, target);
+  // Read again, as reading the album may have taken on uploads.
+  const known = yield* knownPublication(open, albums);
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
-  const ready = yield* jobs(open, names, target, published);
+  const record = albumsOf(known).find(
+    ({ albumId }) => albumId !== undefined && albumId === target.id,
+  );
+  const ready = yield* jobs(open, names, target, record);
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
-  const album = yield* destinationOf(target, makesAlbum);
-  const uploads = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
+  const album = yield* destinationOf(open, target, makesAlbum);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
-  let publication = publicationFor(before, album, albums);
+  let publication = publicationFor(known, album, albums);
   yield* switchTo(open, publication);
   yield* ensureTag(tag);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
-      const done = yield* send(open, job, album.id, uploads);
-      publication = withSent(publication, done, job.before);
+      const done = yield* send(open, job, {
+        album: album.id,
+        note: (change) => {
+          publication = change(publication);
+          return writeJson(Publication, open.files.publication, publication);
+        },
+      });
+      publication = withSent(publication, done, job.earlier);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;
     }),

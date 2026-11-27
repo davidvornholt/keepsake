@@ -13,7 +13,7 @@ import { handOver, toLaunch } from './hand-over.ts';
 import { acknowledge } from './handed.ts';
 import { saveLabels } from './labels.ts';
 import { makeMark, seeMark, takeBack } from './marks.ts';
-import { forgetShoot, makeShoot } from './new-shoot.ts';
+import { existingAlbums, forgetShoot, makeShoot } from './new-shoot.ts';
 import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
 import {
@@ -229,6 +229,9 @@ export const makeAnswers = (has: Has) => ({
     return Response.json(yield* has.folders.list(shoots));
   }),
   look: (request: Request) => lookAnswer(has, request),
+  albums: Effect.map(existingAlbums, (list) =>
+    Response.json(list, { headers: { 'cache-control': 'no-store' } }),
+  ),
   newShoot: (request: Request) => newShootAnswer(has, request),
   prepare: (name: string) =>
     Effect.gen(function* () {

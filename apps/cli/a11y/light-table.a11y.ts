@@ -26,7 +26,11 @@ test('lays a published album on the table', async ({ page }) => {
   await expect(
     page.getByRole('link', { name: 'Album in Immich' }),
   ).toBeVisible();
-  const days = page.getByRole('heading', { level: 2 });
+  // Only the days: the test that hands marks over orders this album too,
+  // meanwhile, which says so under a heading of its own.
+  const days = page
+    .getByRole('heading', { level: 2 })
+    .filter({ hasNotText: 'More photos are' });
   await expect(days).toHaveCount(4);
   await expect(days.first()).toContainText('5 stacks');
   await expect(days.first()).toContainText('3 in the album');
