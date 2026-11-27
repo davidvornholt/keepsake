@@ -20,21 +20,20 @@ import {
 } from './command-fixtures.ts';
 import { fakeModels, freeChatUsage } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
-import {
-  eventually,
-  handOver,
-  marksOf,
-  whileServing,
-} from './light-table-fixtures.ts';
+import { handOver, marksOf, whileServing } from './light-table-fixtures.ts';
 import { whileHeld } from './lock-fixtures.ts';
 import {
   answeredOf,
-  busy,
+  ended,
   endedOnce,
+  finalDigestOf,
   goOn,
   keepsakeInProcess,
   keepsakeRuns,
   markB,
+  operationOf,
+  progressOf,
+  publishedBefore,
   restingOf,
   stopOf,
 } from './runner-fixtures.ts';
@@ -47,19 +46,6 @@ setDefaultTimeout(30_000);
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
-const operationOf = (args: string) => args.split('--operation ')[1] ?? '';
-
-/** The noted progress of each mark, while there is any. */
-const progressOf = async () =>
-  existsSync(shootFile('carrying-out.json'))
-    ? Object.values(
-        (await shootJson('carrying-out.json')).marks as Record<
-          string,
-          { readonly operation: string | null; readonly edited: unknown }
-        >,
-      )
-    : [];
-
 /** What was handed over, as it was noted. */
 const handOversNoted = async () =>
   Promise.all(
@@ -71,13 +57,8 @@ const handOversNoted = async () =>
 describe('a change mark that is handed over', () => {
   it('is carried out, published and answered with what changed', async () => {
     await publishLisbon();
-    // The fake image model's pictures are all alike, and a change isn't, so
-    // it is made to differ from what was published before.
-    keepsakeInProcess(([command]) => {
-      if (command === 'publish') {
-        appendFileSync(shootFile('edits', 'B', 'B-keepsake.jpg'), 'changed');
-      }
-    });
+    await publishedBefore('B');
+    keepsakeInProcess();
     const [marks, carrying] = await whileServing(async (address) => {
       await markB(address);
       await handOver(address, { dollars: 5 });
@@ -90,7 +71,10 @@ describe('a change mark that is handed over', () => {
     expect(edit).toStartWith(
       `edit lisbon --mark ${id} --budget 5 --operation `,
     );
-    expect(rest).toEqual([`publish lisbon --mark ${id}`, 'explain lisbon']);
+    expect(rest).toEqual([
+      `publish lisbon --mark ${id} --digest ${await finalDigestOf('B')}`,
+      'explain lisbon',
+    ]);
     expect(carrying).toEqual({ since: null, stopped: null });
     // The upload it replaced is in the trash, and the new one in the album.
     expect(fakeTools.trashed).toEqual(['asset-3']);
@@ -210,75 +194,38 @@ describe('a change mark that runs out of money', () => {
   });
 });
 
-describe('a change mark that a server didn’t get through', () => {
-  it('goes on after a restart without paying for its edit again', async () => {
+describe('a change mark whose photo changed meanwhile', () => {
+  it('publishes nothing and stops when the photo was edited again before it is published', async () => {
     await publishLisbon();
-    // The first server stops as soon as the edit ended and was noted.
-    let isEdited = false;
-    keepsakeInProcess((args) => {
-      if (isEdited) {
-        return busy;
+    await publishedBefore('B');
+    const uploads = fakeTools.uploads.length;
+    // Another edit replaces what the mark's edit made, after the server
+    // noted that edit.
+    keepsakeInProcess(([command]) => {
+      if (command === 'publish') {
+        appendFileSync(shootFile('edits', 'B', 'B-keepsake.jpg'), 'changed');
       }
-      isEdited = args[0] === 'edit';
     });
-    const id = await whileServing(async (address) => {
+    const [stop, marks] = await whileServing(async (address) => {
       await markB(address);
       await handOver(address, { dollars: 5 });
-      await eventually(progressOf, (marks) =>
-        marks.some(({ edited }) => edited !== null),
-      );
-      return (await marksOf(address))[0].id;
+      return [await stopOf(address), await marksOf(address)];
     });
-    const before = keepsakeRuns().length;
-    keepsakeInProcess();
-    const [{ answer }] = await whileServing(async (address) => {
-      const answered = await answeredOf(address);
-      await restingOf(address);
-      return answered;
+    expect(stop).toMatchObject({
+      needs: 'retry',
+      photos: ['B'],
+      reason: expect.stringContaining('edited again after this change'),
     });
-    expect(answer).toMatchObject({ outcome: 'done' });
-    expect(keepsakeRuns().slice(before)).toEqual([
-      `publish lisbon --mark ${id}`,
-      'explain lisbon',
+    expect(marks).toMatchObject([{ answer: null }]);
+    expect(ended.filter((args) => args.startsWith('publish'))).toHaveLength(1);
+    expect(fakeTools.uploads.length).toBe(uploads);
+    expect(fakeTools.trashed).toEqual([]);
+    // Going on makes the change again.
+    expect(await progressOf()).toMatchObject([
+      { operation: null, edited: null },
     ]);
   });
 
-  it('isn’t paid again when the server stopped after the edit ended, before it noted it', async () => {
-    await publishLisbon();
-    // The first server stops while the edit has ended and said what it came
-    // to, before it hears of that.
-    keepsakeInProcess(undefined, ([command]) =>
-      command === 'edit' ? new Promise<void>(() => undefined) : undefined,
-    );
-    await whileServing(async (address) => {
-      await markB(address);
-      await handOver(address, { dollars: 5 });
-      await endedOnce((args) => args.startsWith('edit'));
-    });
-    const [noted] = await progressOf();
-    const operation = noted?.operation ?? '';
-    expect(noted).toMatchObject({ edited: null });
-    expect(existsSync(shootFile('operations', `${operation}.json`))).toBe(true);
-    const paid = fakeModels.edits.length;
-    expect(paid).toBeGreaterThan(0);
-    keepsakeInProcess();
-    const [{ answer }] = await whileServing(async (address) => {
-      const answered = await answeredOf(address);
-      await restingOf(address);
-      return answered;
-    });
-    expect(answer).not.toBeNull();
-    // The same edit again, which says what it came to without editing.
-    const edits = keepsakeRuns().filter((args) => args.startsWith('edit'));
-    expect(edits.map(operationOf)).toEqual([operation, operation]);
-    expect(fakeModels.edits.length).toBe(paid);
-    expect(existsSync(shootFile('operations', `${operation}.json`))).toBe(
-      false,
-    );
-  });
-});
-
-describe('a change mark whose photo changed meanwhile', () => {
   it('isn’t put into the album when another edit came before the server heard of it', async () => {
     await publishLisbon();
     keepsakeInProcess(undefined, ([command]) =>
@@ -323,11 +270,8 @@ describe('a change mark of a photo another shoot published too', () => {
     expect(photos).toContainEqual(
       expect.objectContaining({ photo: 'B', asset: 'asset-3' }),
     );
-    keepsakeInProcess(([command]) => {
-      if (command === 'publish') {
-        appendFileSync(shootFile('edits', 'B', 'B-keepsake.jpg'), 'changed');
-      }
-    });
+    await publishedBefore('B');
+    keepsakeInProcess();
     const [{ answer }] = await whileServing(async (address) => {
       await markB(address);
       await handOver(address, { dollars: 5 });
@@ -336,6 +280,7 @@ describe('a change mark of a photo another shoot published too', () => {
       return answered;
     });
     expect(answer).toMatchObject({ outcome: 'done' });
+    expect(fakeTools.uploads.at(-1)).toEndWith('B-keepsake.jpg');
     expect(fakeTools.trashed).toEqual([]);
     expect(fakeTools.albums[0]?.assets.map(({ id }) => id)).toContain(
       'asset-3',

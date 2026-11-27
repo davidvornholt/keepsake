@@ -221,6 +221,12 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         locks,
         `album.${createHash('sha256').update(key).digest('hex')}`,
       ),
+    /**
+     * Held by any shoot while it uploads to Immich, up to noting what it
+     * uploaded, and while it looks whether another shoot names an upload it
+     * replaced and trashes it. Taken inside the shoot's lock and choice.
+     */
+    uploadsLock: path.join(locks, '.immich'),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** What the owner handed over, a file for each time. */

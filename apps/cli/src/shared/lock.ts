@@ -260,7 +260,7 @@ const waitingFor =
             triesLeft === 0
               ? Effect.fail(
                   new ShootBusy({
-                    message: `Another keepsake command${holderOf(path)} has been changing ${what} of this shoot for long. Try again later.`,
+                    message: `Another keepsake command${holderOf(path)} has been ${what} for long. Try again later.`,
                   }),
                 )
               : Effect.andThen(
@@ -278,7 +278,12 @@ const waitingFor =
 export const withAlbum =
   (files: ShootFiles) =>
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    waitingFor(files.albumLock, albumPause, albumTries, 'the album')(work);
+    waitingFor(
+      files.albumLock,
+      albumPause,
+      albumTries,
+      'changing the album of this shoot',
+    )(work);
 
 /**
  * Runs work that looks for the album of a name and makes it if there is none,
@@ -291,7 +296,7 @@ export const withAlbumName =
       files.albumNameLock(key),
       albumPause,
       albumTries,
-      'an album',
+      'changing an album of this shoot',
     )(work);
 
 /** The same, or none when such work is going on now. */
@@ -304,7 +309,12 @@ export const withAlbumIfFree = (files: ShootFiles) => holding(files.albumLock);
 export const withChoice =
   (files: ShootFiles) =>
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    waitingFor(files.choiceLock, choicePause, choiceTries, 'the choice')(work);
+    waitingFor(
+      files.choiceLock,
+      choicePause,
+      choiceTries,
+      'changing the choice of this shoot',
+    )(work);
 
 /** The same, or none when such work is going on now. */
 export const withChoiceIfFree = (files: ShootFiles) =>
@@ -321,5 +331,22 @@ export const withPhoto =
       files.photoLock(photo),
       choicePause,
       choiceTries,
-      `the photo ${photo}`,
+      `changing the photo ${photo} of this shoot`,
+    )(work);
+
+/**
+ * Runs work that uploads to Immich and notes what it uploaded, or that looks
+ * whether another shoot names an upload and trashes it, after such work of
+ * any shoot: so no shoot trashes an upload that another one just got as its
+ * own. Take it inside the shoot's lock and its choice, never the other way
+ * round: inside it, only the shoot's album lock is taken.
+ */
+export const withUploads =
+  (files: ShootFiles) =>
+  <A, E, R>(work: Effect.Effect<A, E, R>) =>
+    waitingFor(
+      files.uploadsLock,
+      albumPause,
+      choiceTries,
+      'uploading to Immich or trashing what it replaced',
     )(work);

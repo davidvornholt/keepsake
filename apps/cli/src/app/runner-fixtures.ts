@@ -1,6 +1,14 @@
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import type { CarryingOut } from '../features/light-table/contract.ts';
-import { judge, printed, run, shootFile } from './command-fixtures.ts';
+import {
+  judge,
+  printed,
+  run,
+  shootFile,
+  shootJson,
+} from './command-fixtures.ts';
 import { fakeTools, type Run } from './fake-tools.ts';
 import {
   change,
@@ -158,3 +166,49 @@ export const markB = (address: string, note = change.note) =>
     note,
     boxes: [],
   });
+
+/** The operation an edit was given, from its arguments. */
+export const operationOf = (args: string) =>
+  args.split('--operation ')[1] ?? '';
+
+/** The noted progress of each mark, while there is any. */
+export const progressOf = async () =>
+  existsSync(shootFile('carrying-out.json'))
+    ? Object.values(
+        (await shootJson('carrying-out.json')).marks as Record<
+          string,
+          {
+            readonly operation: string | null;
+            readonly before: string | null;
+            readonly edited: unknown;
+          }
+        >,
+      )
+    : [];
+
+/** The digest of a photo's finished file, as `edit` prints it. */
+export const finalDigestOf = async (photo: string) =>
+  createHash('sha256')
+    .update(await readFile(shootFile('edits', photo, `${photo}-keepsake.jpg`)))
+    .digest('hex');
+
+/**
+ * Makes what was published of a photo another picture than its finished
+ * file, in Immich and in what keepsake noted of it: the fake image model's
+ * pictures are all alike, and a change isn't.
+ */
+export const publishedBefore = async (photo: string) => {
+  const asset = fakeTools.library.find(({ file }) =>
+    file.endsWith(`${photo}-keepsake.jpg`),
+  );
+  if (asset === undefined) {
+    throw new Error(`${photo} was never published.`);
+  }
+  asset.checksum = 'what was published before';
+  const noted = shootFile('publication.json');
+  const digest = await finalDigestOf(photo);
+  await writeFile(
+    noted,
+    (await readFile(noted, 'utf8')).replaceAll(digest, 'published before'),
+  );
+};

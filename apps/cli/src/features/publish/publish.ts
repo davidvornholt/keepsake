@@ -32,6 +32,7 @@ import {
   withAlbumName,
   withChoice,
   withPhoto,
+  withUploads,
 } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
@@ -333,7 +334,8 @@ const publishNow = Effect.fn('publish')(function* (
   let publication = publicationFor(known, album, albums);
   yield* switchTo(open, publication);
   yield* ensureTag(tag);
-  // One at a time, and noted right away, so nothing is uploaded twice.
+  // One at a time, and noted right away, so nothing is uploaded twice, and
+  // no other shoot trashes an upload before this one named it.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
       const done = yield* send(open, job, {
@@ -346,7 +348,7 @@ const publishNow = Effect.fn('publish')(function* (
       publication = withSent(publication, done, job.earlier);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;
-    }),
+    }).pipe(withUploads(open.files)),
   );
   publication = { ...publication, outdated: outdatedOf(publication) };
   yield* writeJson(Publication, open.files.publication, publication);

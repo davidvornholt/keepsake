@@ -43,7 +43,12 @@ export type Step =
       /** The id the edit notes what it came to under. */
       readonly operation: string;
     }
-  | { readonly kind: 'publishMark'; readonly mark: Mark }
+  | {
+      readonly kind: 'publishMark';
+      readonly mark: Mark;
+      /** What the finished file is to be, as the edit left it. */
+      readonly digest: string | null;
+    }
   | {
       readonly kind: 'editOrder';
       readonly handOver: string;
@@ -142,6 +147,46 @@ export const handOverOf = (files: ShootFiles, mark: Mark) =>
     (records) => records.find(({ marks }) => marks.includes(mark.id))?.id ?? '',
   );
 
+/** Starts the edit of a mark, or goes on with one that was started. */
+const startMarkEdit = Effect.fn('startMarkEdit')(function* (
+  files: ShootFiles,
+  known: Standings,
+  carrying: Carrying,
+  mark: Mark,
+) {
+  const progress = carrying.marks[mark.id] ?? null;
+  // The version before the change is read once, when the change starts.
+  // A photo that wasn't edited before stays without one after a restart.
+  const before =
+    progress === null ? yield* versionOf(files, mark.photo) : progress.before;
+  // An edit that ended before it was noted is noted from what it came to,
+  // whatever is left of the money now.
+  const operation = progress?.operation ?? null;
+  const budget = yield* agreedDollars(files, known);
+  if (operation === null && budget <= 0) {
+    return yield* stopped(files, carrying, {
+      reason: changeUsedUp,
+      needs: 'money',
+      handOver: yield* handOverOf(files, mark),
+      photos: [mark.photo],
+    });
+  }
+  const given = operation ?? newId();
+  yield* saveCarrying(files, {
+    ...carrying,
+    marks: {
+      ...carrying.marks,
+      [mark.id]: { operation: given, before, edited: null, published: false },
+    },
+  });
+  return {
+    kind: 'editMark',
+    mark,
+    budget,
+    operation: given,
+  } satisfies Step;
+});
+
 const planMark = Effect.fn('planMark')(function* (
   files: ShootFiles,
   known: Standings,
@@ -155,37 +200,15 @@ const planMark = Effect.fn('planMark')(function* (
     return yield* answered(files, carrying, mark, notDone(takenOut));
   }
   if (edited === null) {
-    const before = progress?.before ?? (yield* versionOf(files, mark.photo));
-    // An edit that ended before it was noted is noted from what it came to,
-    // whatever is left of the money now.
-    const operation = progress?.operation ?? null;
-    const budget = yield* agreedDollars(files, known);
-    if (operation === null && budget <= 0) {
-      return yield* stopped(files, carrying, {
-        reason: changeUsedUp,
-        needs: 'money',
-        handOver: yield* handOverOf(files, mark),
-        photos: [mark.photo],
-      });
-    }
-    const given = operation ?? newId();
-    yield* saveCarrying(files, {
-      ...carrying,
-      marks: {
-        ...carrying.marks,
-        [mark.id]: { operation: given, before, edited: null, published: false },
-      },
-    });
-    return {
-      kind: 'editMark',
-      mark,
-      budget,
-      operation: given,
-    } satisfies Step;
+    return yield* startMarkEdit(files, known, carrying, mark);
   }
   if (!isDone) {
     yield* saveCarrying(files, carrying);
-    return { kind: 'publishMark', mark } satisfies Step;
+    return {
+      kind: 'publishMark',
+      mark,
+      digest: progress?.digest ?? null,
+    } satisfies Step;
   }
   const outcome = edited.changed ? 'done' : 'not-done';
   return yield* answered(files, carrying, mark, { outcome, note: edited.note });
@@ -327,4 +350,21 @@ export const stillOrdered = Effect.fn('stillOrdered')(function* (
     waitingOf(yield* standingsOf(open), order),
     (photo) => isEdited(open.files, photo),
   );
+});
+
+/**
+ * What is left now of what the owner agreed to pay, for an order that is
+ * still open, from what was charged so far: nothing once it is through. Run
+ * it under the shoot's lock, so an edit that ended after the runner planned
+ * counts too.
+ */
+export const allowanceOf = Effect.fn('allowanceOf')(function* (
+  open: OpenShoot,
+  handOver: string,
+) {
+  const known = yield* standingsOf(open);
+  const unsettled = yield* unsettledOf(open.files, known);
+  return unsettled.some((record) => record.id === handOver && isOrder(record))
+    ? yield* agreedDollars(open.files, known)
+    : 0;
 });

@@ -41,6 +41,11 @@ const Progress = Schema.Struct({
   edited: Schema.NullOr(
     Schema.Struct({ changed: Schema.Boolean, note: Schema.String }),
   ),
+  /**
+   * The SHA-256 digest of the finished file the edit left, which is
+   * published only while it is still that file.
+   */
+  digest: Schema.optionalKey(Schema.NullOr(Schema.String)),
   published: Schema.Boolean,
 });
 export type Progress = typeof Progress.Type;

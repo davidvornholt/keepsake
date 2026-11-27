@@ -17,6 +17,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
+import { fakeModels } from './fake-models.ts';
 import {
   eventually,
   handOver,
@@ -51,6 +52,30 @@ type Added = { readonly photo: string; readonly at: string };
 
 const byOrder = /^publish lisbon --order /u;
 
+type Charged = Record<string, { readonly dollars: number }>;
+
+/** What the shoot's spending notes say was charged, in dollars. */
+const spentOn = async () =>
+  Object.values((await shootJson('spending.json')) as Charged).reduce(
+    (total, { dollars }) => total + dollars,
+    0,
+  );
+
+/** Notes a charge as an edit that ran meanwhile would. */
+const charge = async (dollars: number) =>
+  writeFile(
+    shootFile('spending.json'),
+    JSON.stringify({
+      ...((await shootJson('spending.json')) as Charged),
+      'an earlier edit': {
+        calls: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        dollars,
+      },
+    }),
+  );
+
 describe('an order that is handed over', () => {
   it('is edited, put into the album, and new until it was looked at', async () => {
     await publishLisbon();
@@ -76,7 +101,7 @@ describe('an order that is handed over', () => {
     });
     expect(inImmich()).toContain('A2');
     const [edit, publish, ...rest] = keepsakeRuns();
-    expect(edit).toBe('edit lisbon A2 --budget 5');
+    expect(edit).toStartWith('edit lisbon A2 --budget 5 --order ');
     expect(publish).toStartWith('publish lisbon --order ');
     expect(rest).toEqual(['explain lisbon']);
     expect(list).toMatchObject({ news: 1, newSince: expect.any(String) });
@@ -160,5 +185,32 @@ describe('an order that is handed over', () => {
     expect(await runOk('publish', 'lisbon', '--order', 'open')).toMatchObject({
       photos: ['A2'],
     });
+  });
+});
+
+describe('an order whose server stopped while its edit went on', () => {
+  it('spends no more than it agreed to when the old edit charged after the runner planned', async () => {
+    await publishLisbon();
+    const agreed = 5;
+    const spentBefore = await spentOn();
+    const edits = fakeModels.edits.length;
+    // The edit an earlier server started charges what is left of the order
+    // just before the new one takes the shoot's lock.
+    keepsakeInProcess(async ([command, ...rest]) => {
+      if (command === 'edit' && rest.includes('--order')) {
+        await charge(agreed);
+      }
+    });
+    const stopped = await whileServing(async (address) => {
+      await choose(address, { photo: 'A2', wants: 'in' });
+      await handOver(address, { dollars: agreed, album: ['A2'] });
+      return stopOf(address);
+    });
+    expect(keepsakeRuns()[0]).toStartWith(
+      `edit lisbon A2 --budget ${agreed} --order `,
+    );
+    expect(stopped).toMatchObject({ needs: 'money', photos: ['A2'] });
+    expect(fakeModels.edits.length).toBe(edits);
+    expect(await spentOn()).toBeCloseTo(spentBefore + agreed);
   });
 });

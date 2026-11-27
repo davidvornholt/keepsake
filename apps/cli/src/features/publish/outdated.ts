@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
 import { Publication } from '../../shared/domain.ts';
 import { trashPhotos } from '../../shared/immich.ts';
-import { withChoice } from '../../shared/lock.ts';
+import { withChoice, withUploads } from '../../shared/lock.ts';
 import {
   assetsInUse,
   madeFor,
@@ -85,8 +85,12 @@ export const tellOutdated = <E, R>(
   ) => Effect.Effect<void, E, R>,
 ) =>
   Effect.gen(function* () {
-    const outdated = yield* stillOutdated(open, candidates);
-    const failed = yield* trashed(outdated);
+    // While no shoot uploads, so none gets one of these as its own between
+    // the look and the trash.
+    const [outdated, failed] = yield* Effect.gen(function* () {
+      const still = yield* stillOutdated(open, candidates);
+      return [still, yield* trashed(still)] as const;
+    }).pipe(withUploads(open.files));
     yield* tell(outdated, failed);
     if (failed === null) {
       yield* forgetOutdated(open, outdated);

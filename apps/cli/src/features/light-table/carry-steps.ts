@@ -21,6 +21,7 @@ import {
   busyFor,
   current,
   type Doing,
+  type Edited,
   editedIn,
   isBusy,
 } from './step-outputs.ts';
@@ -51,6 +52,7 @@ const withEdit = (
   carrying: Carrying,
   mark: Mark,
   edited: Progress['edited'],
+  digest: string | null = null,
 ): Carrying => ({
   ...carrying,
   marks: {
@@ -59,6 +61,7 @@ const withEdit = (
       operation: null,
       before: carrying.marks[mark.id]?.before ?? null,
       edited,
+      digest,
       published: false,
     },
   },
@@ -82,6 +85,44 @@ const markStopped = (
       photos: [mark.photo],
     });
   });
+
+/** Notes what came of a mark's edit, unless another edit came after it. */
+const noteEdited = Effect.fn('noteEdited')(function* (
+  files: ShootFiles,
+  carrying: Carrying,
+  mark: Mark,
+  edited: Edited,
+) {
+  const { photo } = mark;
+  const made = edited.finished?.find((one) => one.photo === photo);
+  if (made !== undefined && !(yield* isStill(files, made))) {
+    // Another edit came after it, so it isn't what the owner agreed to.
+    yield* markStopped(files, carrying, mark, {
+      reason: changedSince,
+      needs: 'retry',
+    });
+    return;
+  }
+  const after = yield* versionOf(files, photo);
+  const record = Option.getOrNull(
+    yield* readJson(EditRecord, files.edit(photo).record),
+  );
+  const answer = answerFor({
+    changed:
+      after !== null && after !== (carrying.marks[mark.id]?.before ?? null),
+    wish: mark.note,
+    review: made?.review ?? record?.review ?? null,
+    keptBecause:
+      edited.keptFromCamera.find((one) => one.photo === photo)?.reason ?? null,
+    notDone: edited.notDone.flatMap((one) =>
+      one.photo === photo ? [one.what] : [],
+    ),
+  });
+  yield* saveCarrying(
+    files,
+    withEdit(carrying, mark, answer, made?.digest ?? null),
+  );
+});
 
 const recordMarkEdit = Effect.fn('recordMarkEdit')(function* (
   name: string,
@@ -117,32 +158,7 @@ const recordMarkEdit = Effect.fn('recordMarkEdit')(function* (
       needs: 'money',
     });
   } else if (typeof edited !== 'string') {
-    const made = edited.finished?.find((one) => one.photo === photo);
-    if (made !== undefined && !(yield* isStill(files, made))) {
-      // Another edit came after it, so it isn't what the owner agreed to.
-      yield* markStopped(files, carrying, mark, {
-        reason: changedSince,
-        needs: 'retry',
-      });
-      return yield* forgetOperation(files, operation);
-    }
-    const after = yield* versionOf(files, photo);
-    const record = Option.getOrNull(
-      yield* readJson(EditRecord, files.edit(photo).record),
-    );
-    const answer = answerFor({
-      changed:
-        after !== null && after !== (carrying.marks[mark.id]?.before ?? null),
-      wish: mark.note,
-      review: made?.review ?? record?.review ?? null,
-      keptBecause:
-        edited.keptFromCamera.find((one) => one.photo === photo)?.reason ??
-        null,
-      notDone: edited.notDone.flatMap((one) =>
-        one.photo === photo ? [one.what] : [],
-      ),
-    });
-    yield* saveCarrying(files, withEdit(carrying, mark, answer));
+    yield* noteEdited(files, carrying, mark, edited);
   }
   yield* forgetOperation(files, operation);
 });
@@ -159,6 +175,14 @@ const recordMarkPublish = Effect.fn('recordMarkPublish')(function* (
   const { open, carrying } = found;
   const { files } = open;
   const progress = carrying.marks[mark.id];
+  if (called.kind === 'failed' && called.tag === 'PhotoChanged') {
+    // Another edit came in between, so it is made again once the owner says.
+    yield* markStopped(files, carrying, mark, {
+      reason: changedSince,
+      needs: 'retry',
+    });
+    return;
+  }
   if (called.kind === 'failed') {
     const known = yield* standingsOf(open);
     yield* isStillChosen(known)(mark)
@@ -218,10 +242,17 @@ export const act = Effect.fn('act')(function* (
         : noting(recordMarkEdit(name, mark, called));
     }
     case 'publishMark': {
-      const called = yield* call(['publish', name, '--mark', step.mark.id]);
+      const { mark, digest } = step;
+      const called = yield* call([
+        'publish',
+        name,
+        '--mark',
+        mark.id,
+        ...(digest === null ? [] : ['--digest', digest]),
+      ]);
       return yield* isBusy(called)
         ? Effect.sleep(busyFor)
-        : noting(recordMarkPublish(name, step.mark, called));
+        : noting(recordMarkPublish(name, mark, called));
     }
     case 'editOrder':
       return yield* editOrder(name, step, doing);

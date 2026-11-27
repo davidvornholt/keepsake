@@ -11,8 +11,8 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools } from './fake-tools.ts';
-import { whileServing } from './light-table-fixtures.ts';
+import { fakeTools, type Run } from './fake-tools.ts';
+import { eventually, whileServing } from './light-table-fixtures.ts';
 import {
   editLater,
   inImmich,
@@ -42,6 +42,9 @@ const sameAsLisbon = (photo: string) =>
   );
 
 const because = ['--because', 'It is blurred.'];
+
+/** How long another command gets to do what it would, in milliseconds. */
+const meanwhile = 200;
 
 describe('keepsake publish, of two shoots into one album', () => {
   it('counts only its own uploads, also of photos with the same name', async () => {
@@ -109,31 +112,11 @@ describe('keepsake publish, of two shoots into one album', () => {
     await pickLisbon();
     await editLisbon();
     await editLater(sameAsLisbon);
-    // The first shoot waits once Immich put its A1 into the album, and the
-    // other publishes the same file meanwhile, whose camera's file fails.
-    const waiting = Promise.withResolvers<void>();
-    const going = Promise.withResolvers<void>();
-    const laterCamera = laterFile('edits', 'A1', 'A1.jpg');
-    const camera = shootFile('edits', 'A1', 'A1.jpg');
-    fakeTools.pause = ({ args }) => {
-      if (args[0] !== 'upload') {
-        return;
-      }
-      if (args[1] === laterCamera) {
-        fakeTools.broken.add(laterCamera);
-        return;
-      }
-      if (args[1] === camera) {
-        waiting.resolve();
-        return going.promise;
-      }
-    };
-    const first = run('publish', 'lisbon');
-    await waiting.promise;
+    // No two shoots upload at once, so the other one publishes the same file
+    // once the first is through, and its camera's file fails.
+    await runOk('publish', 'lisbon');
+    fakeTools.broken.add(laterFile('edits', 'A1', 'A1.jpg'));
     expect((await run('publish', 'later'))._tag).toBe('Failure');
-    expect(inImmich()).toContain('asset-1');
-    going.resolve();
-    expect((await first)._tag).toBe('Success');
     expect(inImmich()).toEqual(['asset-1', 'asset-3', 'asset-5']);
   });
 
@@ -186,6 +169,57 @@ describe('keepsake publish, of a file another shoot has too', () => {
     await Bun.write(laterFinal('A1'), 'another A1');
     const again = await runOk('publish', 'later', 'A1');
     expect(again).toMatchObject({ published: 1, outdated: [] });
+  });
+});
+
+describe('keepsake publish, while another shoot publishes the file it replaced', () => {
+  it('lets the other shoot upload only once it trashed what it looked at', async () => {
+    await pickLisbon();
+    await editLisbon();
+    await runOk('publish', 'lisbon');
+    const published = (await shootJson('publication.json')).photos as Array<{
+      readonly photo: string;
+      readonly asset: string;
+    }>;
+    const replaced = published.find(({ photo }) => photo === 'B')?.asset ?? '';
+    // The other shoot's B is the file the first one replaces now.
+    await editLater(sameAsLisbon);
+    await writeFile(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another B');
+    const looked = Promise.withResolvers<void>();
+    const trashing = Promise.withResolvers<void>();
+    fakeTools.pause = ({ command, args }) => {
+      if (command !== 'photos' || args[0] !== 'trash') {
+        return;
+      }
+      // The first shoot found that no other shoot names it.
+      looked.resolve();
+      return trashing.promise;
+    };
+    const replacing = run('publish', 'lisbon', 'B');
+    await looked.promise;
+    const isLaterUpload = ({ command, args }: Run) =>
+      command === 'photos' &&
+      args[0] === 'upload' &&
+      args.includes(laterFinal('B'));
+    const tagLooks = () =>
+      fakeTools.runs.filter(
+        ({ command, args }) => command === 'photos' && args[0] === 'tags',
+      ).length;
+    const looks = tagLooks();
+    const other = run('publish', 'later', 'B');
+    // Until the other shoot is about to upload, and a while after.
+    await eventually(
+      async () => tagLooks(),
+      (count) => count > looks,
+    );
+    await Bun.sleep(meanwhile);
+    const uploadedMeanwhile = fakeTools.runs.some(isLaterUpload);
+    trashing.resolve();
+    const results = await Promise.all([replacing, other]);
+    expect(uploadedMeanwhile).toBe(false);
+    expect(results.map(({ _tag }) => _tag)).toEqual(['Success', 'Success']);
+    expect(fakeTools.trashed).toEqual([replaced]);
+    expect(fakeTools.runs.some(isLaterUpload)).toBe(true);
   });
 });
 

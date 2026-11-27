@@ -139,6 +139,8 @@ export const editOrder = Effect.fn('editOrder')(function* (
     ...photos,
     '--budget',
     `${budget}`,
+    '--order',
+    handOver,
   ]);
   if (isBusy(called)) {
     return yield* Effect.sleep(busyFor);

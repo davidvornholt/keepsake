@@ -65,3 +65,10 @@ export class ServerRunning extends Schema.TaggedError<ServerRunning>()(
 export class OverBudget extends Schema.TaggedError<OverBudget>()('OverBudget', {
   message: Schema.String,
 }) {}
+
+// The finished photo is no more the file that was to be published, as
+// another edit came in between, so nothing is published.
+export class PhotoChanged extends Schema.TaggedError<PhotoChanged>()(
+  'PhotoChanged',
+  { message: Schema.String },
+) {}
