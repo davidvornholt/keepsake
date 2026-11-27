@@ -69,7 +69,9 @@ const photosIn = (record: AlbumRecord, assets: ReadonlyArray<Asset>) => {
 
 /**
  * Notes as taken out the photos that are gone from the album, and forgets
- * that those were taken out that are back in it.
+ * that those were taken out of it that are back in it. One the owner took
+ * out of every album stays out, as it may still be in an album it wasn't
+ * taken out of; `publish` lets it back in when it is named.
  */
 const noteRemoved = Effect.fn('noteRemoved')(function* (
   open: OpenShoot,
@@ -93,10 +95,12 @@ const noteRemoved = Effect.fn('noteRemoved')(function* (
         all.some((one) => one.photo === photo && counts(one))
       ),
   );
-  const isBack = all.some((one) => counts(one) && there.has(one.photo));
+  const isBackHere = (one: Removed) =>
+    one.album === album.id && there.has(one.photo);
+  const isBack = all.some(isBackHere);
   if (gone.length > 0 || isBack) {
     yield* writeJson(Schema.Array(Removed), open.files.removed, [
-      ...all.filter((one) => !(counts(one) && there.has(one.photo))),
+      ...all.filter((one) => !isBackHere(one)),
       ...gone.map((photo) => ({
         photo,
         at: album.readAt,

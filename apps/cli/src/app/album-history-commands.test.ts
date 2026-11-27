@@ -227,6 +227,29 @@ describe('keepsake publish, after the album changed in Immich', () => {
   });
 });
 
+describe('keepsake publish, to several albums, of a photo taken out for a reason', () => {
+  it('keeps a photo taken out for a reason out when it is still in an earlier album', async () => {
+    await publishLisbon('--album', first);
+    await runOk('publish', 'lisbon', '--album', 'Second');
+    await runOk('take-out', 'lisbon', 'B', '--because', 'Keep private');
+    await runOk('publish', 'lisbon', '--album', first);
+    expect(await shootJson('removed.json')).toEqual([
+      expect.objectContaining({ photo: 'B', because: 'Keep private' }),
+    ]);
+    const third = await runOk('publish', 'lisbon', '--album', 'Third');
+    expect(third).toMatchObject({ published: 2 });
+    const names = albumWithId('album-3')?.assets.map((one) => one.fileName);
+    expect(names).toEqual(['A1-keepsake.jpg', 'C-keepsake.jpg']);
+  });
+
+  it('lets a photo taken out for a reason into another album when it is named', async () => {
+    await publishLisbon('--album', first);
+    await runOk('take-out', 'lisbon', 'B', '--because', 'It is blurred.');
+    await runOk('publish', 'lisbon', 'B', '--album', 'Second');
+    expect(await shootJson('removed.json')).toEqual([]);
+  });
+});
+
 describe('keepsake publish, to another album, stopped half-way', () => {
   it('forgets what it read of the album before', async () => {
     await publishLisbon();
