@@ -37,7 +37,37 @@ describe('wordOf', () => {
     expect(word).toEqual({ kind: 'answer', mark: answered });
   });
 
-  it('says that an agent is at work, then that a mark waits for one', () => {
+  it('says what waits for the owner at the photo, with what going on costs', () => {
+    const stopped = {
+      at: handedAt,
+      reason: 'What you agreed to pay is used up.',
+      needs: 'money' as const,
+      photos: ['a'],
+      seenAt: null,
+    };
+    const word = wordOf(indexOf(sampleShoot([photo], [handed])), photo, {
+      ...calm,
+      carrying: { since: null, stopped },
+    });
+    expect(word).toMatchObject({
+      kind: 'stopped',
+      carrying: { is: 'stopped', stopped, more: 1.13 },
+    });
+  });
+
+  it('says that an order put the photo in, until it is looked at', () => {
+    const shoot = sampleShoot([photo]);
+    const added = { photo: 'a', at: handedAt, seenAt: null };
+    expect(wordOf(indexOf({ ...shoot, added: [added] }), photo, calm)).toEqual({
+      kind: 'added',
+    });
+    const seen = { ...added, seenAt: handedAt };
+    expect(
+      wordOf(indexOf({ ...shoot, added: [seen] }), photo, calm),
+    ).toBeNull();
+  });
+
+  it('says that keepsake is at work, then that a mark waits for it', () => {
     expect(wordFor([handed], { ...calm, isWorkedOn: true })).toEqual({
       kind: 'working',
     });

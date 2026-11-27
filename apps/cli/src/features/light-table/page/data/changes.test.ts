@@ -21,6 +21,7 @@ import {
 } from './sample.ts';
 
 const now = '2026-05-22T08:00:00.000Z';
+const later = '2026-05-22T09:00:00.000Z';
 
 describe('draftOf', () => {
   it('is the mark as keepsake will save it', () => {
@@ -109,14 +110,34 @@ describe('what keepsake answers', () => {
     expect(withoutMark([other, draft], 'draft-1')).toEqual([other]);
   });
 
-  it('notes that an answer was seen', () => {
-    const [seen, unseen] = withSeen(
-      [sampleMark('one'), sampleMark('two')],
-      'one',
-      now,
-    );
-    expect(seen?.seenAt).toBe(now);
-    expect(unseen?.seenAt).toBeNull();
+  it('notes that everything new about a photo was seen', () => {
+    const answer = { at: now, outcome: 'done' as const, note: 'Done.' };
+    const stopped = {
+      at: now,
+      reason: 'It stopped.',
+      needs: 'retry' as const,
+      photos: ['a'],
+      seenAt: null,
+    };
+    const shoot = {
+      ...sampleShoot(
+        [samplePhoto('a'), samplePhoto('b')],
+        [
+          sampleMark('one', { photo: 'a', answer }),
+          sampleMark('two', { photo: 'b', answer }),
+        ],
+      ),
+      added: [
+        { photo: 'a', at: now, seenAt: null },
+        { photo: 'b', at: now, seenAt: null },
+      ],
+      carrying: { since: null, stopped },
+    };
+    const seen = withSeen(shoot, 'a', later);
+    expect(seen.marks.map(({ seenAt }) => seenAt)).toEqual([later, null]);
+    expect(seen.added.map(({ seenAt }) => seenAt)).toEqual([later, null]);
+    expect(seen.carrying.stopped?.seenAt).toBe(later);
+    expect(withSeen(shoot, 'b', later).carrying).toBe(shoot.carrying);
   });
 });
 

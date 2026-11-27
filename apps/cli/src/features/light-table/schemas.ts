@@ -1,7 +1,7 @@
 import { Schema } from 'effect';
 import { Box, PublishedPhoto, Removed } from '../../shared/domain.ts';
 
-/** What an agent did about a mark. */
+/** What came of a mark. */
 export const Answer = Schema.Struct({
   outcome: Schema.Literals(['done', 'not-done']),
   note: Schema.String,
@@ -9,7 +9,7 @@ export const Answer = Schema.Struct({
 });
 
 /**
- * How the owner wants a photo to change, as it is saved: what an agent acts
+ * How the owner wants a photo to change, as it is saved: what keepsake acts
  * on once it is handed over, by editing the photo again, or for the first
  * time when it is only chosen. A photo has at most one mark that isn't
  * handed over.
@@ -138,6 +138,20 @@ export const HandOverRecord = Schema.Struct({
   fulfilledAt: Schema.NullOr(Schema.String),
 });
 export type HandOverRecord = typeof HandOverRecord.Type;
+
+/**
+ * What the page sends to go on with what stopped and waits for the owner:
+ * POST /api/shoots/<shoot>/go-on. With more money when it ran out of it.
+ */
+export const GoOn = Schema.Struct({
+  /** What the owner agrees to pay on top, as they were told. */
+  dollars: Schema.Finite,
+});
+export type GoOn = typeof GoOn.Type;
+
+/** What the page sends once the owner looked at a photo: POST /api/shoots/<shoot>/seen */
+export const Seen = Schema.Struct({ photo: Schema.String });
+export type Seen = typeof Seen.Type;
 
 /** What the page sends to make an album of a folder: POST /api/shoots */
 export const NewShoot = Schema.Struct({

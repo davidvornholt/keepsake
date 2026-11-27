@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { everything } from '../app/route.ts';
 import {
-  answeredPhotos,
   attentionOf,
   countsOf,
   frontOf,
@@ -10,6 +9,7 @@ import {
   markedIn,
   marksOfPile,
   needsEdit,
+  newPhotos,
   pileAround,
   sectionsOf,
   shownMarks,
@@ -251,7 +251,50 @@ describe('marks', () => {
   });
 
   it('lists the photos with an answer to look at', () => {
-    expect(answeredPhotos(index)).toEqual(['a']);
+    expect(newPhotos(index)).toEqual(['a']);
+  });
+
+  it('lists what is new, oldest first, each photo once', () => {
+    const answer = (time: string) => ({
+      at: time,
+      outcome: 'done' as const,
+      note: '',
+    });
+    const shoot = sampleShoot(
+      [samplePhoto('a'), samplePhoto('b'), samplePhoto('c')],
+      [
+        sampleMark('late', {
+          photo: 'a',
+          answer: answer('2026-05-03T00:00:00Z'),
+        }),
+        sampleMark('early', {
+          photo: 'c',
+          answer: answer('2026-05-01T00:00:00Z'),
+        }),
+        sampleMark('again', {
+          photo: 'c',
+          answer: answer('2026-05-04T00:00:00Z'),
+        }),
+      ],
+    );
+    const walked = indexOf({
+      ...shoot,
+      added: [
+        { photo: 'b', at: '2026-05-02T00:00:00Z', seenAt: null },
+        { photo: 'gone', at: '2026-05-02T00:00:00Z', seenAt: null },
+      ],
+      carrying: {
+        since: null,
+        stopped: {
+          at: '2026-05-05T00:00:00Z',
+          reason: 'It stopped.',
+          needs: 'retry',
+          photos: ['a', 'b'],
+          seenAt: null,
+        },
+      },
+    });
+    expect(newPhotos(walked)).toEqual(['c', 'b', 'a']);
   });
 
   it('knows the favorites, which only the album has', () => {

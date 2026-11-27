@@ -10,6 +10,7 @@ import { removeForgotten } from './new-shoot.ts';
 import page from './page/index.html';
 import { makePreparations } from './preparation.ts';
 import type { Publishing } from './publishing.ts';
+import { makeRunner } from './runner.ts';
 import { makeSettling } from './settling.ts';
 import { makeShoots } from './shoots.ts';
 
@@ -31,8 +32,6 @@ type Serving = {
   readonly address: URL | undefined;
   /** The folders that the owner's photos are in, to make albums of. */
   readonly photos: ReadonlyArray<string>;
-  /** The program that starts an agent, if there is one. */
-  readonly agent: string | undefined;
   /** How keepsake itself is started. */
   readonly keepsake: ReadonlyArray<string>;
 };
@@ -136,9 +135,9 @@ const routesOf = Effect.fn('routesOf')(function* (
         change(answers.takeBack(params.shoot, params.mark)),
       ),
     },
-    '/api/shoots/:shoot/marks/:mark/seen': {
-      POST: ours<'/api/shoots/:shoot/marks/:mark/seen'>(({ params }) =>
-        change(answers.seen(params.shoot, params.mark)),
+    '/api/shoots/:shoot/seen': {
+      POST: ours<'/api/shoots/:shoot/seen'>((request) =>
+        change(answers.seen(request.params.shoot, request)),
       ),
     },
     '/api/shoots/:shoot/choices': {
@@ -156,9 +155,9 @@ const routesOf = Effect.fn('routesOf')(function* (
         change(answers.handOver(request.params.shoot, request)),
       ),
     },
-    '/api/shoots/:shoot/agent': {
-      POST: ours<'/api/shoots/:shoot/agent'>(({ params }) =>
-        change(answers.agent(params.shoot)),
+    '/api/shoots/:shoot/go-on': {
+      POST: ours<'/api/shoots/:shoot/go-on'>((request) =>
+        change(answers.goOn(request.params.shoot, request)),
       ),
     },
     '/api/shoots/:shoot/favorites': {
@@ -195,26 +194,18 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   port,
   address,
   photos,
-  agent,
   keepsake,
 }: Serving) {
   const workers = yield* Semaphore.make(atOnce);
-  const shoots = yield* makeShoots(agent !== undefined, workers);
-  const preparations = yield* makePreparations(keepsake);
-  const folders = yield* makeFolders(photos);
   // One change at a time, since some read a file and write it again.
   const writing = yield* Semaphore.make(1);
+  const runner = yield* makeRunner(keepsake, writing);
+  const shoots = yield* makeShoots(runner.isWorking, workers);
+  const preparations = yield* makePreparations(keepsake);
+  const folders = yield* makeFolders(photos);
   const settling = yield* makeSettling(writing);
   const routes = yield* routesOf(
-    {
-      shoots,
-      folders,
-      preparations,
-      settling,
-      workers,
-      agent,
-      launching: new Set(),
-    },
+    { shoots, folders, preparations, settling, workers, runner },
     address,
     writing,
   );
@@ -222,6 +213,7 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   yield* Effect.forkScoped(shoots.prepare);
   yield* preparations.resume;
   yield* settling.resume;
+  yield* runner.resume;
   return yield* Effect.acquireRelease(
     Effect.try({
       try: () =>

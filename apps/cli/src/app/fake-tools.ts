@@ -70,6 +70,8 @@ export const fakeTools = {
   albums: [] as Array<FakeAlbum>,
   /** Assets Immich refuses to put into an album or take out of one. */
   refused: new Set<string>(),
+  /** Assets moved to the trash, in the order they were. */
+  trashed: [] as Array<string>,
   /** RAW files whose pictures can't be read. */
   broken: new Set<string>(),
   /** Whether the claude and codex programs are signed in to a subscription. */
@@ -93,6 +95,7 @@ export const resetTools = () => {
   fakeTools.library = [];
   fakeTools.albums = [];
   fakeTools.refused = new Set();
+  fakeTools.trashed = [];
   fakeTools.broken = new Set();
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;

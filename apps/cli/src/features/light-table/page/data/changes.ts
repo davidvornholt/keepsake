@@ -1,4 +1,5 @@
 import type {
+  CarryingOut,
   Choice,
   Mark,
   NewChoice,
@@ -116,12 +117,37 @@ export const withSaved = (
 ): ReadonlyArray<Mark> =>
   marks.map((mark) => (mark.id === draft ? saved : mark));
 
-export const withSeen = (
-  marks: ReadonlyArray<Mark>,
-  id: string,
+/** What waits for the owner, noted as seen once they looked at its photo. */
+export const carryingSeen = (
+  carrying: CarryingOut,
+  photo: string,
   now: string,
-): ReadonlyArray<Mark> =>
-  marks.map((mark) => (mark.id === id ? { ...mark, seenAt: now } : mark));
+): CarryingOut => {
+  const { stopped } = carrying;
+  return stopped === null ||
+    stopped.seenAt !== null ||
+    !stopped.photos.includes(photo)
+    ? carrying
+    : { ...carrying, stopped: { ...stopped, seenAt: now } };
+};
+
+/** Everything new about a photo, noted as seen. */
+export const withSeen = (
+  shoot: ShootView,
+  photo: string,
+  now: string,
+): ShootView => ({
+  ...shoot,
+  marks: shoot.marks.map((mark) =>
+    mark.photo === photo && mark.answer !== null && mark.seenAt === null
+      ? { ...mark, seenAt: now }
+      : mark,
+  ),
+  added: shoot.added.map((one) =>
+    one.photo === photo && one.seenAt === null ? { ...one, seenAt: now } : one,
+  ),
+  carrying: carryingSeen(shoot.carrying, photo, now),
+});
 
 export const withLabels = (
   shoot: ShootView,

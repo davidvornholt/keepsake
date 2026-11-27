@@ -1,4 +1,4 @@
-import { ArrowUpRight, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useState } from 'react';
 import type { Place } from '../app/route.ts';
 import { go } from '../app/router.ts';
@@ -12,19 +12,18 @@ import {
   stepName,
 } from '../data/activity.ts';
 import { count } from '../data/format.ts';
-import { mainButton, quietButton, sideButton } from '../ui/classes.ts';
+import { mainButton, quietButton } from '../ui/classes.ts';
 import { Confirm } from '../ui/confirm.tsx';
 import { Key, Meter } from '../ui/controls.tsx';
-import type { AgentState } from './ledger.ts';
+import { GoOn } from './go-on.tsx';
 import { makingOf } from './making-of.ts';
-import { useAgent } from './use-agent.ts';
+import { useCarrying } from './use-carrying.ts';
 import { useTimeLeft } from './use-time-left.ts';
 
 // An album being made, said at the foot of its table from the first photo
 // that is read to the last one that is edited: keepsake gets it ready, the
-// owner goes over the choice and orders it, an agent has it edited.
+// owner goes over the choice and orders it, and keepsake has it edited.
 
-const iconSize = 14;
 const checkSize = 12;
 const panel =
   'pointer-events-auto mx-3 mb-3 w-[min(44rem,calc(100%-1.5rem))] bg-sheet px-5 py-4 shadow-[0_6px_28px_var(--color-shade)]';
@@ -80,7 +79,7 @@ const Step = ({
 }) => {
   const { state } = useShootContext();
   const dot =
-    is === 'now' ? `bg-current ${isStopped ? '' : 'agent-pulse'}` : '';
+    is === 'now' ? `bg-current ${isStopped ? '' : 'pencil-pulse'}` : '';
   return (
     <li
       aria-current={is === 'now' ? 'step' : undefined}
@@ -233,29 +232,22 @@ const Chosen = ({ sheet }: { readonly sheet: Place }) => {
   );
 };
 
-const whoOf = (agent: AgentState): string => {
-  if (agent.is === 'starting') {
-    return 'Starting an agent';
-  }
-  return agent.is === 'ask' ? 'No agent took it yet' : 'An agent is at work';
-};
-
-/** The album is ordered: how many of its photos are edited, and who is at it. */
+/** The album is ordered: how many of its photos are edited, and how it goes. */
 const Ordered = ({ sheet }: { readonly sheet: Place }) => {
   const { index, state } = useShootContext();
-  const agent = useAgent();
+  const carrying = useCarrying();
   const picked = index.shoot.photos.filter(
     ({ standing }) => standing.kind === 'picked',
   );
   const edited = picked.filter(({ edit }) => edit !== null).length;
-  const isAsked = agent.is === 'ask';
+  const stopped = carrying.is === 'stopped' ? carrying : null;
   // An album that is there already gets more photos; a new one is made.
   const what = index.hasAlbum ? 'More photos are' : 'The album is';
   return (
-    <section aria-label={`${what} being edited`} className={panel}>
+    <section aria-label="The order" className={panel}>
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h2 className="type-name text-[1.0625rem] text-lamp">
-          {isAsked ? `${what} ordered` : `${what} being edited`}
+          {stopped === null ? `${what} being edited` : `${what} ordered`}
         </h2>
         <p className="type-edge tabular ml-auto text-print">
           {edited} of {count(picked.length, 'photo')} edited
@@ -267,45 +259,44 @@ const Ordered = ({ sheet }: { readonly sheet: Place }) => {
         share={picked.length === 0 ? 0 : edited / picked.length}
         tone="fill-pencil-blue"
       />
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <p
-          className={`flex min-w-0 flex-1 basis-64 items-center gap-2.5 ${isAsked ? 'text-wax-yellow' : 'text-pencil-blue'}`}
-        >
-          {isAsked ? null : (
+      {stopped === null ? null : (
+        <p className="mt-3 text-wax-yellow" role="alert">
+          {stopped.stopped.reason}
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+        {stopped === null ? (
+          <p className="flex min-w-0 flex-1 basis-64 items-center gap-2.5 text-pencil-blue">
             <span
               aria-hidden="true"
-              className="agent-pulse size-2.5 shrink-0 rounded-full border-2 border-pencil-blue"
+              className="pencil-pulse size-2.5 shrink-0 rounded-full border-2 border-pencil-blue"
             />
-          )}
-          <span>
-            {whoOf(agent)}
-            {state.activity === null
-              ? ''
-              : `: ${stepName(state.activity).toLowerCase()}`}
-            <span className="text-quiet">
-              . Finished photos go into the album in Immich together, at the
-              end.
+            <span>
+              Keepsake is at work
+              {state.activity === null
+                ? ''
+                : `: ${stepName(state.activity).toLowerCase()}`}
+              <span className="text-quiet">
+                . Finished photos go into the album in Immich together, at the
+                end.
+              </span>
             </span>
-          </span>
-        </p>
-        {agent.is === 'at-work' && agent.link !== null ? (
-          <a
-            className={`${quietButton} min-h-10 text-pencil-blue hover:text-lamp`}
-            href={agent.link}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Read along
-            <ArrowUpRight aria-hidden="true" size={iconSize} />
-          </a>
-        ) : null}
+          </p>
+        ) : (
+          <>
+            <GoOn carrying={stopped} />
+            <p className="min-w-0 flex-1 basis-48 text-quiet">
+              It goes on where it stopped. Nothing it did is lost.
+            </p>
+          </>
+        )}
         <button
           aria-keyshortcuts="H"
-          className={isAsked ? sideButton : `${quietButton} min-h-10`}
+          className={`${quietButton} min-h-10`}
           onClick={() => go({ ...sheet, screen: 'hand-over' })}
           type="button"
         >
-          {isAsked ? 'Ask an agent' : 'The order'}
+          The order
         </button>
       </div>
     </section>

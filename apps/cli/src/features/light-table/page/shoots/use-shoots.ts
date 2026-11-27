@@ -4,7 +4,7 @@ import { readShoots } from '../data/api.ts';
 import { isBusy } from './words.ts';
 
 // The albums there are, asked for again whenever the owner comes back to the
-// page, since agents work on them in the meantime, and every little while
+// page, since keepsake works on them in the meantime, and every little while
 // as long as something goes on at one of them.
 
 /** How often the shelf asks while something goes on, in milliseconds. */

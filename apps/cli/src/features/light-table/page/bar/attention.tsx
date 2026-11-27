@@ -1,4 +1,5 @@
 import { ArrowUpRight } from 'lucide-react';
+import { newsOf } from '../../news-of.ts';
 import type { Place } from '../app/route.ts';
 import { go } from '../app/router.ts';
 import { useShootContext } from '../app/shoot-context.ts';
@@ -6,18 +7,18 @@ import { progressOf, stepName } from '../data/activity.ts';
 import type { Index } from '../data/derive.ts';
 import { count } from '../data/format.ts';
 import { makingOf } from '../flows/making-of.ts';
-import { useAgent } from '../flows/use-agent.ts';
-import { agentButton, mainButton, quietButton } from '../ui/classes.ts';
+import { useCarrying } from '../flows/use-carrying.ts';
+import { mainButton, pencilButton, quietButton } from '../ui/classes.ts';
 import { Key } from '../ui/controls.tsx';
 
-// What wants the owner's attention now: answers of an agent to look at,
-// marks that aren't handed over, and an agent at work on what was. It stays
+// What wants the owner's attention now: what is new to look at, marks that
+// aren't handed over, and keepsake at work on what was, or waiting for them. It stays
 // in sight however far the table is scrolled. An album that is still being
 // made says so at the foot of the table instead.
 
 const iconSize = 14;
 
-/** Who acts on what was handed over, and how far they are. */
+/** How what was handed over goes, and how far it is. */
 const AtWork = ({
   says,
   far,
@@ -26,7 +27,7 @@ const AtWork = ({
 }: {
   readonly says: string;
   readonly far: string;
-  /** Whether no agent took it, so that the owner has to ask one. */
+  /** Whether it can't go on without the owner. */
   readonly isAsked: boolean;
   readonly onOpen: () => void;
 }) => (
@@ -38,7 +39,7 @@ const AtWork = ({
     {isAsked ? null : (
       <span
         aria-hidden="true"
-        className="agent-pulse size-2.5 rounded-full border-2 border-pencil-blue"
+        className="pencil-pulse size-2.5 rounded-full border-2 border-pencil-blue"
       />
     )}
     <span>{says}</span>
@@ -73,10 +74,10 @@ export const AlbumLink = () => {
   );
 };
 
-/** What an agent is doing about what was handed over, in a few words. */
+/** What keepsake is doing about what was handed over, in a few words. */
 const useAtWork = () => {
   const { state } = useShootContext();
-  const agent = useAgent();
+  const carrying = useCarrying();
   const { activity } = state;
   if (activity !== null) {
     return {
@@ -86,12 +87,11 @@ const useAtWork = () => {
     };
   }
   const says = {
-    'at-work': 'An agent is at work',
-    starting: 'Starting an agent',
-    ask: 'No agent took it yet',
+    'at-work': 'Keepsake is at work',
+    stopped: 'Waits for you',
     idle: null,
-  }[agent.is];
-  return { says, far: '', isAsked: agent.is === 'ask' };
+  }[carrying.is];
+  return { says, far: '', isAsked: carrying.is === 'stopped' };
 };
 
 export const Attention = ({
@@ -103,13 +103,12 @@ export const Attention = ({
 }) => {
   const { index, state } = useShootContext();
   const making = makingOf({ index, state });
-  const agent = useAtWork();
-  const news = index.shoot.marks.filter(
-    ({ answer, seenAt }) => answer !== null && seenAt === null,
-  ).length;
+  const atWork = useAtWork();
+  const { marks, added } = index.shoot;
+  const news = newsOf(marks, added, state.carrying).length;
   const unrated = toRate(index);
   // What is said at the foot of the table isn't said twice.
-  const says = making === null ? agent.says : null;
+  const says = making === null ? atWork.says : null;
   const open =
     making === 'chosen'
       ? 0
@@ -118,7 +117,7 @@ export const Attention = ({
   // Chosen photos that an album that is there doesn't have yet.
   const apart =
     making === null && index.hasAlbum ? index.chosen - index.inAlbum : 0;
-  const to = (screen: 'hand-over' | 'answers' | 'rate') => () =>
+  const to = (screen: 'hand-over' | 'news' | 'rate') => () =>
     go({ ...sheet, screen });
   if (says === null && unrated + news + open + apart === 0) {
     return null;
@@ -129,8 +128,8 @@ export const Attention = ({
     >
       {says === null ? null : (
         <AtWork
-          far={agent.far}
-          isAsked={agent.isAsked}
+          far={atWork.far}
+          isAsked={atWork.isAsked}
           onOpen={to('hand-over')}
           says={says}
         />
@@ -148,11 +147,11 @@ export const Attention = ({
       {news > 0 ? (
         <button
           aria-keyshortcuts="N"
-          className={`${agentButton} whitespace-nowrap`}
-          onClick={to('answers')}
+          className={`${pencilButton} whitespace-nowrap`}
+          onClick={to('news')}
           type="button"
         >
-          {count(news, 'answer')} <Key>N</Key>
+          {count(news, 'new thing')} <Key>N</Key>
         </button>
       ) : null}
       {open > 0 ? (

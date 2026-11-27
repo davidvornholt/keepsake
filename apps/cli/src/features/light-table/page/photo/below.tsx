@@ -17,7 +17,7 @@ import type { Word } from './word.ts';
 const iconSize = 20;
 
 /**
- * Where the photo stands and why, the pile it lies in, what an agent says,
+ * Where the photo stands and why, the pile it lies in, what keepsake says,
  * and the owner's pencils or the words of a change.
  */
 export const Below = ({

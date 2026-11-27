@@ -20,6 +20,7 @@ import {
   statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
+import { handedOver } from './mark-fixtures.ts';
 import { publishingLayer } from './publishing.ts';
 
 beforeEach(() => setUp(spyOn));
@@ -57,7 +58,9 @@ describe('the light table', () => {
         activity: null,
         isOrdered: false,
         openMarks: 0,
-        newAnswers: 0,
+        carrying: { since: null, stopped: null },
+        news: 0,
+        newSince: null,
       },
     ]);
     expect(shoots[0].covers).toHaveLength(3);
@@ -74,7 +77,8 @@ describe('the light table', () => {
       picked: { minimumScore: 7, maximum: null },
       activity: null,
       preparation: null,
-      agent: { waitsSince: null, canStart: false, started: null },
+      carrying: { since: null, stopped: null },
+      added: [],
       ordered: null,
       rating: null,
       photos: [
@@ -144,22 +148,38 @@ describe('the light table', () => {
 });
 
 describe('what the light table is doing', () => {
-  it('says who waits for a hand-over, also when no file changed', async () => {
+  it('says what another server carries out, and when nothing does', async () => {
     await pickLisbon();
     const since = '2026-05-02T10:00:00.000Z';
-    const waiting = shootFile('waiting.json');
+    const carrying = shootFile('carrying-out.json');
     const seen = await whileServing(async (address) => {
+      // Once the server started, which goes on with what it finds then.
+      await handedOver('order', { dollars: 1.5, album: ['B'] });
       const path = `${address}/api/shoots/lisbon`;
       const first = await fetch(path);
       const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
-      const waitsSince = async () => (await shootOf(address)).agent.waitsSince;
-      await Bun.write(waiting, JSON.stringify({ process: process.pid, since }));
+      const now = async () => (await shootOf(address)).carrying;
+      // A server that still runs, which isn't this one.
+      await Bun.write(
+        carrying,
+        JSON.stringify({
+          process: process.ppid,
+          since,
+          stopped: null,
+          marks: {},
+          toExplain: false,
+        }),
+      );
       const asked = await fetch(path, { headers });
-      const waits = await waitsSince();
-      await rm(waiting);
-      return [asked.status, waits, await waitsSince()];
+      const working = await now();
+      await rm(carrying);
+      return [asked.status, working, await now()];
     });
-    expect(seen).toEqual([200, since, null]);
+    expect(seen).toMatchObject([
+      200,
+      { since, stopped: null },
+      { since: null, stopped: { needs: 'retry', photos: [] } },
+    ]);
   });
 });
 
@@ -288,7 +308,6 @@ describe('who the light table answers', () => {
           port: Number(new URL(address).port),
           address: undefined,
           photos: [],
-          agent: undefined,
           keepsake: [],
         }).pipe(
           Effect.scoped,

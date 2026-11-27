@@ -1,42 +1,57 @@
 import { expect, test } from '@playwright/test';
 import { cutOff, large, lay, pressed, scan, title } from './page.ts';
 
-// What an agent sends back to the table: answers to look at, and moments it
-// asks the owner to rate. One after the other, since what the last tests do
-// with them is what the first ones look at.
+// What comes back to the table: what is new to look at, such as answers to
+// marks and what waits for the owner, and moments the owner is asked to
+// rate. One after the other, since what the last tests do with them is what
+// the first ones look at.
 
 test.describe.configure({ mode: 'default' });
 
 const beforeName = /^Before/u;
 const seenName = /^Seen/u;
+const usageLimit = /Claude Code reached its usage limit/u;
 const bestOfFour = 'Which of these 4 photos is best?';
 const secondIsBest = 'Photo 2 of 4 is best. How good is it?';
 const thirdIsBest = 'Photo 3 of 4 is best. How good is it?';
 const bestOfTwo = 'Which of these 2 photos is best?';
 
 test('compares an answer with what was there before', async ({ page }) => {
-  await page.goto('/porto/answers');
-  await expect(page.getByText('Answer 1 of 2')).toBeVisible();
+  await page.goto('/porto/news');
+  await expect(page.getByText('New 1 of 3')).toBeVisible();
   await expect(page.getByRole('button', { name: beforeName })).toBeVisible();
   await page.keyboard.press('v');
   await expect(pressed(page, 'Earlier 2')).toBeVisible();
   await scan(page);
 });
 
-test('goes through the answers of an agent', async ({ page }) => {
+test('goes through what is new, oldest first', async ({ page }) => {
   await lay(page, '/porto', 'Porto');
-  await page.getByRole('button', { name: '2 answers' }).click();
-  await expect(page.getByText('Answer 1 of 2')).toBeVisible();
+  await page.getByRole('button', { name: '3 new things' }).click();
+  await expect(page.getByText('New 1 of 3')).toBeVisible();
   await expect(large(page).getByText('Done').first()).toBeVisible();
   await scan(page);
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Answer 2 of 2')).toBeVisible();
+  await expect(page.getByText('New 2 of 3')).toBeVisible();
   await expect(large(page).getByText('Not done').first()).toBeVisible();
   expect(await cutOff(page)).toEqual([]);
   await scan(page);
+  // Moving on counts it as seen, as Seen does.
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByText('New 3 of 3')).toBeVisible();
+  await expect(large(page).getByText('Waits for you').first()).toBeVisible();
+  await expect(large(page).getByText(usageLimit).first()).toBeVisible();
+  await expect(
+    large(page).getByRole('button', { name: 'Go on' }),
+  ).toBeVisible();
+  await scan(page);
   await page.getByRole('button', { name: seenName }).click();
   await expect(large(page)).toBeHidden();
-  await expect(page.getByRole('button', { name: 'answers' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'new thing' })).toBeHidden();
+  // What waits for the owner still says so, until they go on.
+  await expect(
+    page.getByRole('button', { name: 'Waits for you' }),
+  ).toBeVisible();
 });
 
 test('shows the photos of a moment, and one of them from close', async ({

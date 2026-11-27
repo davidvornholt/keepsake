@@ -1,6 +1,6 @@
 import type { Activity } from '../../contract.ts';
 
-// What an agent is doing with the shoot, in the owner's words.
+// What keepsake is doing with the shoot, in the owner's words.
 
 const steps: Readonly<Record<string, string>> = {
   scan: 'Reading the photos',

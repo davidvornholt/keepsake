@@ -9,7 +9,7 @@ import { stampSign } from './overlay-signs.ts';
 import type { Frame } from './table.ts';
 
 // The marks on a frame: the owner's wax, drawn by hand when it is new, the
-// agent's blue pencil, and the heart of a favorite.
+// keepsake's blue pencil, and the heart of a favorite.
 
 /** How long the hand takes to draw a mark, in milliseconds. */
 const drawingTime = 340;
@@ -63,7 +63,7 @@ export type Drawn = {
 };
 
 /**
- * The blue pencil: a dot for an answer to look at, a ring for a mark an agent
+ * The blue pencil: a dot for an answer to look at, a ring for a mark keepsake
  * has. It lies in the upper left corner, below the heading like the heart:
  * the lower right one is where a pile says how many lie in it.
  */

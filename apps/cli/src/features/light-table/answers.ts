@@ -4,29 +4,30 @@ import { judgeOf } from '../../shared/judge.ts';
 import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
 import { standings } from '../../shared/standing.ts';
 import { type OpenShoot, openShoot } from '../../shared/store.ts';
-import { startAgent } from './agent.ts';
 import { choose, dismissChoice } from './choices.ts';
 import { pictureWidths } from './contract.ts';
 import { setFavorite } from './favorites.ts';
 import { type Folders, lookAtFolder } from './folders.ts';
-import { handOver, toLaunch } from './hand-over.ts';
-import { acknowledge } from './handed.ts';
+import { handOver } from './hand-over.ts';
 import { saveLabels } from './labels.ts';
-import { makeMark, seeMark, takeBack } from './marks.ts';
+import { makeMark, takeBack } from './marks.ts';
 import { forgetShoot, makeShoot } from './new-shoot.ts';
+import { seePhoto } from './news.ts';
 import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
+import type { Runner } from './runner.ts';
 import {
   Favorite,
+  GoOn,
   HandOver,
   NewChoice,
   NewLabels,
   NewMark,
   NewShoot,
+  Seen,
 } from './schemas.ts';
 import type { Settling } from './settling.ts';
 import type { Shoots } from './shoots.ts';
-import { agentWaitsSince } from './waiting.ts';
 
 const noContent = 204;
 const notFound = 404;
@@ -118,10 +119,7 @@ export type Has = {
   readonly preparations: Preparations;
   readonly settling: Settling;
   readonly workers: Semaphore.Semaphore;
-  /** The program that starts an agent, if there is one. */
-  readonly agent: string | undefined;
-  /** The hand-overs it is starting an agent for now. */
-  readonly launching: Set<string>;
+  readonly runner: Runner;
 };
 
 const standingsOf = (open: OpenShoot) =>
@@ -129,75 +127,19 @@ const standingsOf = (open: OpenShoot) =>
     standings(open, model),
   );
 
-/**
- * Starts an agent for what is handed over, unless one waits for it, took it,
- * or was started for it already. What the page took and no program said it
- * started an agent for is started again, with the same ids, also while an
- * agent waits, since that one can't take it.
- */
-const callAgent = Effect.fn('callAgent')(function* (
-  open: OpenShoot,
-  program: string,
-  launching: Set<string>,
-) {
-  const { files, shoot } = open;
-  const mayTake = (yield* agentWaitsSince(files)) === null;
-  const ids = yield* toLaunch(files, yield* standingsOf(open), {
-    launching,
-    mayTake,
-  });
-  if (ids.length === 0) {
-    return;
-  }
-  const forget = Effect.sync(() => {
-    for (const id of ids) {
-      launching.delete(id);
-    }
-  });
-  for (const id of ids) {
-    launching.add(id);
-  }
-  yield* startAgent(
-    files,
-    { name: shoot.name, handOvers: ids, program },
-    {
-      isStarted: Effect.forEach(ids, (id) => acknowledge(files, id), {
-        discard: true,
-      }),
-      done: forget,
-    },
-  ).pipe(Effect.onError(() => forget));
-});
-
-/** Hands everything over, and has an agent act on it. */
+/** Hands everything over, and has it carried out. */
 const handOverAnswer = Effect.fn('handOverAnswer')(function* (
-  { agent, launching }: Has,
+  { runner }: Has,
   name: string,
   request: Request,
 ) {
   const open = yield* openShoot(name);
-  const { files } = open;
   const wanted = yield* sent(HandOver, request);
-  const handed = yield* handOver(files, yield* standingsOf(open), wanted);
-  if (agent !== undefined) {
-    yield* callAgent(open, agent, launching);
-  }
+  // First, so the page never shows it handed over and nothing at work on it.
+  // The runner waits for this change to be through before it looks.
+  yield* runner.start(name);
+  const handed = yield* handOver(open.files, yield* standingsOf(open), wanted);
   return Response.json(handed);
-});
-
-/** Has an agent act on what was handed over before. */
-const agentAnswer = Effect.fn('agentAnswer')(function* (
-  { agent, launching }: Has,
-  name: string,
-) {
-  const open = yield* openShoot(name);
-  if (agent === undefined) {
-    return yield* new InvalidInput({
-      message: 'No agent can be started from here.',
-    });
-  }
-  yield* callAgent(open, agent, launching);
-  return nothing();
 });
 
 /** Starts getting an album ready from a folder. */
@@ -238,6 +180,7 @@ export const makeAnswers = (has: Has) => ({
   forget: (name: string) =>
     Effect.gen(function* () {
       yield* has.preparations.stop(name);
+      yield* has.runner.stop(name);
       yield* forgetShoot(name);
       // Only once it is gone, so what waits is still done when it stays.
       yield* has.settling.stop(name);
@@ -260,9 +203,10 @@ export const makeAnswers = (has: Has) => ({
       yield* takeBack((yield* openShoot(name)).files, mark);
       return nothing();
     }),
-  seen: (name: string, mark: string) =>
+  seen: (name: string, request: Request) =>
     Effect.gen(function* () {
-      yield* seeMark((yield* openShoot(name)).files, mark);
+      const { photo } = yield* sent(Seen, request);
+      yield* seePhoto((yield* openShoot(name)).files, photo);
       return nothing();
     }),
   choose: (name: string, request: Request) =>
@@ -271,6 +215,9 @@ export const makeAnswers = (has: Has) => ({
       const open = yield* openShoot(name);
       yield* choose(open, yield* standingsOf(open), wanted);
       yield* has.settling.now(name);
+      // An order whose photos all went out is through, and so is what
+      // waited for it.
+      yield* has.runner.start(name);
       return nothing();
     }),
   dismiss: (name: string, action: string) =>
@@ -280,7 +227,12 @@ export const makeAnswers = (has: Has) => ({
     }),
   handOver: (name: string, request: Request) =>
     handOverAnswer(has, name, request),
-  agent: (name: string) => agentAnswer(has, name),
+  goOn: (name: string, request: Request) =>
+    Effect.gen(function* () {
+      const { dollars } = yield* sent(GoOn, request);
+      yield* has.runner.goOn(name, dollars);
+      return nothing();
+    }),
   favorite: (name: string, request: Request) =>
     Effect.gen(function* () {
       const wanted = yield* sent(Favorite, request);

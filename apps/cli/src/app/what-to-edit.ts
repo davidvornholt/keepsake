@@ -21,7 +21,7 @@ export const markOfChosen = Effect.fn('markOfChosen')(function* (
   const kind = known.of.get(mark.photo)?.kind;
   if (kind !== 'album' && kind !== 'picked') {
     return yield* new InvalidInput({
-      message: `${mark.photo} was taken out meanwhile, so nothing was done for the mark ${id}. Answer it with --not-done and that reason.`,
+      message: `${mark.photo} was taken out meanwhile, so nothing was done for the mark ${id}.`,
     });
   }
   return mark;

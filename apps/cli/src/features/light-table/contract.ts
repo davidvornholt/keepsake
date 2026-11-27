@@ -10,12 +10,14 @@ export type { Standing } from '../../shared/standing.ts';
 export type {
   Choice,
   Favorite,
+  GoOn,
   HandOver,
   Mark,
   NewChoice,
   NewLabels,
   NewMark,
   NewShoot,
+  Seen,
 } from './schemas.ts';
 
 /**
@@ -111,20 +113,36 @@ export type Preparation = {
   readonly stopped: string | null;
 };
 
-/** The agent that acts on what the owner hands over. */
-export type Agent = {
-  /** Since when one waits for marks. */
-  readonly waitsSince: string | null;
-  /** Whether the page starts one when none waits. */
-  readonly canStart: boolean;
-  /** The one it started last. */
-  readonly started: {
+/**
+ * How what the owner handed over is carried out: the change marks, then the
+ * order, each with keepsake's own commands.
+ */
+export type CarryingOut = {
+  /** Since when something works on it, while it does. */
+  readonly since: string | null;
+  /** What can't go on without the owner. */
+  readonly stopped: {
     readonly at: string;
-    /** Where the owner can read along, if it said so. */
-    readonly link: string | null;
-    /** Why it couldn't be started. */
-    readonly failed: string | null;
+    /** What it waits for, in a sentence for the owner. */
+    readonly reason: string;
+    /**
+     * `money` when what they agreed to pay ran out, and `retry` when it only
+     * waits for their word to try again.
+     */
+    readonly needs: 'money' | 'retry';
+    /** The photos it is about, which may be none. */
+    readonly photos: ReadonlyArray<string>;
+    /** When the owner looked at it. */
+    readonly seenAt: string | null;
   } | null;
+};
+
+/** A photo that an order put into the album. */
+export type Added = {
+  readonly photo: string;
+  readonly at: string;
+  /** When the owner looked at it. */
+  readonly seenAt: string | null;
 };
 
 /** Photos that show the same. */
@@ -164,6 +182,8 @@ export type ShootView = {
     readonly spent: number;
     /** About what one edit or change costs. */
     readonly perEdit: number;
+    /** The most keepsake holds back of a budget before one edit. */
+    readonly hold: number;
   };
   /** In the order they were taken. */
   readonly photos: ReadonlyArray<PhotoView>;
@@ -174,12 +194,13 @@ export type ShootView = {
   readonly choices: ReadonlyArray<Choice>;
   readonly activity: Activity | null;
   readonly preparation: Preparation | null;
-  readonly agent: Agent;
+  readonly carrying: CarryingOut;
+  /** The photos orders put into the album, newest last. */
+  readonly added: ReadonlyArray<Added>;
   /**
-   * That the owner wants the chosen photos edited and put into an album, for at
-   * most so many dollars, until that is done.
+   * The order of chosen photos that aren't in the album yet, if there is one,
+   * and the most the owner agreed to pay.
    */
-  /** The order of chosen photos that aren't in the album yet, if there is one. */
   readonly ordered: {
     readonly at: string;
     readonly dollars: number;
@@ -213,9 +234,17 @@ export type ShootList = {
     readonly preparation: Preparation | null;
     readonly activity: Activity | null;
     readonly isOrdered: boolean;
-    /** Marks that aren't handed over, and those answered but not looked at. */
+    /** Marks that aren't handed over yet. */
     readonly openMarks: number;
-    readonly newAnswers: number;
+    /** How what was handed over is carried out. */
+    readonly carrying: CarryingOut;
+    /**
+     * The photos with something the owner hasn't looked at: an answer to a
+     * mark, a photo an order put in, or what waits for them.
+     */
+    readonly news: number;
+    /** When the oldest of that came. */
+    readonly newSince: string | null;
     /**
      * Up to 60 photos of the album, or the best of the shoot. The first few, for
      * any number of them, stand for the whole.
@@ -229,7 +258,7 @@ export type Changed = {
   readonly revision: string;
   readonly activity: Activity | null;
   readonly preparation: Preparation | null;
-  readonly agent: Agent;
+  readonly carrying: CarryingOut;
 };
 
 /** GET /api/folders */

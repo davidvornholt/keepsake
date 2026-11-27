@@ -34,9 +34,10 @@ import { closePhoto, go, goBack } from './router.ts';
 import { type InShoot, ShootContext } from './shoot-context.ts';
 import { useShown } from './use-shown.ts';
 import { useTable } from './use-table.ts';
+import { walkOn } from './walk.ts';
 
 // A shoot on the table, with whatever is shown over it: one photo large, the
-// marks to hand over, the answers of an agent, or the photos to rate.
+// marks to hand over, what is new, or the photos to rate.
 
 type Props = {
   readonly route: Within;
@@ -100,7 +101,7 @@ const keysFrom = (sheet: Place): Keys => {
     ['2', show('album')],
     ['3', show('left')],
     ['h', over('hand-over')],
-    ['n', over('answers')],
+    ['n', over('news')],
     ['r', over('rate')],
   ];
 };
@@ -183,25 +184,52 @@ const useContext = ({ route, index, state, store }: Props): InShoot => {
 
 /**
  * Goes to the table when the address names what isn't there: a photo the
- * shoot doesn't have, answers when there are none, or nothing to rate.
+ * shoot doesn't have, nothing new, or nothing to rate. A walk through all the
+ * albums goes on to the next one instead.
  */
 const useTableInstead = (
   sheet: Place,
-  {
-    isPhotoMissing,
-    hasNoAnswers,
-    hasNothingToRate,
-  }: {
-    readonly isPhotoMissing: boolean;
-    readonly hasNoAnswers: boolean;
-    readonly hasNothingToRate: boolean;
-  },
+  route: Within,
+  index: Index,
+  { large, answers, isAcross }: ReturnType<typeof useShown>,
 ) => {
+  const isPhotoMissing = route.screen === 'photo' && large === undefined;
+  const hasNoNews = answers.isEmpty;
+  const hasNothingToRate =
+    route.screen === 'rate' && index.shoot.rating === null;
   useEffect(() => {
-    if (isPhotoMissing || hasNoAnswers || hasNothingToRate) {
+    if (hasNoNews && isAcross) {
+      walkOn(sheet.shoot).catch(() => undefined);
+    } else if (isPhotoMissing || hasNoNews || hasNothingToRate) {
       go(sheet, 'replace');
     }
-  }, [sheet, isPhotoMissing, hasNoAnswers, hasNothingToRate]);
+  }, [sheet, isPhotoMissing, hasNoNews, hasNothingToRate, isAcross]);
+};
+
+/** Leaves a photo: back to the table, or out of what is new. */
+const leave = (
+  sheet: Place,
+  {
+    isPile,
+    isAcross,
+  }: { readonly isPile: boolean; readonly isAcross: boolean },
+) => {
+  if (!isPile) {
+    closePhoto(sheet);
+  } else if (isAcross) {
+    goBack({ screen: 'shoots' });
+  } else {
+    goBack(sheet);
+  }
+};
+
+/** Goes on once the last of what is new was looked at. */
+const walkOut = (sheet: Place, isAcross: boolean) => {
+  if (isAcross) {
+    walkOn(sheet.shoot).catch(() => undefined);
+  } else {
+    goBack(sheet);
+  }
 };
 
 export const Loaded = (props: Props) => {
@@ -232,16 +260,16 @@ export const Loaded = (props: Props) => {
     () => new Set(state.activity?.photos ?? []),
     [state.activity],
   );
-  const { held, large, order, pile, answers } = useShown(route, index);
+  const shown = useShown(route, index, {
+    carrying: state.carrying,
+    onSeen: store.seen,
+  });
+  const { held, large, order, pile, answers, isAcross } = shown;
   const isOnTable = route.screen === 'sheet';
   useTitle(index.shoot.title);
   useLanding(shoot, index.shoot.photos, table.engineRef);
 
-  useTableInstead(sheet, {
-    isPhotoMissing: route.screen === 'photo' && large === undefined,
-    hasNoAnswers: answers.isEmpty,
-    hasNothingToRate: route.screen === 'rate' && index.shoot.rating === null,
-  });
+  useTableInstead(sheet, route, index, shown);
 
   useKeys(isOnTable ? [...table.keys, ...keysFrom(sheet)] : noKeys);
 
@@ -296,7 +324,8 @@ export const Loaded = (props: Props) => {
             isLeaving={held.isLeaving}
             isPile={pile !== null}
             key={held.visit}
-            onClose={() => (pile === null ? closePhoto(sheet) : goBack(sheet))}
+            onClose={() => leave(sheet, { isPile: pile !== null, isAcross })}
+            onEnd={() => walkOut(sheet, isAcross)}
             onGone={() => {
               held.letGo();
               cursorRef.current?.focus({ preventScroll: true });

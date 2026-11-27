@@ -2,15 +2,17 @@ import { Plus } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { hrefOf, type Route } from '../app/route.ts';
 import { go } from '../app/router.ts';
+import { startWalk } from '../app/walk.ts';
+import { newsIn } from '../app/walk-order.ts';
 import { count } from '../data/format.ts';
-import { sideButton } from '../ui/classes.ts';
+import { pencilButton, sideButton } from '../ui/classes.ts';
 import { Key } from '../ui/controls.tsx';
 import { useKeys } from '../ui/keys.ts';
 import { useTitle } from '../ui/use-title.ts';
 import { Album, NewPlace } from './album.tsx';
 import { lastOpened, noteOpened } from './opened.ts';
 import { stepFrom } from './steps.ts';
-import { useShoots } from './use-shoots.ts';
+import { type ShootSummary, useShoots } from './use-shoots.ts';
 
 // The start: a shelf with every album on it, each a pile of prints to open,
 // and at its end the place where the next one goes.
@@ -80,6 +82,35 @@ const useArrows = (listRef: React.RefObject<HTMLUListElement | null>) => {
   ]);
 };
 
+/** The way to everything new in all the albums, oldest first. */
+const News = ({ shoots }: { readonly shoots: ReadonlyArray<ShootSummary> }) => {
+  const news = newsIn(shoots);
+  return news === 0 ? null : (
+    <button
+      className={`${pencilButton} whitespace-nowrap`}
+      onClick={() => startWalk(shoots)}
+      type="button"
+    >
+      {count(news, 'new thing')} to look at
+    </button>
+  );
+};
+
+const NewAlbum = () => (
+  <a
+    aria-keyshortcuts="N"
+    className={sideButton}
+    href={hrefOf(toNew)}
+    onClick={(event) => {
+      event.preventDefault();
+      go(toNew);
+    }}
+  >
+    <Plus aria-hidden="true" size={iconSize} />
+    New album <Key>N</Key>
+  </a>
+);
+
 export const Shelf = () => {
   const { status, shoots, problem, retry } = useShoots();
   const listRef = useRef<HTMLUListElement>(null);
@@ -110,20 +141,10 @@ export const Shelf = () => {
             {count(shoots.length, 'album')}
           </p>
         ) : null}
-        {isReady ? (
-          <a
-            aria-keyshortcuts="N"
-            className={`${sideButton} ml-auto`}
-            href={hrefOf(toNew)}
-            onClick={(event) => {
-              event.preventDefault();
-              go(toNew);
-            }}
-          >
-            <Plus aria-hidden="true" size={iconSize} />
-            New album <Key>N</Key>
-          </a>
-        ) : null}
+        <div className="ml-auto flex items-center gap-x-4">
+          {isReady ? <News shoots={shoots} /> : null}
+          {isReady ? <NewAlbum /> : null}
+        </div>
       </header>
       {status === 'failed' ? (
         <Problem onRetry={retry} problem={problem} />

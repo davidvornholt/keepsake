@@ -9,7 +9,7 @@
  * A table for looking at photographs. Everything on it is a neutral grey, so
  * that the colours of the photos are judged against nothing. The only colours
  * that aren't photographs are the wax pencils the owner marks with, and the
- * blue pencil of the agent that answers.
+ * blue pencil of keepsake, which answers.
  */
 @theme static {
   --color-table: oklch(0.27 0 0);
@@ -250,12 +250,12 @@
   }
 }
 
-/* An agent at work: its blue pencil, moving. */
-@utility agent-pulse {
-  animation: agent-pulse 1.6s ease-in-out infinite;
+/* keepsake at work: its blue pencil, moving. */
+@utility pencil-pulse {
+  animation: pencil-pulse 1.6s ease-in-out infinite;
 }
 
-@keyframes agent-pulse {
+@keyframes pencil-pulse {
   50% {
     opacity: 0.35;
   }

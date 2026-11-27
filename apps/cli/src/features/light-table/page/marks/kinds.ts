@@ -2,7 +2,7 @@ import type { Shape } from './glyphs.ts';
 
 // What each pencil looks like and is called. The owner has three wax pencils:
 // white says a photo is wanted, yellow that it should change, red that it
-// should go. Only a change is a mark for an agent; the others are done at
+// should go. Only a change is a mark for keepsake; the others are done at
 // once, and their wax shows only while they wait for that.
 
 export type Pencil = 'change' | 'take-out' | 'put-in' | 'swap';
@@ -27,7 +27,7 @@ export const lookOf: Readonly<Record<Pencil, Look>> = {
     wax: 'wax-yellow',
     says: 'Change',
     said: 'To be changed',
-    does: 'Say what should be different. An agent edits the photo again.',
+    does: 'Say what should be different. Keepsake edits the photo again.',
     key: 'C',
   },
   'take-out': {

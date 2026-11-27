@@ -9,7 +9,7 @@ import {
   readCredentials,
 } from './credentials.ts';
 import { InvalidInput, NotSignedIn } from './errors/errors.ts';
-import { outputLimitOf } from './prices.ts';
+import { mostCostOf, outputLimitOf } from './prices.ts';
 import { claude } from './subscriptions/claude.ts';
 import { codex } from './subscriptions/codex.ts';
 import { programModelLayer } from './subscriptions/program-model.ts';
@@ -28,6 +28,22 @@ export const defaultVisionModel = 'codex/gpt-6.2-sol';
 export const defaultReviewModel = 'claude/claude-opus-5-5';
 /** Edits photos unless another model is named. */
 export const defaultImageModel = 'azure/gpt-image-2.5-sunburst';
+/** How many versions of a photo the image model makes unless told otherwise. */
+export const defaultVersions = 2;
+
+/** Bytes that the prompt of an edit stays within, for what it can cost. */
+const longestPrompt = 8000;
+
+/**
+ * What keepsake holds back of a budget before it sends one edit with the
+ * default image model: the most that request can cost.
+ */
+export const holdForOneEdit =
+  mostCostOf(defaultImageModel, {
+    text: longestPrompt,
+    pictures: 1,
+    versions: defaultVersions,
+  }) ?? 0;
 
 /** How long a subscription's model thinks unless its name says otherwise. */
 const usualEffort = 'medium';

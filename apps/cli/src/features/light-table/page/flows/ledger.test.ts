@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import type { Agent, ShootView } from '../../contract.ts';
+import type { ShootView } from '../../contract.ts';
 import { indexOf } from '../data/derive.ts';
 import {
   sampleBehind,
@@ -9,10 +9,10 @@ import {
   sampleShoot,
 } from '../data/sample.ts';
 import {
-  agentPatience,
-  agentStateOf,
+  carryingStateOf,
   handedOverSince,
   ledgerOf,
+  limitOf,
   staggerOf,
 } from './ledger.ts';
 
@@ -44,7 +44,7 @@ const marks = [
 describe('ledgerOf', () => {
   const ledger = ledgerOf(indexOf(sampleShoot(photos, marks)));
 
-  it('lists what an agent is to do in the order of the shoot', () => {
+  it('lists what keepsake is to do in the order of the shoot', () => {
     expect(ledger.open.map(({ mark }) => mark.id)).toEqual(['3', '4']);
     expect(ledger.waiting.map(({ mark }) => mark.id)).toEqual(['5']);
     expect(ledger.news).toBe(1);
@@ -173,63 +173,58 @@ describe('staggerOf', () => {
   });
 });
 
-describe('agentStateOf', () => {
-  const then = Date.parse(at);
-  const soon = then + 1000;
-  const withAgent = (agent: Partial<Agent>): ShootView => ({
-    ...sampleShoot(photos),
-    agent: { waitsSince: null, canStart: true, started: null, ...agent },
-  });
-  const started = (change: Partial<NonNullable<Agent['started']>>) => ({
-    at: '2026-05-21T10:00:02.000Z',
-    link: null,
-    failed: null,
-    ...change,
+describe('carryingStateOf', () => {
+  const shoot = sampleShoot(photos);
+  const stop = (needs: 'money' | 'retry', stopped: ReadonlyArray<string>) => ({
+    at,
+    reason: 'It stopped.',
+    needs,
+    photos: stopped,
+    seenAt: null,
   });
 
   it('is idle while nothing is handed over', () => {
-    expect(agentStateOf(withAgent({}), null, soon)).toEqual({ is: 'idle' });
+    const resting = { since: null, stopped: null };
+    expect(carryingStateOf(shoot, resting, null)).toEqual({ is: 'idle' });
   });
 
-  it('says an agent is at work once one was started for it', () => {
-    const link = 'https://app.example.com/threads/one';
-    expect(
-      agentStateOf(withAgent({ started: started({ link }) }), at, soon),
-    ).toEqual({ is: 'at-work', link });
-    expect(
-      agentStateOf(withAgent({ waitsSince: at, canStart: false }), at, soon),
-    ).toEqual({ is: 'at-work', link: null });
-  });
-
-  it('waits a while for an agent it asked for, and then says so', () => {
-    expect(agentStateOf(withAgent({}), at, soon)).toEqual({ is: 'starting' });
-    expect(agentStateOf(withAgent({}), at, then + agentPatience + 1)).toEqual({
-      is: 'ask',
-      failed: null,
-      isLate: true,
+  it('is at work while keepsake carries it out, or is about to', () => {
+    expect(carryingStateOf(shoot, { since: at, stopped: null }, null)).toEqual({
+      is: 'at-work',
+    });
+    expect(carryingStateOf(shoot, { since: null, stopped: null }, at)).toEqual({
+      is: 'at-work',
     });
   });
 
-  it('doesn’t take an agent started for an earlier hand-over for this one', () => {
-    const earlier = started({ at: '2026-05-20T09:00:00.000Z' });
-    expect(agentStateOf(withAgent({ started: earlier }), at, soon)).toEqual({
-      is: 'starting',
+  it('says what it waits for, and what going on agrees to pay more', () => {
+    const forMoney = stop('money', ['a', 'b']);
+    expect(
+      carryingStateOf(shoot, { since: null, stopped: forMoney }, at),
+    ).toEqual({ is: 'stopped', stopped: forMoney, more: limitOf(shoot, 2) });
+    const once = stop('retry', ['a']);
+    expect(carryingStateOf(shoot, { since: null, stopped: once }, at)).toEqual({
+      is: 'stopped',
+      stopped: once,
+      more: 0,
     });
   });
+});
 
-  it('asks the owner when none can be started, or starting failed', () => {
-    expect(agentStateOf(withAgent({ canStart: false }), at, soon)).toEqual({
-      is: 'ask',
-      failed: null,
-      isLate: false,
-    });
-    expect(
-      agentStateOf(
-        withAgent({ started: started({ failed: 'not signed in' }) }),
-        at,
-        soon,
-      ),
-    ).toEqual({ is: 'ask', failed: 'not signed in', isLate: false });
+describe('limitOf', () => {
+  it('leaves room beyond the estimate, and at least the hold of the last edit', () => {
+    const shoot = sampleShoot(photos);
+    // Nine edits at $0.75 come to $6.75; half as much again is $10.13.
+    expect(limitOf(shoot, 9)).toBe(10.13);
+    expect(limitOf(shoot, 0)).toBe(0);
+    const held = { ...shoot, dollars: { ...shoot.dollars, hold: 3 } };
+    expect(limitOf(held, 1)).toBe(3);
+  });
+
+  it('is what handing over agrees to pay', () => {
+    const ledger = ledgerOf(indexOf(sampleShoot(photos, marks)));
+    expect(ledger.dollars).toBe(1.5);
+    expect(ledger.limit).toBe(2.25);
   });
 });
 

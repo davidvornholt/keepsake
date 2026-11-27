@@ -10,7 +10,11 @@ import { publish as publishShoot } from '../features/publish/publish.ts';
 import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { withChoice } from '../shared/lock.ts';
-import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
+import {
+  defaultImageModel,
+  defaultReviewModel,
+  defaultVersions,
+} from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
 import { openShoot } from '../shared/store.ts';
@@ -34,7 +38,6 @@ const defaultMinimum = 7;
 const mostPicks = 10_000;
 const defaultBudget = 25;
 const mostDollars = 10_000;
-const defaultVersions = 2;
 const mostVersions = 4;
 
 const again = flag('again', 'Start over instead of keeping what is done');
@@ -243,8 +246,8 @@ export const publish = Command.make(
           ? [(yield* markOfChosen(open, mark.value)).photo]
           : photos;
         const published = yield* publishShoot(open, names, album);
-        yield* tellOutdated(open, published.outdated, (outdated) =>
-          emit({ ...published, outdated }),
+        yield* tellOutdated(open, published.outdated, (outdated, trashFailed) =>
+          emit({ ...published, outdated, trashFailed }),
         );
       }).pipe(
         // Until it told, so the page publishes nothing in between, and

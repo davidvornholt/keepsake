@@ -42,7 +42,7 @@ export const usePicture = (
   }, [first, wanted]);
 
   const best = picture === null ? null : bestReady(picture, width);
-  // What was shown stays until its successor has arrived, as when an agent
+  // What was shown stays until its successor has arrived, as when keepsake
   // has just edited the photo again.
   const [last, setLast] = useState(best);
   if (best !== null && best !== last) {

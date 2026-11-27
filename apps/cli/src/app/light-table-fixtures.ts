@@ -17,7 +17,6 @@ export const whileServing = <A>(
       const server = yield* serveLightTable({
         address: undefined,
         photos: [],
-        agent: undefined,
         keepsake: ['keepsake'],
         ...options,
         port: 0,

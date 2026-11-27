@@ -1,9 +1,9 @@
 import { mobileDeviceTag } from '@davidvornholt/a11y-testing/playwright-config';
 import { expect, test } from '@playwright/test';
-import { lay, scan, shelf, title } from './page.ts';
+import { large, lay, scan, shelf, title } from './page.ts';
 
 // The shelf of albums, and the way of a new one: from a folder of photos
-// to the choice, the order, and the agent that edits it. Tests that change
+// to the choice, the order, and keepsake editing it. Tests that change
 // something each have an album of their own, since they run side by side
 // against one server.
 
@@ -16,6 +16,10 @@ const englishName =
   /its common English name where it has one, such as Vienna for Wien/u;
 const newAlbum = /^New album From/u;
 const newAlbumWithKey = /^New album N$/u;
+const newThings = /^\d+ new things? to look at$/u;
+const goOnForMore = /^Go on, at most \$11\.25 more$/u;
+const usedUp = /^What you agreed to pay is used up/u;
+const sintraNews = /\/sintra\/news\?across$/u;
 
 test('shows every album on a shelf, with what waits at each', async ({
   page,
@@ -30,6 +34,8 @@ test('shows every album on a shelf, with what waits at each', async ({
   await expect(album('Braga')).toContainText('Nothing chosen yet');
   await expect(album('Aveiro')).toContainText('Stopped');
   await expect(album('Óbidos')).toContainText('Being edited');
+  await expect(album('Sintra')).toContainText('Waits for you');
+  await expect(page.getByRole('button', { name: newThings })).toBeVisible();
   await scan(page);
 
   // The arrow keys go from album to album, and Enter opens one.
@@ -135,25 +141,45 @@ test('says how far a new album is', async ({ page }) => {
   await scan(page);
 });
 
-test('says how far an album is that an agent works on', async ({ page }) => {
+test('says how far an album is that keepsake works on', async ({ page }) => {
   await lay(page, '/obidos', 'Óbidos');
-  const edited = page.getByRole('region', {
-    name: 'The album is being edited',
-  });
-  await expect(edited.getByText('0 of 10 photos edited')).toBeVisible();
-  await scan(page);
-  // Nobody took the order, so the page offers to start an agent once more,
-  // and says what to tell one.
-  await edited.getByRole('button', { name: 'Ask an agent' }).click();
-  await expect(title(page)).toHaveText('The album is ordered');
+  const ordered = page.getByRole('region', { name: 'The order', exact: true });
   await expect(
-    page.getByRole('button', { name: 'Start an agent' }),
-  ).toBeEnabled();
-  await expect(page.getByRole('textbox').first()).toHaveValue(
-    'Go through my Keepsake marks',
-  );
-  await expect(page.getByRole('button', { name: 'Copy' })).toBeVisible();
+    ordered.getByRole('heading', { name: 'The album is being edited' }),
+  ).toBeVisible();
+  await expect(ordered.getByText('0 of 10 photos edited')).toBeVisible();
+  await expect(ordered).toContainText('Keepsake is at work');
+  await expect(ordered.getByRole('button', { name: 'Go on' })).toHaveCount(0);
   await scan(page);
+  await ordered.getByRole('button', { name: 'The order' }).click();
+  await expect(title(page)).toHaveText('The album is ordered');
+  await expect(page.getByText('Keepsake is at work on it.')).toBeVisible();
+  await scan(page);
+});
+
+test('walks to what waits for the owner, who goes on', async ({ page }) => {
+  await shelf(page);
+  // What waits at Sintra is the oldest of what is new.
+  await page.getByRole('button', { name: newThings }).click();
+  await expect(page).toHaveURL(sintraNews);
+  await expect(large(page)).toBeVisible();
+  await expect(page.getByText('New 1 of 1')).toBeVisible();
+  await expect(large(page).getByText('Waits for you').first()).toBeVisible();
+  await expect(large(page).getByText(usedUp).first()).toBeVisible();
+  await scan(page);
+  await page.keyboard.press('Escape');
+  await expect(title(page)).toHaveText('Keepsake');
+
+  await lay(page, '/sintra', 'Sintra');
+  const ordered = page.getByRole('region', { name: 'The order', exact: true });
+  await expect(ordered.getByRole('alert')).toHaveText(usedUp);
+  await scan(page);
+  // Going on agrees to as much more as the rest may cost.
+  await ordered.getByRole('button', { name: goOnForMore }).click();
+  await expect(
+    ordered.getByRole('heading', { name: 'The album is being edited' }),
+  ).toBeVisible();
+  await expect(ordered.getByRole('alert')).toHaveCount(0);
 });
 
 test('goes over what was chosen for an album', {
@@ -172,27 +198,29 @@ test('goes over what was chosen for an album', {
   await expect(title(page)).toHaveText('Order the album');
   const order = page.getByRole('region', { name: 'Order the album' });
   await expect(order).toContainText('10 photos are chosen.');
-  await expect(order).toContainText('An agent is started for it');
+  // It says what the edits come to, and the most it may cost.
+  await expect(order).toContainText('About $0.75, at most $1.13');
+  await expect(order).toContainText('Keepsake starts at once');
   await scan(page);
 });
 
-test('orders an album, which an agent is started for', async ({ page }) => {
+test('orders an album, which keepsake edits at once', async ({ page }) => {
   await lay(page, '/sagres', 'Sagres');
   await page.getByRole('button', { name: 'Order the album' }).click();
   await page
     .getByRole('region', { name: 'Order the album' })
     .getByRole('button', { name: editAll })
     .click();
-  // The agent that is started says where it can be read along.
-  const along = page.getByRole('link', { name: 'Read along' }).first();
-  await expect(along).toHaveAttribute(
-    'href',
-    'https://agents.example.com/threads/sagres',
-  );
+  await expect(title(page)).toHaveText('The album is ordered');
   await scan(page);
   await page.keyboard.press('Escape');
+  // No model is signed in here, so editing stops, and the page says why and
+  // offers to go on, instead of saying that it is being edited.
+  const ordered = page.getByRole('region', { name: 'The order', exact: true });
+  await expect(ordered.getByRole('alert')).not.toBeEmpty();
+  await expect(ordered.getByRole('button', { name: 'Go on' })).toBeVisible();
   await expect(
-    page.getByRole('region', { name: 'The album is being edited' }),
-  ).toContainText('An agent is at work');
+    ordered.getByRole('heading', { name: 'The album is ordered' }),
+  ).toBeVisible();
   await scan(page);
 });

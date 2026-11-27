@@ -14,7 +14,7 @@ export const Unseen = ({
   unseenRef,
 }: {
   readonly photos: ReadonlyArray<PhotoView | undefined>;
-  /** What an agent or the owner says about a photo. */
+  /** What keepsake or the owner says about a photo. */
   readonly wordFor: (photo: PhotoView, isWriting: boolean) => Word | null;
   readonly unseenRef: RefObject<HTMLDivElement | null>;
 }) => (

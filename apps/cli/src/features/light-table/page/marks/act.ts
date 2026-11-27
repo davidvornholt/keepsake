@@ -11,7 +11,7 @@ import { lookOf, type Pencil } from './kinds.ts';
 
 // What the owner can say about a photo, and what a press of a key or a
 // button does about it. Taking a photo out and putting one in happen at
-// once; a change is a mark for an agent. Pressing a pencil again while what
+// once; a change is a mark for keepsake. Pressing a pencil again while what
 // it does still waits takes it back.
 
 /** Why a photo that the owner took out isn't in the album, when they gave no reason. */

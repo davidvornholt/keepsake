@@ -10,7 +10,7 @@ type Props = {
   readonly shape: Shape;
   /** What the mark is drawn from; the same text gives the same strokes. */
   readonly seed: string;
-  /** A wax pencil, the agent's blue one, or a grey for a mark that isn't made. */
+  /** A wax pencil, keepsake's blue one, or a grey for a mark that isn't made. */
   readonly color:
     | 'wax-white'
     | 'wax-yellow'

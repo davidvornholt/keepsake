@@ -100,13 +100,16 @@ export const run = Command.make(
         const explained = yield* workOn(shoot, (open) =>
           askReviewer(explainShoot(open, false)),
         );
-        const tell = (outdated: ReadonlyArray<string>) =>
+        const tell = (
+          outdated: ReadonlyArray<string>,
+          trashFailed: string | null = null,
+        ) =>
           emitWithCost({
             scanned,
             culled,
             picked,
             edited,
-            published: published && { ...published, outdated },
+            published: published && { ...published, outdated, trashFailed },
             explained,
           });
         // The lock was let go after publishing, so another publish may have

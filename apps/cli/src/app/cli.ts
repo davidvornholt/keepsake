@@ -5,7 +5,7 @@ import { CliError, CliOutput, Command } from 'effect/cli';
 import packageJson from '../../package.json' with { type: 'json' };
 import { login, logout, status } from './account-commands.ts';
 import { serve } from './light-table-commands.ts';
-import { answer, marks, takeOut } from './mark-commands.ts';
+import { marks, takeOut } from './mark-commands.ts';
 import { report } from './output.ts';
 import { bench, rate } from './rating-commands.ts';
 import { run } from './run-command.ts';
@@ -32,7 +32,6 @@ export const keepsake = Command.make('keepsake').pipe(
     explain,
     serve,
     marks,
-    answer,
     rate,
     bench,
   ]),

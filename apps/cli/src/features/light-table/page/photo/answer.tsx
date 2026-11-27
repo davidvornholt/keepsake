@@ -1,22 +1,24 @@
 import type { ReactNode } from 'react';
 import type { Mark } from '../../contract.ts';
 import { localClock } from '../data/format.ts';
+import { GoOn } from '../flows/go-on.tsx';
 import { lookOf, seedTextOf } from '../marks/kinds.ts';
 import { WaxMark } from '../marks/wax-mark.tsx';
-import { agentButton, sideButton } from '../ui/classes.ts';
+import { pencilButton, sideButton } from '../ui/classes.ts';
 import { Key } from '../ui/controls.tsx';
 import type { Word } from './word.ts';
 
-// What stands above the pencils of a photo. An agent's words in its blue
-// pencil: that it is at work on the photo, that it has the mark, or what came
-// of it. Or the owner's own words on a mark that isn't handed over, in wax.
+// What stands above the pencils of a photo. keepsake's words in its blue
+// pencil: that it is at work on the photo, that it has the mark, what came of
+// it, or that an order put the photo in; what waits for the owner's word; or
+// the owner's own words on a mark that isn't handed over, in wax.
 
 const asked = (mark: Mark): string => {
   const { said } = lookOf.change;
   return `${said}: ${mark.note}`;
 };
 
-/** What an agent says, with its dot in front and a label above, if there is one. */
+/** What keepsake says, with its dot in front and a label above, if there is one. */
 const Saying = ({
   label,
   dot,
@@ -40,6 +42,21 @@ const Saying = ({
   </div>
 );
 
+/** The button that says the owner has looked at it, and goes on to the next. */
+const Seen = ({ onSeen }: { readonly onSeen: () => void }) => (
+  <button
+    aria-keyshortcuts="Enter"
+    className={pencilButton}
+    onClick={onSeen}
+    type="button"
+  >
+    Seen <Key>Enter</Key>
+  </button>
+);
+
+const buttons =
+  'flex gap-3 max-sm:w-full max-sm:*:flex-1 max-sm:*:justify-center';
+
 const Answered = ({
   mark,
   hasBefore,
@@ -59,7 +76,7 @@ const Answered = ({
         <strong className="type-label">{isDone ? 'Done' : 'Not done'}</strong>
         {note === '' ? '' : `. ${note}`}
       </Saying>
-      <div className="flex gap-3 max-sm:w-full max-sm:*:flex-1 max-sm:*:justify-center">
+      <div className={buttons}>
         {hasBefore ? (
           <button
             aria-keyshortcuts="V"
@@ -70,18 +87,37 @@ const Answered = ({
             Before <Key>V</Key>
           </button>
         ) : null}
-        <button
-          aria-keyshortcuts="Enter"
-          className={agentButton}
-          onClick={onSeen}
-          type="button"
-        >
-          Seen <Key>Enter</Key>
-        </button>
+        <Seen onSeen={onSeen} />
       </div>
     </>
   );
 };
+
+/** What waits for the owner's word, with the word to go on. */
+const Stopped = ({
+  word,
+  onSeen,
+}: {
+  readonly word: Extract<Word, { kind: 'stopped' }>;
+  readonly onSeen: () => void;
+}) => (
+  <>
+    <div className="grid min-w-0 grow basis-full grid-cols-[auto_1fr] items-baseline gap-x-3 sm:basis-0">
+      <p className="type-edge col-start-2 mb-0.5 text-quiet">Waits for you</p>
+      <span
+        aria-hidden="true"
+        className="col-start-1 size-2 rounded-full border-2 border-wax-yellow"
+      />
+      <p className="text-pretty text-[0.9375rem] text-wax-yellow leading-snug">
+        {word.carrying.stopped.reason}
+      </p>
+    </div>
+    <div className={buttons}>
+      <GoOn carrying={word.carrying} className={sideButton} />
+      {word.carrying.stopped.seenAt === null ? <Seen onSeen={onSeen} /> : null}
+    </div>
+  </>
+);
 
 const inkOf = {
   'wax-white': 'text-wax-white',
@@ -143,9 +179,24 @@ type Props = {
 const Said = ({ word, onEdit, ...answered }: Props) => {
   if (word.kind === 'working') {
     return (
-      <Saying dot="agent-pulse border-2 border-pencil-blue" label={null}>
-        An agent is working on this photo.
+      <Saying dot="pencil-pulse border-2 border-pencil-blue" label={null}>
+        Keepsake is working on this photo.
       </Saying>
+    );
+  }
+  if (word.kind === 'stopped') {
+    return <Stopped onSeen={answered.onSeen} word={word} />;
+  }
+  if (word.kind === 'added') {
+    return (
+      <>
+        <Saying dot="bg-pencil-blue" label={null}>
+          Your order put it into the album.
+        </Saying>
+        <div className={buttons}>
+          <Seen onSeen={answered.onSeen} />
+        </div>
+      </>
     );
   }
   if (word.kind === 'waiting') {

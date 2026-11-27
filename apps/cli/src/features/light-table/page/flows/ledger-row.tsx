@@ -11,17 +11,17 @@ import type { Line } from './ledger.ts';
 // asks for, and how far it has got.
 
 const iconSize = 16;
-/** The agent's pencil is finer than the owner's wax. */
+/** Keepsake's pencil is finer than the owner's wax. */
 const pencilWeight = 0.42;
 
 export type Going = {
-  /** When the agent's pencil gets to this mark, in milliseconds. */
+  /** When keepsake's pencil gets to this mark, in milliseconds. */
   readonly since: number;
 };
 
 type Props = {
   readonly line: Line;
-  /** Set while the mark is being handed over, and null once an agent has it. */
+  /** Set while the mark is being handed over, and null once keepsake has it. */
   readonly going: Going | null;
   readonly isOpen: boolean;
   readonly isWorkedOn: boolean;
@@ -105,7 +105,7 @@ export const LedgerRow = ({ line, going, isOpen, isWorkedOn }: Props) => {
           />
           {hasRing ? (
             <WaxMark
-              className={`absolute inset-0 size-12 ${isWorkedOn ? 'agent-pulse' : ''}`}
+              className={`absolute inset-0 size-12 ${isWorkedOn ? 'pencil-pulse' : ''}`}
               color="pencil-blue"
               seed={`${mark.id}:agent`}
               shape="circle"

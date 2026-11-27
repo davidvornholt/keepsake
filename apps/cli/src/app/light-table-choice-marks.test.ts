@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { takenOut } from '../features/light-table/mark-answers.ts';
 import {
   choose,
   publishLisbon,
@@ -15,6 +16,7 @@ import {
 import { fakeTools } from './fake-tools.ts';
 import {
   change,
+  eventually,
   handOver,
   marksOf,
   send,
@@ -37,8 +39,8 @@ const mark = (address: string, photo: string, note: string) =>
 const photosOf = (marks: ReadonlyArray<{ readonly photo: string }>) =>
   marks.map(({ photo }) => photo);
 
-/** What an agent is given to act on. */
-const forAgent = async () => {
+/** What `marks` lists to act on. */
+const listedMarks = async () => {
   const listed = await runOk('marks', 'lisbon');
   return { photos: photosOf(listed.marks), album: listed.album };
 };
@@ -55,7 +57,7 @@ describe('a change of a photo that goes out', () => {
       return [shown];
     });
     expect(left).toEqual(['C']);
-    expect(await forAgent()).toEqual({ photos: ['C'], album: null });
+    expect(await listedMarks()).toEqual({ photos: ['C'], album: null });
     expect(await standingOf('B')).toMatchObject({ kind: 'taken-out' });
   });
 
@@ -76,15 +78,23 @@ describe('a change of a photo that goes out', () => {
     expect((await runOk('marks', 'lisbon', '--all')).marks).toEqual([]);
   });
 
-  it('isn’t acted on when it was handed over before', async () => {
+  it('is answered as taken out when it was handed over before', async () => {
     await publishLisbon();
-    await whileServing(async (address) => {
+    const [answered] = await whileServing(async (address) => {
       await mark(address, 'B', 'Warmer.');
       await handOver(address, { dollars: 0.45 });
       await choose(address, { photo: 'B', wants: 'out' });
+      return eventually(
+        () => marksOf(address),
+        ([one]) => one?.answer !== null,
+      );
+    });
+    expect(answered.answer).toMatchObject({
+      outcome: 'not-done',
+      note: takenOut,
     });
     expect(await runOk('marks', 'lisbon')).toMatchObject({
-      handOvers: [],
+      agreedDollars: 0,
       marks: [],
     });
   });
@@ -117,7 +127,7 @@ describe('a wish for the first edit of a photo put in during an order', () => {
       ];
     });
     expect([first, refused]).toEqual([400, 409]);
-    expect((await forAgent()).photos).toEqual([]);
+    expect((await listedMarks()).photos).toEqual([]);
     await editLisbon('A1', 'B', 'C');
     await runOk('publish', 'lisbon', 'A1', 'B', 'C');
     await whileServing((address) =>

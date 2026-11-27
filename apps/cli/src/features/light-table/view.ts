@@ -3,6 +3,7 @@ import { readActivity } from '../../shared/activity.ts';
 import type { Photo, Verdict } from '../../shared/domain.ts';
 import { judgeOf } from '../../shared/judge.ts';
 import { takenThere } from '../../shared/local-time.ts';
+import { holdForOneEdit } from '../../shared/models.ts';
 import { readRatings, readToRate } from '../../shared/ratings.ts';
 import {
   dollarsForOneEdit,
@@ -11,7 +12,7 @@ import {
 } from '../../shared/spending.ts';
 import { frontOf, type Standings, standings } from '../../shared/standing.ts';
 import { exists, type OpenShoot, readJson } from '../../shared/store.ts';
-import { agentOf } from './agent.ts';
+import { carryingOf } from './carrying.ts';
 import { choicesOf } from './choices.ts';
 import type {
   Changed,
@@ -22,9 +23,11 @@ import type {
   Stack,
 } from './contract.ts';
 import { editOf } from './edits.ts';
-import { orderOf } from './hand-over.ts';
+import { orderOf, roughlyUnsettled } from './hand-over.ts';
 import { readLabels } from './labels.ts';
-import { isNews, isOpen, readMarks } from './marks.ts';
+import { isOpen, readMarks } from './marks.ts';
+import { readAdded } from './news.ts';
+import { newsOf } from './news-of.ts';
 import { type Gallery, type Kind, pictureOf } from './pictures.ts';
 import { readPreparation } from './preparation.ts';
 import { revisionOf } from './revision.ts';
@@ -153,7 +156,7 @@ const stacksOf = (photos: ReadonlyArray<PhotoView>): ReadonlyArray<Stack> => {
 /** Everything the page shows of a shoot. */
 export const shootView = Effect.fn('shootView')(function* (
   gallery: Gallery,
-  canStartAgent: boolean,
+  isWorking: boolean,
 ) {
   const { open } = gallery;
   const { files, shoot } = open;
@@ -185,14 +188,23 @@ export const shootView = Effect.fn('shootView')(function* (
       picks === null
         ? null
         : { minimumScore: picks.minimumScore, maximum: picks.maximum },
-    dollars: { spent: inCents(spent), perEdit: dollarsForOneEdit },
+    dollars: {
+      spent: inCents(spent),
+      perEdit: dollarsForOneEdit,
+      hold: inCents(holdForOneEdit),
+    },
     photos,
     stacks: stacksOf(photos),
     marks: yield* readMarks(files),
     choices: yield* choicesOf(files),
     activity: yield* readActivity(files),
     preparation: yield* readPreparation(files),
-    agent: yield* agentOf(files, canStartAgent),
+    carrying: yield* carryingOf(
+      files,
+      yield* roughlyUnsettled(files),
+      isWorking,
+    ),
+    added: yield* readAdded(files),
     ordered:
       order === null
         ? null
@@ -204,14 +216,18 @@ export const shootView = Effect.fn('shootView')(function* (
 /** What may have changed since the page was given a shoot. */
 export const changedSince = Effect.fn('changedSince')(function* (
   open: OpenShoot,
-  canStartAgent: boolean,
+  isWorking: boolean,
 ) {
   const { files } = open;
   return {
     revision: yield* revisionOf(open, yield* modelOf(open)),
     activity: yield* readActivity(files),
     preparation: yield* readPreparation(files),
-    agent: yield* agentOf(files, canStartAgent),
+    carrying: yield* carryingOf(
+      files,
+      yield* roughlyUnsettled(files),
+      isWorking,
+    ),
   } satisfies Changed;
 });
 
@@ -241,11 +257,18 @@ const coversOf = (
 /** A shoot in short. */
 export const shootInShort = Effect.fn('shootInShort')(function* (
   gallery: Gallery,
+  isWorking: boolean,
 ) {
   const { open } = gallery;
   const { files, shoot } = open;
   const known = yield* standings(open, yield* modelOf(open));
   const marks = yield* readMarks(files);
+  const carrying = yield* carryingOf(
+    files,
+    yield* roughlyUnsettled(files),
+    isWorking,
+  );
+  const news = newsOf(marks, yield* readAdded(files), carrying);
   const times = [...open.photos.values()]
     .toSorted(byTime)
     .map((photo) => takenThere(shoot, photo));
@@ -263,7 +286,9 @@ export const shootInShort = Effect.fn('shootInShort')(function* (
     activity: yield* readActivity(files),
     isOrdered: (yield* orderOf(files, known)) !== null,
     openMarks: marks.filter(isOpen).length,
-    newAnswers: marks.filter(isNews).length,
+    carrying,
+    news: news.length,
+    newSince: news[0]?.at ?? null,
     covers: yield* Effect.forEach(
       coversOf(open, known),
       ([photo, kind]) => pictureOf(gallery, photo, kind).pipe(Effect.option),

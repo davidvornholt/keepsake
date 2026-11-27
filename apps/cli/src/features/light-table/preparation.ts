@@ -11,7 +11,7 @@ import {
   shootNames,
   writeJson,
 } from '../../shared/store.ts';
-import { runTool } from '../../shared/tools.ts';
+import { callerOf } from './calls.ts';
 import type { Preparation } from './contract.ts';
 
 // Getting a new shoot ready for the owner costs nothing, so the page does it:
@@ -69,46 +69,22 @@ const argumentsFor = (shoot: Shoot, maximum: number | null) => [
   ...(maximum === null ? [] : ['--maximum', String(maximum)]),
 ];
 
-const Failure = Schema.fromJsonString(
-  Schema.Struct({ error: Schema.Struct({ message: Schema.String }) }),
-);
-
-/** What a keepsake command says about why it failed. */
-const reasonIn = (stderr: string): string =>
-  stderr
-    .split('\n')
-    .toReversed()
-    .flatMap((line) =>
-      Option.toArray(Schema.decodeUnknownOption(Failure)(line)),
-    )
-    .map(({ error }) => error.message)[0] ?? 'It ended unexpectedly.';
-
 const storeFailed = (error: { readonly message: string }) =>
   new StoreFailed({ message: `Could not use a shoot: ${error.message}` });
 
-/** Why a command stopped, or null when it is through. */
-const outcomeOf = (command: string, args: ReadonlyArray<string>) =>
-  runTool(command, args).pipe(
-    Effect.map(({ exitCode, stderr }) =>
-      exitCode === 0 ? null : reasonIn(stderr),
-    ),
-    Effect.catchTag('ToolFailed', ({ message }) => Effect.succeed(message)),
-  );
-
 /** Gets shoots ready with the program that keepsake itself is started with. */
-export const makePreparations = Effect.fn('makePreparations')(function* ([
-  command = '',
-  ...first
-]: ReadonlyArray<string>) {
+export const makePreparations = Effect.fn('makePreparations')(function* (
+  keepsake: ReadonlyArray<string>,
+) {
   const fs = yield* FileSystem.FileSystem;
   const running = yield* FiberMap.make<string>();
+  const call = callerOf(keepsake);
 
   const work = Effect.fn('work')(function* (shoot: Shoot, noted: Noted) {
     const files = yield* shootFiles(shoot.name);
-    const stopped = yield* outcomeOf(command, [
-      ...first,
-      ...argumentsFor(shoot, noted.maximum),
-    ]);
+    const called = yield* call(argumentsFor(shoot, noted.maximum));
+    // Why it stopped, or null when it is through.
+    const stopped = called.kind === 'done' ? null : called.message;
     yield* stopped === null
       ? fs
           .remove(files.preparation, { force: true })
