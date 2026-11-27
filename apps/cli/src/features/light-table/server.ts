@@ -67,6 +67,13 @@ const toThePage =
       : new Response(null, { status: forbidden });
   };
 
+/** Whether the server couldn't listen because the address is taken. */
+const isInUse = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  error.code === 'EADDRINUSE';
+
 const statuses = new Map([
   ['InvalidInput', badRequest],
   ['StepMissing', notFound],
@@ -227,9 +234,11 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
           development: process.env.NODE_ENV !== 'production',
           routes,
         }),
-      catch: () =>
+      catch: (error) =>
         new InvalidInput({
-          message: `Something else is using port ${port}. Leave out --port to use any free one.`,
+          message: isInUse(error)
+            ? `Something else is using port ${port}. Leave out --port to use any free one.`
+            : `The page couldn’t be served: ${error instanceof Error ? error.message : String(error)}`,
         }),
     }),
     (server) => Effect.promise(() => server.stop(true)),
