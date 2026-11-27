@@ -117,6 +117,7 @@ export const sampleShoot = (
   activity: null,
   preparation: null,
   carrying: { since: null, stopped: null },
+  isChoiceBusy: false,
   added: [],
   ordered: null,
   rating: null,

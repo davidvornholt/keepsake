@@ -50,6 +50,14 @@ const quietOnce = (isQuiet = false) => {
   return { promise, settle };
 };
 
+/** What goes on in the shoot now, as keepsake said. */
+const goingOnIn = ({
+  activity,
+  preparation,
+  carrying,
+  isChoiceBusy,
+}: ShootView) => ({ activity, preparation, carrying, isChoiceBusy });
+
 export const makeCore = (name: string) => {
   const held = makeHeld();
   const { set, get } = held;
@@ -75,12 +83,15 @@ export const makeCore = (name: string) => {
     }
   };
 
-  /** Takes what keepsake says, unless a change under way is newer. */
-  const take = (shoot: ShootView) => {
+  /**
+   * Takes what keepsake says, unless a change under way is newer, and what
+   * goes on until keepsake tells that every second, which is then all
+   * the page goes by.
+   */
+  const take = (shoot: ShootView, isLive: boolean) => {
     if (inFlight > 0) {
       return;
     }
-    const { activity, preparation, carrying } = shoot;
     const { problem } = get();
     known = shoot;
     isAhead = false;
@@ -88,9 +99,7 @@ export const makeCore = (name: string) => {
     set({
       status: 'ready',
       index: indexOf(shoot),
-      activity,
-      preparation,
-      carrying,
+      ...(isLive ? goingOnIn(shoot) : {}),
       // It answers again, so the notice that it doesn't has had its day,
       // unless a change was lost meanwhile.
       problem: problem === unreachable ? lost : problem,
@@ -119,7 +128,7 @@ export const makeCore = (name: string) => {
     try {
       const shoot = await readShoot(name);
       if (read === reads) {
-        take(shoot);
+        take(shoot, held.told() === 0);
       }
     } catch (error) {
       const isMissing = await isGone(name, error, get().index !== null);

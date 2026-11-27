@@ -199,6 +199,8 @@ export type ShootView = {
   readonly activity: Activity | null;
   readonly preparation: Preparation | null;
   readonly carrying: CarryingOut;
+  /** As in `Changed`. */
+  readonly isChoiceBusy: boolean;
   /** The photos orders put into the album, newest last. */
   readonly added: ReadonlyArray<Added>;
   /**
@@ -270,6 +272,11 @@ export type Changed = {
   readonly activity: Activity | null;
   readonly preparation: Preparation | null;
   readonly carrying: CarryingOut;
+  /**
+   * Whether a command changes the choice or the album now, so that a photo
+   * put in or taken out waits for it.
+   */
+  readonly isChoiceBusy: boolean;
 };
 
 /** GET /api/folders */

@@ -1,6 +1,7 @@
 import { Duration, Effect, FiberMap, type Semaphore } from 'effect';
 import {
   exists,
+  type OpenShoot,
   openShoot,
   shootFiles,
   shootNames,
@@ -17,6 +18,15 @@ export const makeSettling = Effect.fn('makeSettling')(function* (
   writing: Semaphore.Semaphore,
 ) {
   const running = yield* FiberMap.make<string>();
+  /** The shoots whose choices are being done now. */
+  const settlingNow = new Set<string>();
+
+  const settleIn = (open: OpenShoot) =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => settlingNow.add(open.shoot.name)),
+      () => settle(open),
+      () => Effect.sync(() => settlingNow.delete(open.shoot.name)),
+    );
 
   /** Says whether something still waits. */
   const once = (name: string) =>
@@ -25,7 +35,7 @@ export const makeSettling = Effect.fn('makeSettling')(function* (
       if (!(yield* exists((yield* shootFiles(name)).choices))) {
         return false;
       }
-      return yield* settle(yield* openShoot(name));
+      return yield* settleIn(yield* openShoot(name));
     }).pipe(
       writing.withPermits(1),
       Effect.orElseSucceed(() => true),
@@ -49,11 +59,13 @@ export const makeSettling = Effect.fn('makeSettling')(function* (
     /** Does it now, and later what has to wait. */
     now: Effect.fn('now')(function* (name: string) {
       const open = yield* openShoot(name);
-      if (yield* settle(open)) {
+      if (yield* settleIn(open)) {
         yield* start(name);
       }
     }),
     stop: (name: string) => FiberMap.remove(running, name),
+    /** Whether the server does what was chosen in the shoot now. */
+    isSettling: (name: string) => settlingNow.has(name),
     /** Goes on with what waited when a server before this one stopped. */
     resume: Effect.gen(function* () {
       const names = yield* shootNames;
