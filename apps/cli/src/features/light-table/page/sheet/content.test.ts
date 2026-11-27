@@ -114,7 +114,7 @@ describe('contentOf', () => {
         samplePhoto('b', { ...picked, edit: sampleEdit('b') }),
         samplePhoto('c', { standing: { kind: 'left-out', because: null } }),
       ]),
-      ordered: { at: nextDay, dollars: 1.5 },
+      ordered: { at: nextDay, dollars: 1.5, photos: [] },
     });
     const [sheet] = contentOf(ordered, everything, nobody);
     expect(sheet?.frames.map(({ order }) => order)).toEqual([

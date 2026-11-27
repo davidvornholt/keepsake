@@ -1,7 +1,7 @@
 import { DateTime, Effect, Schema } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import type { Standings } from '../../shared/standing.ts';
-import type { ShootFiles } from '../../shared/store.ts';
+import { exists, type ShootFiles } from '../../shared/store.ts';
 import {
   claim,
   claimOn,
@@ -37,6 +37,13 @@ export const isForAgent =
     const kind = known.of.get(photo)?.kind;
     return kind === 'album' || kind === 'picked';
   };
+
+/** Whether a photo has a finished edit, which a change changes. */
+const isEdited = (files: ShootFiles, photo: string) =>
+  Effect.gen(function* () {
+    const edit = files.edit(photo);
+    return (yield* exists(edit.record)) && (yield* exists(edit.final));
+  });
 
 const isOrder = ({ album, fulfilledAt }: HandOverRecord) =>
   album !== null && fulfilledAt === null;
@@ -196,13 +203,20 @@ export const handOver = Effect.fn('handOver')(function* (
   known: Standings,
   wanted: HandOver,
 ) {
-  const marks = (yield* readMarks(files)).filter(
-    (mark) => isOpen(mark) && isForAgent(known)(mark),
-  );
   const picked = pickedOf(known);
-  const isOrdered = (yield* orderOf(files, known)) !== null;
-  const orderable = isOrdered || picked.length === 0 ? null : picked;
+  const order = yield* orderOf(files, known);
+  const orderable = order !== null || picked.length === 0 ? null : picked;
   const { album } = wanted;
+  // A wish for the first edit of a photo is done with that edit, which only
+  // an order pays for: it waits until the photo is ordered.
+  const ordered = new Set([...(order?.photos ?? []), ...(album ?? [])]);
+  const marks = yield* Effect.filter(
+    (yield* readMarks(files)).filter(
+      (mark) => isOpen(mark) && isForAgent(known)(mark),
+    ),
+    ({ photo }) =>
+      ordered.has(photo) ? Effect.succeed(true) : isEdited(files, photo),
+  );
   const ids = marks.map(({ id }) => id);
   const isAsOrderable = album === null || isSame(album, orderable);
   // First, since what the page shows may be gone, which leaves nothing.

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
+  editLisbon,
   pickLisbon,
   runOk,
   setUp,
@@ -22,9 +23,18 @@ import {
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
+/**
+ * A shoot whose chosen photos are edited where they are marked, so that a
+ * mark is a change, which is handed over without an order.
+ */
+const markable = async () => {
+  await pickLisbon();
+  await editLisbon('A1', 'B');
+};
+
 describe('marks on the light table', () => {
   it('replace each other until they are handed over', async () => {
-    await pickLisbon();
+    await markable();
     const [open, handed] = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon/marks`;
       await send('PUT', path, { ...change, note: 'Warmer light' });
@@ -42,7 +52,7 @@ describe('marks on the light table', () => {
   });
 
   it('are handed over with the price that was shown', async () => {
-    await pickLisbon();
+    await markable();
     const handed = await whileServing(async (address) => {
       await send('PUT', `${address}/api/shoots/lisbon/marks`, change);
       return (await handOver(address, { dollars: 0.75 })).json();
@@ -61,13 +71,13 @@ describe('marks on the light table', () => {
   });
 
   it('can’t be handed over when there are none', async () => {
-    await pickLisbon();
+    await markable();
     const status = await whileServing((address) => statusOf(handOver(address)));
     expect(status).toBe(400);
   });
 
   it('can be taken back before that', async () => {
-    await pickLisbon();
+    await markable();
     const statuses = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon`;
       const make = async () =>
@@ -83,7 +93,7 @@ describe('marks on the light table', () => {
   });
 
   it('are news once they are answered, until they were looked at', async () => {
-    await pickLisbon();
+    await markable();
     const news = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon`;
       const { id } = await (await send('PUT', `${path}/marks`, change)).json();
@@ -107,7 +117,7 @@ describe('marks on the light table', () => {
     { ...change, note: ' ' },
     'nonsense',
   ])('that make no sense are refused: %p', async (wanted) => {
-    await pickLisbon();
+    await markable();
     const answer = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon/marks`;
       const status = await statusOf(send('PUT', path, wanted));
@@ -119,7 +129,7 @@ describe('marks on the light table', () => {
 
 describe('a hand-over on the light table', () => {
   it('hands over only the marks that were looked over', async () => {
-    await pickLisbon();
+    await markable();
     const [status, marks] = await whileServing(
       async (address) => {
         const path = `${address}/api/shoots/lisbon/marks`;
@@ -144,7 +154,7 @@ describe('a hand-over on the light table', () => {
   });
 
   it('says the marks changed when the last one was taken back', async () => {
-    await pickLisbon();
+    await markable();
     const status = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon/marks`;
       const { id } = await (await send('PUT', path, change)).json();
@@ -157,7 +167,7 @@ describe('a hand-over on the light table', () => {
   });
 
   it('orders only the chosen photos that were looked over', async () => {
-    await pickLisbon();
+    await markable();
     const [stale, ordered] = await whileServing(async (address) => {
       const picked = await pickedOf(address);
       const first = await statusOf(
@@ -173,7 +183,7 @@ describe('a hand-over on the light table', () => {
 
 describe('labels and ratings on the light table', () => {
   it('keeps the labels of a photo, tidied', async () => {
-    await pickLisbon();
+    await markable();
     const labels = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon/labels`;
       const given = [' print ', 'print', '', 'wall'];
@@ -190,7 +200,7 @@ describe('labels and ratings on the light table', () => {
   });
 
   it('asks for ratings and saves them', async () => {
-    await pickLisbon();
+    await markable();
     await runOk('rate', 'lisbon', '--moments', '3');
     const answer = { moment: 'A1', best: 'A2', stars: 4, further: ['A1'] };
     const rating = await whileServing(async (address) => {
@@ -216,7 +226,7 @@ describe('labels and ratings on the light table', () => {
     { moment: 'D', best: 'A2', stars: 4, further: [] },
     null,
   ])('refuses a rating that makes no sense: %p', async (answer) => {
-    await pickLisbon();
+    await markable();
     const path = 'api/shoots/lisbon/ratings';
     const status = await whileServing((address) =>
       statusOf(send('POST', `${address}/${path}`, answer ?? 'nonsense')),

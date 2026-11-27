@@ -58,7 +58,21 @@ const toEditOf = (
     ordersAlbum ? shoot.photos.filter(awaitsEdit).map(({ id }) => id) : [],
   );
 
-const linesOf = (index: Index): ReadonlyArray<Line> => {
+/**
+ * Whether a wish for the first edit of a photo waits for the photo to be
+ * ordered: it is done with the photo's edit, which only an order pays for.
+ */
+const awaitsOrder = (
+  { shoot }: Index,
+  ordersAlbum: boolean,
+  { mark, photo }: Omit<Line, 'costs'>,
+): boolean =>
+  mark.handedOverAt === null &&
+  awaitsEdit(photo) &&
+  !ordersAlbum &&
+  !(shoot.ordered?.photos.includes(photo.id) ?? false);
+
+const linesOf = (index: Index, ordersAlbum: boolean): ReadonlyArray<Line> => {
   const { shoot, byId, numberOf } = index;
   return shoot.marks
     .filter((mark) => mark.answer === null)
@@ -69,7 +83,9 @@ const linesOf = (index: Index): ReadonlyArray<Line> => {
         return [];
       }
       const line = { mark, photo };
-      return [{ ...line, costs: costsOf(line) }];
+      return awaitsOrder(index, ordersAlbum, line)
+        ? []
+        : [{ ...line, costs: costsOf(line) }];
     })
     .toSorted(
       (left, right) =>
@@ -88,12 +104,12 @@ export const ledgerOf = (
   held: ReadonlySet<string> = none,
 ): Ledger => {
   const { shoot } = index;
-  const lines = linesOf(index);
+  const picked = shoot.photos.filter(isPicked).length;
+  const ordersAlbum = picked > 0 && shoot.ordered === null;
+  const lines = linesOf(index, ordersAlbum);
   const isOpen = ({ mark }: Line) =>
     mark.handedOverAt === null || held.has(mark.id);
   const open = lines.filter(isOpen);
-  const picked = shoot.photos.filter(isPicked).length;
-  const ordersAlbum = picked > 0 && shoot.ordered === null;
   const toEdit = toEditOf(index, ordersAlbum);
   const firstEdits = shoot.photos.filter(
     (photo) => awaitsEdit(photo) && toEdit.has(photo.id),

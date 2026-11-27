@@ -5,13 +5,20 @@ import {
   settled,
   standingOf,
 } from './choice-fixtures.ts';
-import { editLisbon, runOk, setUp, tearDown } from './command-fixtures.ts';
+import {
+  editLisbon,
+  pickLisbon,
+  runOk,
+  setUp,
+  tearDown,
+} from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
 import {
   change,
   handOver,
   marksOf,
   send,
+  statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
 
@@ -93,5 +100,33 @@ describe('a change of a photo that goes out', () => {
     });
     expect(shown).toEqual(['B']);
     expect(await standingOf('B')).toMatchObject({ kind: 'album' });
+  });
+});
+
+describe('a wish for the first edit of a photo put in during an order', () => {
+  it('waits for the photo to be ordered, and comes with its cost', async () => {
+    await pickLisbon();
+    const [first, refused] = await whileServing(async (address) => {
+      await handOver(address, { dollars: 2.25, album: ['A1', 'B', 'C'] });
+      await choose(address, { photo: 'A2', wants: 'in' });
+      const wish = await (await mark(address, 'A2', 'Warmer.')).json();
+      // Nothing else is to be handed over, and the wish isn't yet.
+      return [
+        await statusOf(handOver(address, { marks: [] })),
+        await statusOf(handOver(address, { marks: [wish.id] })),
+      ];
+    });
+    expect([first, refused]).toEqual([400, 409]);
+    expect((await forAgent()).photos).toEqual([]);
+    await editLisbon('A1', 'B', 'C');
+    await runOk('publish', 'lisbon', 'A1', 'B', 'C');
+    await whileServing((address) =>
+      handOver(address, { dollars: 0.75, album: ['A2'] }),
+    );
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 0.75,
+      album: { photos: ['A2'] },
+      marks: [{ photo: 'A2', note: 'Warmer.' }],
+    });
   });
 });

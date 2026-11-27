@@ -142,10 +142,22 @@ describe('an album that is ordered', () => {
     expect(ledger.edits).toBe(1);
   });
 
+  it('keeps a wish for a first edit back until the photo is ordered', () => {
+    const wish = sampleMark('1', { photo: 'd', note: 'Warmer' });
+    const shoot = (photos: ReadonlyArray<string>): ShootView => ({
+      ...sampleShoot(chosen, [wish]),
+      ordered: { at, dollars: 2.25, photos },
+    });
+    expect(ledgerOf(indexOf(shoot(['a']))).open).toEqual([]);
+    const ordered = ledgerOf(indexOf(shoot(['a', 'd'])));
+    expect(ordered.open.map(({ mark }) => mark.id)).toEqual(['1']);
+    expect(ordered.edits).toBe(0);
+  });
+
   it('isn’t ordered a second time', () => {
     const shoot: ShootView = {
       ...sampleShoot(chosen),
-      ordered: { at, dollars: 2.25 },
+      ordered: { at, dollars: 2.25, photos: [] },
     };
     const ledger = ledgerOf(indexOf(shoot));
     expect(ledger.ordersAlbum).toBe(false);
@@ -230,7 +242,7 @@ describe('handedOverSince', () => {
     const later = '2026-05-22T08:00:00.000Z';
     expect(
       handedOverSince(
-        { ...index.shoot, ordered: { at: later, dollars: 3 } },
+        { ...index.shoot, ordered: { at: later, dollars: 3, photos: [] } },
         waiting,
       ),
     ).toBe(later);

@@ -177,7 +177,12 @@ export type ShootView = {
    * That the owner wants the chosen photos edited and put into an album, for at
    * most so many dollars, until that is done.
    */
-  readonly ordered: { readonly at: string; readonly dollars: number } | null;
+  /** The order of chosen photos that aren't in the album yet, if there is one. */
+  readonly ordered: {
+    readonly at: string;
+    readonly dollars: number;
+    readonly photos: ReadonlyArray<string>;
+  } | null;
   /** What the owner was asked to rate, with what was rated already. */
   readonly rating: {
     readonly questions: ReadonlyArray<Question>;

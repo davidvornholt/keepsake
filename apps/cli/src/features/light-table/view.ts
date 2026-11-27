@@ -192,7 +192,10 @@ export const shootView = Effect.fn('shootView')(function* (
     activity: yield* readActivity(files),
     preparation: yield* readPreparation(files),
     agent: yield* agentOf(files, canStartAgent),
-    ordered: order === null ? null : { at: order.at, dollars: order.dollars },
+    ordered:
+      order === null
+        ? null
+        : { at: order.at, dollars: order.dollars, photos: order.photos },
     rating: yield* ratingOf(open),
   } satisfies ShootView;
 });
