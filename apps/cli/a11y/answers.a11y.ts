@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { cutOff, large, lay, pressed, scan, title } from './page.ts';
+import { cutOff, large, lay, pressed, scan, shelf, title } from './page.ts';
 
 // What comes back to the table: what is new to look at, such as answers to
 // marks and what waits for the owner, and moments the owner is asked to
@@ -11,6 +11,7 @@ test.describe.configure({ mode: 'default' });
 const beforeName = /^Before/u;
 const seenName = /^Seen/u;
 const usageLimit = /Claude Code reached its usage limit/u;
+const portoWaits = /\/porto\/(?:hand-over|news)/u;
 const bestOfFour = 'Which of these 4 photos is best?';
 const secondIsBest = 'Photo 2 of 4 is best. How good is it?';
 const thirdIsBest = 'Photo 3 of 4 is best. How good is it?';
@@ -52,6 +53,21 @@ test('goes through what is new, oldest first', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Waits for you' }),
   ).toBeVisible();
+
+  // On the start page it is still new, and the walk opens it as a whole.
+  await shelf(page);
+  await expect(page.getByRole('link', { name: 'Porto' })).toContainText(
+    '1 new thing to look at',
+  );
+  await page.goto('/porto/hand-over?across');
+  await expect(page.getByText(usageLimit).first()).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Go on' }).first(),
+  ).toBeVisible();
+  await scan(page);
+  // Nothing else is new at Porto, so the walk goes on past it.
+  await page.keyboard.press('Escape');
+  await expect(page).not.toHaveURL(portoWaits);
 });
 
 test('shows the photos of a moment, and one of them from close', async ({

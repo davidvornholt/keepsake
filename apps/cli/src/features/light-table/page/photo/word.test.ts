@@ -39,6 +39,7 @@ describe('wordOf', () => {
 
   it('says what waits for the owner at the photo, with what going on costs', () => {
     const stopped = {
+      id: 'stop1',
       at: handedAt,
       reason: 'What you agreed to pay is used up.',
       needs: 'money' as const,

@@ -1,21 +1,27 @@
 import { Effect, Option, Schema, type Semaphore } from 'effect';
 import { EditRecord } from '../../shared/domain.ts';
-import { openShoot, readJson } from '../../shared/store.ts';
+import { openShoot, readJson, type ShootFiles } from '../../shared/store.ts';
 import type { Called, Caller } from './calls.ts';
 import {
   answered,
+  forgetOperation,
+  handOverOf,
   notDone,
   type Step,
   standingsOf,
+  stillOrdered,
   stopped,
   usedUp,
   versionOf,
-  waitingOf,
 } from './carry-out.ts';
-import { type Carrying, readCarrying, saveCarrying } from './carrying.ts';
+import {
+  type Carrying,
+  type Progress,
+  readCarrying,
+  saveCarrying,
+} from './carrying.ts';
 import { isEdited, isStillChosen } from './hand-over.ts';
-import { readHandOvers } from './handed.ts';
-import { answerFor, noMoney, takenOut } from './mark-answers.ts';
+import { answerFor, changeUsedUp, takenOut } from './mark-answers.ts';
 import { noteAdded } from './news.ts';
 import type { Mark } from './schemas.ts';
 
@@ -36,6 +42,11 @@ const Edited = Schema.fromJsonString(
   }),
 );
 type Edited = typeof Edited.Type;
+
+/** What `publish --order` printed: the photos it put into the album. */
+const Published = Schema.fromJsonString(
+  Schema.Struct({ photos: Schema.Array(Schema.String) }),
+);
 
 const changedButOut =
   'It was changed, but you took the photo out meanwhile, so it isn’t in the album.';
@@ -59,12 +70,52 @@ const editedIn = (called: Called) =>
         ),
       );
 
-/** What is noted about the shoot now, unless another server took it over. */
+/** What is noted about the shoot now. */
 const current = Effect.fn('current')(function* (name: string) {
   const open = yield* openShoot(name);
   const carrying = yield* readCarrying(open.files);
   return carrying === null ? null : { open, carrying };
 });
+
+/**
+ * The shoot as noted with what came of a mark's edit, which is no more to be
+ * read under its operation: another attempt is another edit.
+ */
+const withEdit = (
+  carrying: Carrying,
+  mark: Mark,
+  edited: Progress['edited'],
+): Carrying => ({
+  ...carrying,
+  marks: {
+    ...carrying.marks,
+    [mark.id]: {
+      operation: null,
+      before: carrying.marks[mark.id]?.before ?? null,
+      edited,
+      published: false,
+    },
+  },
+});
+
+/** Stops a mark's change for the owner's word, to try it again as a new edit. */
+const markStopped = (
+  files: ShootFiles,
+  carrying: Carrying,
+  mark: Mark,
+  {
+    reason,
+    needs,
+  }: { readonly reason: string; readonly needs: 'money' | 'retry' },
+) =>
+  Effect.gen(function* () {
+    yield* stopped(files, withEdit(carrying, mark, null), {
+      reason,
+      needs,
+      handOver: yield* handOverOf(files, mark),
+      photos: [mark.photo],
+    });
+  });
 
 const recordMarkEdit = Effect.fn('recordMarkEdit')(function* (
   name: string,
@@ -77,69 +128,49 @@ const recordMarkEdit = Effect.fn('recordMarkEdit')(function* (
   }
   const { open, carrying } = found;
   const { files } = open;
+  const operation = carrying.marks[mark.id]?.operation;
   const edited = yield* editedIn(called);
-  if (typeof edited === 'string') {
+  const { photo } = mark;
+  const failed =
+    typeof edited === 'string'
+      ? edited
+      : edited.failed.find((one) => one.photo === photo)?.reason;
+  if (failed !== undefined) {
     // `edit --mark` reads the album first, so this knows of a photo taken out.
     const known = yield* standingsOf(open);
     yield* isStillChosen(known)(mark)
-      ? stopped(files, carrying, {
-          reason: `Changing the photo failed: ${edited}`,
+      ? markStopped(files, carrying, mark, {
+          reason: `Changing the photo failed: ${failed}`,
           needs: 'retry',
-          handOver: (yield* handOverOf(files, mark)) ?? '',
-          photos: [mark.photo],
         })
       : answered(files, carrying, mark, notDone(takenOut));
-    return;
-  }
-  const { photo } = mark;
-  if (edited.overBudget.includes(photo)) {
-    yield* answered(files, carrying, mark, notDone(noMoney));
-    return;
-  }
-  const failed = edited.failed.find((one) => one.photo === photo);
-  if (failed !== undefined) {
-    yield* stopped(files, carrying, {
-      reason: `Changing the photo failed: ${failed.reason}`,
-      needs: 'retry',
-      handOver: (yield* handOverOf(files, mark)) ?? '',
-      photos: [photo],
+  } else if (typeof edited !== 'string' && edited.overBudget.includes(photo)) {
+    // Still to be made with its wish, once the owner pays more.
+    yield* markStopped(files, carrying, mark, {
+      reason: changeUsedUp,
+      needs: 'money',
     });
-    return;
+  } else if (typeof edited !== 'string') {
+    const after = yield* versionOf(files, photo);
+    const record = Option.getOrNull(
+      yield* readJson(EditRecord, files.edit(photo).record),
+    );
+    const answer = answerFor({
+      changed:
+        after !== null && after !== (carrying.marks[mark.id]?.before ?? null),
+      wish: mark.note,
+      review: record?.review ?? null,
+      keptBecause:
+        edited.keptFromCamera.find((one) => one.photo === photo)?.reason ??
+        null,
+      notDone: edited.notDone.flatMap((one) =>
+        one.photo === photo ? [one.what] : [],
+      ),
+    });
+    yield* saveCarrying(files, withEdit(carrying, mark, answer));
   }
-  const progress = carrying.marks[mark.id];
-  const after = yield* versionOf(files, photo);
-  const record = Option.getOrNull(
-    yield* readJson(EditRecord, files.edit(photo).record),
-  );
-  const answer = answerFor({
-    changed: after !== null && after !== (progress?.before ?? null),
-    wish: mark.note,
-    review: record?.review ?? null,
-    keptBecause:
-      edited.keptFromCamera.find((one) => one.photo === photo)?.reason ?? null,
-    notDone: edited.notDone.flatMap((one) =>
-      one.photo === photo ? [one.what] : [],
-    ),
-  });
-  yield* saveCarrying(files, {
-    ...carrying,
-    marks: {
-      ...carrying.marks,
-      [mark.id]: {
-        before: progress?.before ?? null,
-        edited: answer,
-        published: false,
-      },
-    },
-  });
+  yield* forgetOperation(files, operation);
 });
-
-/** The hand-over a mark came with. */
-const handOverOf = (files: Parameters<typeof readHandOvers>[0], mark: Mark) =>
-  Effect.map(
-    readHandOvers(files),
-    (records) => records.find(({ marks }) => marks.includes(mark.id))?.id,
-  );
 
 const recordMarkPublish = Effect.fn('recordMarkPublish')(function* (
   name: string,
@@ -159,7 +190,7 @@ const recordMarkPublish = Effect.fn('recordMarkPublish')(function* (
       ? stopped(files, carrying, {
           reason: `Putting the changed photo into the album failed: ${called.message}`,
           needs: 'retry',
-          handOver: (yield* handOverOf(files, mark)) ?? '',
+          handOver: yield* handOverOf(files, mark),
           photos: [mark.photo],
         })
       : answered(files, carrying, mark, notDone(changedButOut));
@@ -175,13 +206,12 @@ const recordMarkPublish = Effect.fn('recordMarkPublish')(function* (
 });
 
 /**
- * Notes which of an order's photos are in the album now, and stops when
- * some aren't although they should be.
+ * Notes which of an order's photos `publish --order` put into the album, and
+ * stops when it failed.
  */
 const recordOrderPublish = Effect.fn('recordOrderPublish')(function* (
   name: string,
   handOver: string,
-  photos: ReadonlyArray<string>,
   called: Called,
 ) {
   const found = yield* current(name);
@@ -190,21 +220,31 @@ const recordOrderPublish = Effect.fn('recordOrderPublish')(function* (
   }
   const { open, carrying } = found;
   const { files } = open;
-  if (called.kind === 'failed') {
+  const published =
+    called.kind === 'failed'
+      ? called.message
+      : yield* Schema.decodeUnknownEffect(Published)(called.output.trim()).pipe(
+          Effect.orElseSucceed(
+            () => 'keepsake publish printed something unexpected.',
+          ),
+        );
+  if (typeof published === 'string') {
     yield* stopped(files, carrying, {
-      reason: `Putting the photos you ordered into the album failed: ${called.message}`,
+      reason: `Putting the photos you ordered into the album failed: ${published}`,
       needs: 'retry',
       handOver,
-      photos,
+      photos: yield* stillOrdered(open, handOver),
     });
     return;
   }
   const known = yield* standingsOf(open);
   yield* noteAdded(
     files,
-    photos.filter((photo) => known.of.get(photo)?.kind === 'album'),
+    published.photos.filter((photo) => known.of.get(photo)?.kind === 'album'),
   );
-  const left = photos.filter((photo) => known.of.get(photo)?.kind === 'picked');
+  const left = published.photos.filter(
+    (photo) => known.of.get(photo)?.kind === 'picked',
+  );
   const going: Carrying = { ...carrying, toExplain: true };
   yield* left.length === 0
     ? saveCarrying(files, going)
@@ -216,33 +256,63 @@ const recordOrderPublish = Effect.fn('recordOrderPublish')(function* (
       });
 });
 
-/** The photos of an order that are edited and still to be published. */
-const editedWaiting = Effect.fn('editedWaiting')(function* (
-  name: string,
-  handOver: string,
-) {
-  const open = yield* openShoot(name);
-  const order = (yield* readHandOvers(open.files)).find(
-    ({ id }) => id === handOver,
-  );
-  if (order === undefined) {
-    return [];
-  }
-  return yield* Effect.filter(
-    waitingOf(yield* standingsOf(open), order),
-    (photo) => isEdited(open.files, photo),
-  );
-});
-
 const isBusy = (called: Called) =>
   called.kind === 'failed' && called.tag === 'ShootBusy';
+
+/** Puts what of an order is edited into the album, if any is. */
+const publishOrder = Effect.fn('publishOrder')(function* (
+  name: string,
+  handOver: string,
+  { call, writing }: Doing,
+) {
+  const isAny = yield* writing.withPermits(1)(
+    Effect.flatMap(openShoot(name), (open) =>
+      Effect.map(stillOrdered(open, handOver), (photos) => photos.length > 0),
+    ),
+  );
+  if (!isAny) {
+    return;
+  }
+  // `publish` itself finds which are still chosen when it starts, under the
+  // choice lock, so none the owner took out comes back.
+  const called = yield* call(['publish', name, '--order', handOver]);
+  if (isBusy(called)) {
+    return yield* Effect.sleep(busyFor);
+  }
+  yield* writing.withPermits(1)(recordOrderPublish(name, handOver, called));
+});
+
+/** Why an order's edit stopped, for the owner. */
+const orderStop = (
+  edited: Edited | string,
+  unedited: ReadonlyArray<string>,
+) => {
+  if (typeof edited !== 'string' && edited.overBudget.length > 0) {
+    return {
+      reason: usedUp(edited.overBudget.length),
+      needs: 'money' as const,
+      photos: edited.overBudget,
+    };
+  }
+  const reason =
+    typeof edited === 'string' ? edited : (edited.failed[0]?.reason ?? null);
+  return {
+    reason:
+      reason === null
+        ? `keepsake didn’t edit ${unedited.join(', ')}.`
+        : `Editing a photo you ordered failed: ${reason}`,
+    needs: 'retry' as const,
+    photos: unedited,
+  };
+};
 
 /** Edits an order's photos, and puts what is done into the album when some stop. */
 const editOrder = Effect.fn('editOrder')(function* (
   name: string,
   step: Extract<Step, { readonly kind: 'editOrder' }>,
-  { call, writing }: Doing,
+  doing: Doing,
 ) {
+  const { call, writing } = doing;
   const { handOver, photos, budget } = step;
   const called = yield* call([
     'edit',
@@ -255,8 +325,6 @@ const editOrder = Effect.fn('editOrder')(function* (
     return yield* Effect.sleep(busyFor);
   }
   const edited = yield* editedIn(called);
-  const short = typeof edited === 'string' ? [] : edited.overBudget;
-  const failed = typeof edited === 'string' ? [] : edited.failed;
   const unedited = yield* Effect.filter(photos, (photo) =>
     Effect.flatMap(openShoot(name), (open) =>
       Effect.map(isEdited(open.files, photo), (is) => !is),
@@ -266,44 +334,31 @@ const editOrder = Effect.fn('editOrder')(function* (
     return;
   }
   // What was edited goes into the album before the owner is asked.
-  const done = yield* writing.withPermits(1)(editedWaiting(name, handOver));
-  const published =
-    done.length > 0 ? yield* call(['publish', name, ...done]) : null;
+  yield* publishOrder(name, handOver, doing);
   yield* writing.withPermits(1)(
     Effect.gen(function* () {
-      if (published !== null && published.kind === 'done') {
-        yield* recordOrderPublish(name, handOver, done, published);
-      }
       const found = yield* current(name);
-      if (found === null) {
-        return;
+      if (found !== null) {
+        yield* stopped(found.open.files, found.carrying, {
+          ...orderStop(edited, unedited),
+          handOver,
+        });
       }
-      const { files } = found.open;
-      const reason =
-        typeof edited === 'string' ? edited : (failed[0]?.reason ?? null);
-      yield* stopped(
-        files,
-        found.carrying,
-        short.length > 0 && typeof edited !== 'string'
-          ? {
-              reason: usedUp(short.length),
-              needs: 'money',
-              handOver,
-              photos: short,
-            }
-          : {
-              reason:
-                reason === null
-                  ? `keepsake didn’t edit ${unedited.join(', ')}.`
-                  : `Editing a photo you ordered failed: ${reason}`,
-              needs: 'retry',
-              handOver,
-              photos: unedited,
-            },
-      );
     }),
   );
 });
+
+/** Notes that `explain` ran, which stops nothing when it failed. */
+const explained = (name: string) =>
+  Effect.gen(function* () {
+    const found = yield* current(name);
+    if (found !== null) {
+      yield* saveCarrying(found.open.files, {
+        ...found.carrying,
+        toExplain: false,
+      });
+    }
+  });
 
 /** Carries out a step that needs a keepsake command. */
 export const act = Effect.fn('act')(function* (
@@ -315,7 +370,7 @@ export const act = Effect.fn('act')(function* (
   const noting = writing.withPermits(1);
   switch (step.kind) {
     case 'editMark': {
-      const { mark, budget } = step;
+      const { mark, budget, operation } = step;
       const called = yield* call([
         'edit',
         name,
@@ -323,6 +378,8 @@ export const act = Effect.fn('act')(function* (
         mark.id,
         '--budget',
         `${budget}`,
+        '--operation',
+        operation,
       ]);
       return yield* isBusy(called)
         ? Effect.sleep(busyFor)
@@ -336,30 +393,13 @@ export const act = Effect.fn('act')(function* (
     }
     case 'editOrder':
       return yield* editOrder(name, step, doing);
-    case 'publishOrder': {
-      const { handOver, photos } = step;
-      const called = yield* call(['publish', name, ...photos]);
-      return yield* isBusy(called)
-        ? Effect.sleep(busyFor)
-        : noting(recordOrderPublish(name, handOver, photos, called));
-    }
+    case 'publishOrder':
+      return yield* publishOrder(name, step.handOver, doing);
     case 'explain': {
-      // What it explains only says why photos aren't in the album, so one
-      // that fails stops nothing.
       const called = yield* call(['explain', name]);
       return yield* isBusy(called)
         ? Effect.sleep(busyFor)
-        : noting(
-            Effect.gen(function* () {
-              const found = yield* current(name);
-              if (found !== null) {
-                yield* saveCarrying(found.open.files, {
-                  ...found.carrying,
-                  toExplain: false,
-                });
-              }
-            }),
-          );
+        : noting(explained(name));
     }
     default:
   }

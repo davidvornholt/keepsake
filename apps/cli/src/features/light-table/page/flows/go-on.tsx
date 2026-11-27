@@ -30,7 +30,7 @@ export const GoOn = ({
       onClick={() => {
         setIsGoing(true);
         store
-          .goOnCarrying(carrying.more)
+          .goOnCarrying(carrying.stopped.id, carrying.more)
           .catch(() => undefined)
           .finally(() => setIsGoing(false));
       }}

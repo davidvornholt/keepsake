@@ -33,16 +33,20 @@ export const emit = (value: unknown): Effect.Effect<void> =>
 const cents = 100;
 
 /** Prints the result of a command that uses models, with what it cost. */
-export const emitWithCost = (value: object) =>
+/** The result of a command that uses models, with what it cost. */
+export const withCost = <A extends object>(value: A) =>
   Effect.gen(function* () {
     const spending = yield* Spending;
     const spent = yield* spending.soFar;
-    yield* emit({
+    return {
       ...value,
       dollarsSpent: Math.round(totalDollars(spent) * cents) / cents,
       models: spent,
-    });
+    };
   });
+
+export const emitWithCost = (value: object) =>
+  Effect.flatMap(withCost(value), emit);
 
 export const failureExitCode = 1;
 export const usageExitCode = 2;

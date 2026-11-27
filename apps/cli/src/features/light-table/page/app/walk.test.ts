@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ShootList } from '../../contract.ts';
-import { newsIn, walkOrder } from './walk-order.ts';
+import { newsIn, waitsForWord, walkOrder } from './walk-order.ts';
 
 type Summary = ShootList['shoots'][number];
 
@@ -49,5 +49,41 @@ describe('the walk through what is new', () => {
     expect(walkOrder(shelf, new Set(['garden', 'coast', 'harbor']))).toEqual(
       [],
     );
+  });
+
+  it('shows first what an album waits for as a whole', () => {
+    const stopped = {
+      id: 'stop1',
+      at: '2026-05-01T00:00:00.000Z',
+      reason: 'Nothing works on it.',
+      needs: 'retry' as const,
+      photos: [],
+      seenAt: null,
+    };
+    const waiting = [
+      { ...shoot('garden', 1, stopped.at), carrying: { since: null, stopped } },
+      shoot('coast', 3, '2026-05-02T00:00:00.000Z'),
+    ];
+    expect(waitsForWord(waiting, 'garden')).toBe(true);
+    expect(waitsForWord(waiting, 'coast')).toBe(false);
+    // A stop about a photo is shown with the photo until it was looked at.
+    const aboutPhoto = { ...stopped, photos: ['a'] };
+    const atPhoto = [
+      {
+        ...shoot('garden', 1, stopped.at),
+        carrying: { since: null, stopped: aboutPhoto },
+      },
+    ];
+    expect(waitsForWord(atPhoto, 'garden')).toBe(false);
+    const looked = [
+      {
+        ...shoot('garden', 1, stopped.at),
+        carrying: {
+          since: null,
+          stopped: { ...aboutPhoto, seenAt: stopped.at },
+        },
+      },
+    ];
+    expect(waitsForWord(looked, 'garden')).toBe(true);
   });
 });

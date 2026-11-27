@@ -15,6 +15,11 @@ export class Outdated extends Schema.TaggedError<Outdated>()('Outdated', {
 const idLength = 8;
 const cents = 100;
 const inCents = (dollars: number) => Math.round(dollars * cents) / cents;
+/** What floating point takes off a whole number of cents. */
+const roundingSlack = 1e-6;
+/** Whole cents, never more than there is. */
+const downToCents = (dollars: number) =>
+  Math.floor(dollars * cents + roundingSlack) / cents;
 
 const pickedOf = (known: Standings): ReadonlyArray<string> =>
   [...known.of].flatMap(([photo, { kind }]) =>
@@ -82,17 +87,25 @@ export const orderOf = Effect.fn('orderOf')(function* (
       };
 });
 
-/** Lets the owner pay more for a hand-over that stopped for want of money. */
+/** Whether the owner paid more for a stop already. */
+export const isApproved = (record: HandOverRecord, stop: string) =>
+  (record.approved ?? []).includes(stop);
+
+/**
+ * Lets the owner pay more for a hand-over that stopped for want of money,
+ * once for each stop: what they paid and that they did are one write.
+ */
 export const agreeToMore = Effect.fn('agreeToMore')(function* (
   files: ShootFiles,
-  id: string,
+  { handOver: id, stop }: { readonly handOver: string; readonly stop: string },
   dollars: number,
 ) {
   const record = (yield* readHandOvers(files)).find((one) => one.id === id);
-  if (record !== undefined && dollars > 0) {
+  if (record !== undefined && !isApproved(record, stop)) {
     yield* saveHandOver(files, {
       ...record,
-      dollars: inCents(record.dollars + dollars),
+      dollars: inCents(record.dollars + Math.max(0, dollars)),
+      approved: [...(record.approved ?? []), stop],
     });
   }
 });
@@ -155,7 +168,7 @@ export const agreedDollars = Effect.fn('agreedDollars')(function* (
     { dollars: 0, spent: first.spentBefore },
   );
   const spentSince = (yield* spentOn(files)) - atLast.spent;
-  return inCents(Math.max(0, atLast.dollars - spentSince));
+  return downToCents(Math.max(0, atLast.dollars - spentSince));
 });
 
 const keyOf = (ids: ReadonlyArray<string> | null) =>

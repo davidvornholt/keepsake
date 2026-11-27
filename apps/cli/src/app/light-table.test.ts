@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { readdir, readlink, rm } from 'node:fs/promises';
-import process from 'node:process';
+import { readdir, readlink } from 'node:fs/promises';
 import { BunServices } from '@effect/platform-bun';
 import { Effect } from 'effect';
 import { serveLightTable } from '../features/light-table/server.ts';
+import { asTheRunner } from '../shared/lock.ts';
 import {
   editLisbon,
   pickLisbon,
@@ -20,6 +20,7 @@ import {
   statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
+import { whileHeld } from './lock-fixtures.ts';
 import { handedOver } from './mark-fixtures.ts';
 import { publishingLayer } from './publishing.ts';
 
@@ -151,34 +152,36 @@ describe('what the light table is doing', () => {
   it('says what another server carries out, and when nothing does', async () => {
     await pickLisbon();
     const since = '2026-05-02T10:00:00.000Z';
-    const carrying = shootFile('carrying-out.json');
     const seen = await whileServing(async (address) => {
-      // Once the server started, which goes on with what it finds then.
-      await handedOver('order', { dollars: 1.5, album: ['B'] });
       const path = `${address}/api/shoots/lisbon`;
-      const first = await fetch(path);
-      const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
       const now = async () => (await shootOf(address)).carrying;
-      // A server that still runs, which isn't this one.
-      await Bun.write(
-        carrying,
-        JSON.stringify({
-          process: process.ppid,
-          since,
-          stopped: null,
-          marks: {},
-          toExplain: false,
-        }),
+      // Another server, which holds the shoot's runner lock while it works.
+      const [asked, working] = await whileHeld(
+        async () => {
+          await handedOver('order', { dollars: 1.5, album: ['B'] });
+          const first = await fetch(path);
+          const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
+          await Bun.write(
+            shootFile('carrying-out.json'),
+            JSON.stringify({
+              since,
+              stopped: null,
+              marks: {},
+              toExplain: false,
+            }),
+          );
+          return [(await fetch(path, { headers })).status, await now()];
+        },
+        'lisbon',
+        asTheRunner,
       );
-      const asked = await fetch(path, { headers });
-      const working = await now();
-      await rm(carrying);
-      return [asked.status, working, await now()];
+      // Once it let go, and nothing here was asked to go on.
+      return [asked, working, await now()];
     });
     expect(seen).toMatchObject([
       200,
       { since, stopped: null },
-      { since: null, stopped: { needs: 'retry', photos: [] } },
+      { since: null, stopped: { id: 'nobody', needs: 'retry', photos: [] } },
     ]);
   });
 });

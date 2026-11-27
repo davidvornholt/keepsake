@@ -120,33 +120,37 @@ export const withSaved = (
 /** What waits for the owner, noted as seen once they looked at its photo. */
 export const carryingSeen = (
   carrying: CarryingOut,
-  photo: string,
+  keys: ReadonlySet<string>,
   now: string,
 ): CarryingOut => {
   const { stopped } = carrying;
   return stopped === null ||
     stopped.seenAt !== null ||
-    !stopped.photos.includes(photo)
+    !keys.has(`stop:${stopped.id}`)
     ? carrying
     : { ...carrying, stopped: { ...stopped, seenAt: now } };
 };
 
-/** Everything new about a photo, noted as seen. */
+/** What is new and was shown, by the keys of `newsItemsOf`, noted as seen. */
 export const withSeen = (
   shoot: ShootView,
-  photo: string,
+  keys: ReadonlySet<string>,
   now: string,
 ): ShootView => ({
   ...shoot,
   marks: shoot.marks.map((mark) =>
-    mark.photo === photo && mark.answer !== null && mark.seenAt === null
+    mark.answer !== null &&
+    mark.seenAt === null &&
+    keys.has(`answer:${mark.id}:${mark.answer.at}`)
       ? { ...mark, seenAt: now }
       : mark,
   ),
   added: shoot.added.map((one) =>
-    one.photo === photo && one.seenAt === null ? { ...one, seenAt: now } : one,
+    one.seenAt === null && keys.has(`added:${one.photo}:${one.at}`)
+      ? { ...one, seenAt: now }
+      : one,
   ),
-  carrying: carryingSeen(shoot.carrying, photo, now),
+  carrying: carryingSeen(shoot.carrying, keys, now),
 });
 
 export const withLabels = (

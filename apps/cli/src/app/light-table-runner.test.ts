@@ -1,7 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { appendFileSync, existsSync } from 'node:fs';
-import { noMoney } from '../features/light-table/mark-answers.ts';
-import { choose, inImmich, publishLisbon } from './choice-fixtures.ts';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setDefaultTimeout,
+  spyOn,
+} from 'bun:test';
+import { appendFileSync, existsSync, readdirSync } from 'node:fs';
+import { changeUsedUp } from '../features/light-table/mark-answers.ts';
+import { inImmich, publishLisbon } from './choice-fixtures.ts';
 import {
   runOk,
   setUp,
@@ -12,51 +20,51 @@ import {
 import { fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 import {
-  change,
   eventually,
   handOver,
   marksOf,
-  send,
-  shootOf,
   whileServing,
 } from './light-table-fixtures.ts';
 import { whileHeld } from './lock-fixtures.ts';
-import { busy, keepsakeInProcess, keepsakeRuns } from './runner-fixtures.ts';
+import {
+  answeredOf,
+  busy,
+  endedOnce,
+  goOn,
+  keepsakeInProcess,
+  keepsakeRuns,
+  markB,
+  restingOf,
+  stopOf,
+} from './runner-fixtures.ts';
 
 // The test's reviewing model is a paid one, which the page's usual one isn't,
-// so the hand-overs agree to more than the page would ask.
+// so the hand-overs agree to more than the page would ask. A server on a
+// slow machine takes a while for an edit.
+setDefaultTimeout(30_000);
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
-type Shown = {
-  readonly id: string;
-  readonly answer: {
-    readonly outcome: string;
-    readonly note: string;
-    readonly at: string;
-  } | null;
-};
+const operationOf = (args: string) => args.split('--operation ')[1] ?? '';
 
-/** The marks once each of them is answered, of which there is at least one. */
-const answeredOf = (address: string) =>
-  eventually(
-    () => marksOf(address) as Promise<readonly [Shown, ...Array<Shown>]>,
-    (marks) => marks.length > 0 && marks.every(({ answer }) => answer !== null),
+/** The noted progress of each mark, while there is any. */
+const progressOf = async () =>
+  existsSync(shootFile('carrying-out.json'))
+    ? Object.values(
+        (await shootJson('carrying-out.json')).marks as Record<
+          string,
+          { readonly operation: string | null; readonly edited: unknown }
+        >,
+      )
+    : [];
+
+/** What was handed over, as it was noted. */
+const handOversNoted = async () =>
+  Promise.all(
+    readdirSync(shootFile('hand-overs')).map((name) =>
+      shootJson('hand-overs', name),
+    ),
   );
-
-/** What the page shows of how the hand-overs go, once nothing works on them. */
-const restingOf = (address: string) =>
-  eventually(
-    async () => (await shootOf(address)).carrying,
-    ({ since }) => since === null,
-  );
-
-const markB = (address: string, note = change.note) =>
-  send('PUT', `${address}/api/shoots/lisbon/marks`, {
-    ...change,
-    note,
-    boxes: [],
-  });
 
 describe('a change mark that is handed over', () => {
   it('is carried out, published and answered with what changed', async () => {
@@ -75,22 +83,28 @@ describe('a change mark that is handed over', () => {
     const [{ id, answer }] = marks;
     expect(answer).toMatchObject({ outcome: 'done' });
     expect(answer?.note).toStartWith('Changed: Remove the chair.');
-    expect(keepsakeRuns()).toEqual([
-      `edit lisbon --mark ${id} --budget 5`,
-      `publish lisbon --mark ${id}`,
-      'explain lisbon',
-    ]);
+    const [edit, ...rest] = keepsakeRuns();
+    expect(edit).toStartWith(
+      `edit lisbon --mark ${id} --budget 5 --operation `,
+    );
+    expect(rest).toEqual([`publish lisbon --mark ${id}`, 'explain lisbon']);
     expect(carrying).toEqual({ since: null, stopped: null });
     // The upload it replaced is in the trash, and the new one in the album.
     expect(fakeTools.trashed).toEqual(['asset-3']);
     expect(inImmich()).toContain('B');
-    expect(existsSync(shootFile('carrying-out.json'))).toBe(false);
+    expect(
+      existsSync(shootFile('operations', `${operationOf(edit ?? '')}.json`)),
+    ).toBe(false);
   });
 
   it('is answered with why when nothing changed', async () => {
     await publishLisbon();
     keepsakeInProcess();
-    fakeModels.answers.places = { everywhere: false, places: [] };
+    fakeModels.answers.places = {
+      everywhere: false,
+      bringsBack: false,
+      places: [],
+    };
     const [{ answer }] = await whileServing(async (address) => {
       await markB(address);
       await handOver(address, { dollars: 5 });
@@ -106,16 +120,33 @@ describe('a change mark that is handed over', () => {
     );
   });
 
-  it('is answered as not done when nothing was agreed for it', async () => {
+  it('waits for more money, and makes the change with its wish once the owner pays it, once', async () => {
     await publishLisbon();
     keepsakeInProcess();
-    const [{ answer }] = await whileServing(async (address) => {
-      await markB(address);
+    const [waiting, marks] = await whileServing(async (address) => {
+      await markB(address, 'Remove the bench');
       await handOver(address, { dollars: 0 });
-      return answeredOf(address);
+      const stop = await stopOf(address);
+      // A second word, and one from a tab that showed an older stop, add nothing.
+      await goOn(address, stop.id, 5);
+      await goOn(address, stop.id, 5);
+      await goOn(address, 'older', 5);
+      return [stop, await answeredOf(address)];
     });
-    expect(answer).toMatchObject({ outcome: 'not-done', note: noMoney });
-    expect(keepsakeRuns()).toEqual([]);
+    expect(waiting).toMatchObject({
+      needs: 'money',
+      photos: ['B'],
+      reason: changeUsedUp,
+    });
+    const [{ id, answer }] = marks;
+    expect(answer).not.toBeNull();
+    expect(keepsakeRuns()[0]).toStartWith(
+      `edit lisbon --mark ${id} --budget 5 `,
+    );
+    expect(fakeModels.edits.at(-1)?.prompt).toContain('Remove the bench');
+    expect(await handOversNoted()).toMatchObject([
+      { dollars: 5, approved: [waiting.id] },
+    ]);
   });
 
   it('waits while another command works on the shoot', async () => {
@@ -125,20 +156,19 @@ describe('a change mark that is handed over', () => {
       await whileHeld(async () => {
         await markB(address);
         await handOver(address, { dollars: 5 });
-        await eventually(
-          async () => keepsakeRuns().length,
-          (count) => count > 0,
-        );
+        // Until the edit found the shoot busy.
+        await endedOnce((args) => args.startsWith('edit'));
       });
       return answeredOf(address);
     });
     expect(answer).toMatchObject({ outcome: 'done' });
-    expect(keepsakeRuns()[0]).toStartWith('edit lisbon --mark');
     expect(
       keepsakeRuns().filter((args) => args.startsWith('edit')).length,
     ).toBeGreaterThan(1);
   });
+});
 
+describe('a change mark that a server didn’t get through', () => {
   it('goes on after a restart without paying for its edit again', async () => {
     await publishLisbon();
     // The first server stops as soon as the edit ended and was noted.
@@ -152,84 +182,57 @@ describe('a change mark that is handed over', () => {
     const id = await whileServing(async (address) => {
       await markB(address);
       await handOver(address, { dollars: 5 });
-      await eventually(
-        async () =>
-          existsSync(shootFile('carrying-out.json'))
-            ? Object.values((await shootJson('carrying-out.json')).marks)
-            : [],
-        (marks) =>
-          marks.some((mark) => (mark as { edited: unknown }).edited !== null),
+      await eventually(progressOf, (marks) =>
+        marks.some(({ edited }) => edited !== null),
       );
       return (await marksOf(address))[0].id;
     });
     const before = keepsakeRuns().length;
     keepsakeInProcess();
-    const [{ answer }] = await whileServing(answeredOf);
+    const [{ answer }] = await whileServing(async (address) => {
+      const answered = await answeredOf(address);
+      await restingOf(address);
+      return answered;
+    });
     expect(answer).toMatchObject({ outcome: 'done' });
     expect(keepsakeRuns().slice(before)).toEqual([
       `publish lisbon --mark ${id}`,
       'explain lisbon',
     ]);
   });
-});
 
-describe('an order that is handed over', () => {
-  it('is edited, put into the album, and new until it was looked at', async () => {
+  it('isn’t paid again when the server stopped after the edit ended, before it noted it', async () => {
     await publishLisbon();
+    // The first server stops while the edit has ended and said what it came
+    // to, before it hears of that.
+    keepsakeInProcess(undefined, ([command]) =>
+      command === 'edit' ? new Promise<void>(() => undefined) : undefined,
+    );
+    await whileServing(async (address) => {
+      await markB(address);
+      await handOver(address, { dollars: 5 });
+      await endedOnce((args) => args.startsWith('edit'));
+    });
+    const [noted] = await progressOf();
+    const operation = noted?.operation ?? '';
+    expect(noted).toMatchObject({ edited: null });
+    expect(existsSync(shootFile('operations', `${operation}.json`))).toBe(true);
+    const paid = fakeModels.edits.length;
+    expect(paid).toBeGreaterThan(0);
     keepsakeInProcess();
-    const [list, seen] = await whileServing(async (address) => {
-      await choose(address, { photo: 'A2', wants: 'in' });
-      await handOver(address, { dollars: 5, album: ['A2'] });
-      await eventually(
-        async () => (await shootOf(address)).ordered,
-        (ordered) => ordered === null,
-      );
-      const listed = await (await fetch(`${address}/api/shoots`)).json();
-      await send('POST', `${address}/api/shoots/lisbon/seen`, { photo: 'A2' });
-      const after = await (await fetch(`${address}/api/shoots`)).json();
-      return [listed.shoots[0], after.shoots[0]];
+    const [{ answer }] = await whileServing(async (address) => {
+      const answered = await answeredOf(address);
+      await restingOf(address);
+      return answered;
     });
-    expect(inImmich()).toContain('A2');
-    expect(keepsakeRuns()).toEqual([
-      'edit lisbon A2 --budget 5',
-      'publish lisbon A2',
-      'explain lisbon',
-    ]);
-    expect(list).toMatchObject({ news: 1, newSince: expect.any(String) });
-    expect(seen).toMatchObject({ news: 0, newSince: null });
-    expect(await shootJson('added.json')).toEqual([
-      { photo: 'A2', at: expect.any(String), seenAt: expect.any(String) },
-    ]);
-  });
-
-  it('stops for more money, says so, and goes on when the owner agrees', async () => {
-    await publishLisbon();
-    keepsakeInProcess();
-    const [stopped, after] = await whileServing(async (address) => {
-      await choose(address, { photo: 'A2', wants: 'in' });
-      await handOver(address, { dollars: 0.01, album: ['A2'] });
-      const { stopped: waiting } = await eventually(
-        async () => (await shootOf(address)).carrying,
-        ({ stopped: stop }) => stop !== null,
-      );
-      await send('POST', `${address}/api/shoots/lisbon/go-on`, {
-        dollars: 5,
-      });
-      await eventually(
-        async () => (await shootOf(address)).ordered,
-        (ordered) => ordered === null,
-      );
-      return [waiting, await restingOf(address)];
-    });
-    expect(stopped).toMatchObject({
-      needs: 'money',
-      photos: ['A2'],
-      reason:
-        'What you agreed to pay is used up, and one photo you ordered isn’t edited yet.',
-      seenAt: null,
-    });
-    expect(after).toEqual({ since: null, stopped: null });
-    expect(inImmich()).toContain('A2');
+    expect(answer).not.toBeNull();
+    // The same edit again, which says what it came to without editing.
+    const edits = keepsakeRuns().filter((args) => args.startsWith('edit'));
+    expect(edits.map(operationOf)).toEqual([operation, operation]);
+    expect(fakeModels.edits.length).toBe(paid);
+    expect(existsSync(shootFile('operations', `${operation}.json`))).toBe(
+      false,
+    );
   });
 });
 
@@ -240,7 +243,8 @@ describe('the marks command', () => {
     await whileServing(async (address) => {
       await markB(address);
       await handOver(address, { dollars: 5 });
-      return answeredOf(address);
+      await answeredOf(address);
+      return restingOf(address);
     });
     expect(await runOk('marks', 'lisbon')).toMatchObject({
       agreedDollars: 0,

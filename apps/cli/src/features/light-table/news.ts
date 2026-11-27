@@ -40,24 +40,29 @@ export const noteAdded = Effect.fn('noteAdded')(function* (
   ]);
 });
 
-/** Notes that the owner looked at everything new about a photo. */
-export const seePhoto = Effect.fn('seePhoto')(function* (
+/**
+ * Notes that the owner looked at what is new, as the page showed it: only
+ * what the keys name, so what changed or came since stays new.
+ */
+export const seeItems = Effect.fn('seeItems')(function* (
   files: ShootFiles,
-  photo: string,
+  keys: ReadonlyArray<string>,
 ) {
+  const shown = new Set(keys);
   const seenAt = yield* now;
   const marks = (yield* readMarks(files)).filter(
-    (mark) => mark.photo === photo && isNews(mark),
+    (mark) =>
+      isNews(mark) && shown.has(`answer:${mark.id}:${mark.answer?.at ?? ''}`),
   );
   yield* Effect.forEach(marks, (mark) => saveMark(files, { ...mark, seenAt }));
   const added = yield* readAdded(files);
-  if (added.some((one) => one.photo === photo && one.seenAt === null)) {
+  const isShown = (one: Added[number]) =>
+    one.seenAt === null && shown.has(`added:${one.photo}:${one.at}`);
+  if (added.some(isShown)) {
     yield* writeJson(
       Added,
       files.added,
-      added.map((one) =>
-        one.photo === photo && one.seenAt === null ? { ...one, seenAt } : one,
-      ),
+      added.map((one) => (isShown(one) ? { ...one, seenAt } : one)),
     );
   }
   const carrying = yield* readCarrying(files);
@@ -66,7 +71,7 @@ export const seePhoto = Effect.fn('seePhoto')(function* (
     carrying !== null &&
     stopped !== null &&
     stopped.seenAt === null &&
-    stopped.photos.includes(photo)
+    shown.has(`stop:${stopped.id}`)
   ) {
     yield* saveCarrying(files, {
       ...carrying,

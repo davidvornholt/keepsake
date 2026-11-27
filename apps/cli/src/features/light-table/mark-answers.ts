@@ -4,8 +4,9 @@
 export const takenOut =
   'You took the photo out, so it wasn’t changed and isn’t in the album.';
 
-export const noMoney =
-  'What you agreed to pay was used up before this change, so the photo stays as it was. Mark it again to hand it over with more.';
+/** Why a change waits for the owner to pay more. */
+export const changeUsedUp =
+  'What you agreed to pay is used up before the change you marked was made.';
 
 const nothingPassed =
   'No version of the change passed the review, so the photo stays as it was.';

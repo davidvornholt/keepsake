@@ -67,6 +67,17 @@ describe('marks on the light table', () => {
     });
   });
 
+  it('leave no more to spend than was agreed, in whole cents', async () => {
+    await markable();
+    await whileServing(async (address) => {
+      await send('PUT', `${address}/api/shoots/lisbon/marks`, change);
+      return handOver(address, { dollars: 0.759 });
+    });
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 0.75,
+    });
+  });
+
   it('can’t be handed over when there are none', async () => {
     await markable();
     const status = await whileServing((address) => statusOf(handOver(address)));

@@ -27,7 +27,7 @@ import { orderOf, roughlyUnsettled } from './hand-over.ts';
 import { readLabels } from './labels.ts';
 import { isOpen, readMarks } from './marks.ts';
 import { readAdded } from './news.ts';
-import { newsOf } from './news-of.ts';
+import { decisionOf, newsOf } from './news-of.ts';
 import { type Gallery, type Kind, pictureOf } from './pictures.ts';
 import { readPreparation } from './preparation.ts';
 import { revisionOf } from './revision.ts';
@@ -268,7 +268,11 @@ export const shootInShort = Effect.fn('shootInShort')(function* (
     yield* roughlyUnsettled(files),
     isWorking,
   );
-  const news = newsOf(marks, yield* readAdded(files), carrying);
+  const decision = decisionOf(carrying);
+  const news = [
+    ...newsOf(marks, yield* readAdded(files), carrying),
+    ...(decision === null ? [] : [decision]),
+  ].toSorted((left, right) => left.at.localeCompare(right.at));
   const times = [...open.photos.values()]
     .toSorted(byTime)
     .map((photo) => takenThere(shoot, photo));

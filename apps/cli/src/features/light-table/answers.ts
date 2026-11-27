@@ -12,7 +12,7 @@ import { handOver } from './hand-over.ts';
 import { saveLabels } from './labels.ts';
 import { makeMark, takeBack } from './marks.ts';
 import { forgetShoot, makeShoot } from './new-shoot.ts';
-import { seePhoto } from './news.ts';
+import { seeItems } from './news.ts';
 import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
 import type { Runner } from './runner.ts';
@@ -205,8 +205,8 @@ export const makeAnswers = (has: Has) => ({
     }),
   seen: (name: string, request: Request) =>
     Effect.gen(function* () {
-      const { photo } = yield* sent(Seen, request);
-      yield* seePhoto((yield* openShoot(name)).files, photo);
+      const { items } = yield* sent(Seen, request);
+      yield* seeItems((yield* openShoot(name)).files, items);
       return nothing();
     }),
   choose: (name: string, request: Request) =>
@@ -229,8 +229,8 @@ export const makeAnswers = (has: Has) => ({
     handOverAnswer(has, name, request),
   goOn: (name: string, request: Request) =>
     Effect.gen(function* () {
-      const { dollars } = yield* sent(GoOn, request);
-      yield* has.runner.goOn(name, dollars);
+      const wanted = yield* sent(GoOn, request);
+      yield* has.runner.goOn(name, wanted);
       return nothing();
     }),
   favorite: (name: string, request: Request) =>

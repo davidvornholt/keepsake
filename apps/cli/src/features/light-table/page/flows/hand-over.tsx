@@ -3,6 +3,7 @@ import { type RefObject, useEffect, useId, useRef, useState } from 'react';
 import type { Place } from '../app/route.ts';
 import { go, goBack } from '../app/router.ts';
 import { useShootContext } from '../app/shoot-context.ts';
+import { walkPastDecision } from '../app/walk.ts';
 import type { Index } from '../data/derive.ts';
 import { count, dollarsOf } from '../data/format.ts';
 import { drawingTime } from '../marks/wax.ts';
@@ -261,11 +262,14 @@ const noKeys: Keys = [];
 type Props = {
   readonly sheet: Place;
   readonly engineRef: RefObject<Engine | null>;
+  /** Shown on a walk through all the albums, which goes on when it closes. */
+  readonly isAcross: boolean;
 };
 
 const Sheet = ({
   sheet,
   engineRef,
+  isAcross,
   isLeaving,
 }: Props & {
   /** True once the owner has left, while the sheet goes away. */
@@ -278,7 +282,8 @@ const Sheet = ({
   const viewRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [isShown, setIsShown] = useState(false);
-  const close = () => goBack(sheet);
+  const close = () =>
+    isAcross ? walkPastDecision(sheet.shoot) : goBack(sheet);
   useLights(engineRef, isLeaving ? null : lights);
   useFlip(listRef);
   useScrollKept(listRef, sheet.shoot);

@@ -1,4 +1,3 @@
-import process from 'node:process';
 import { DateTime, Effect, FileSystem, Option } from 'effect';
 import { judgeOf } from '../../shared/judge.ts';
 import { type Standings, standings } from '../../shared/standing.ts';
@@ -12,20 +11,21 @@ import {
   type Carrying,
   endCarrying,
   isAbout,
-  isElsewhere,
+  newId,
   readCarrying,
   type Stop,
   saveCarrying,
 } from './carrying.ts';
 import {
   agreedDollars,
+  isApproved,
   isEdited,
   isOrder,
   isStillChosen,
   unsettledOf,
 } from './hand-over.ts';
-import { saveHandOver } from './handed.ts';
-import { noMoney, takenOut } from './mark-answers.ts';
+import { readHandOvers, saveHandOver } from './handed.ts';
+import { changeUsedUp, takenOut } from './mark-answers.ts';
 import { answerMark, isWaiting, readMarks } from './marks.ts';
 import type { HandOverRecord, Mark } from './schemas.ts';
 
@@ -36,7 +36,13 @@ import type { HandOverRecord, Mark } from './schemas.ts';
 // when the album changed.
 
 export type Step =
-  | { readonly kind: 'editMark'; readonly mark: Mark; readonly budget: number }
+  | {
+      readonly kind: 'editMark';
+      readonly mark: Mark;
+      readonly budget: number;
+      /** The id the edit notes what it came to under. */
+      readonly operation: string;
+    }
   | { readonly kind: 'publishMark'; readonly mark: Mark }
   | {
       readonly kind: 'editOrder';
@@ -44,11 +50,7 @@ export type Step =
       readonly photos: ReadonlyArray<string>;
       readonly budget: number;
     }
-  | {
-      readonly kind: 'publishOrder';
-      readonly handOver: string;
-      readonly photos: ReadonlyArray<string>;
-    }
+  | { readonly kind: 'publishOrder'; readonly handOver: string }
   | { readonly kind: 'explain' }
   /** Something was noted, so there is more to work out. */
   | { readonly kind: 'again' }
@@ -92,6 +94,20 @@ export const notDone = (note: string) => ({
   note,
 });
 
+/** Forgets what an edit came to, once that is noted. */
+export const forgetOperation = Effect.fn('forgetOperation')(function* (
+  files: ShootFiles,
+  operation: string | null | undefined,
+) {
+  if (operation === null || operation === undefined) {
+    return;
+  }
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs
+    .remove(files.operation(operation), { force: true })
+    .pipe(Effect.ignore);
+});
+
 /** Answers a mark and forgets how far it got. */
 export const answered = Effect.fn('answered')(function* (
   files: ShootFiles,
@@ -100,8 +116,9 @@ export const answered = Effect.fn('answered')(function* (
   answer: { readonly outcome: 'done' | 'not-done'; readonly note: string },
 ) {
   yield* answerMark(files, mark.id, answer);
-  const { [mark.id]: _, ...marks } = carrying.marks;
+  const { [mark.id]: progress, ...marks } = carrying.marks;
   yield* saveCarrying(files, { ...carrying, marks });
+  yield* forgetOperation(files, progress?.operation);
   return again;
 });
 
@@ -109,14 +126,21 @@ export const answered = Effect.fn('answered')(function* (
 export const stopped = Effect.fn('stopped')(function* (
   files: ShootFiles,
   carrying: Carrying,
-  stop: Omit<Stop, 'at' | 'seenAt'>,
+  stop: Omit<Stop, 'id' | 'at' | 'seenAt'>,
 ) {
   yield* saveCarrying(files, {
     ...carrying,
-    stopped: { ...stop, at: yield* now, seenAt: null },
+    stopped: { ...stop, id: newId(), at: yield* now, seenAt: null },
   });
   return end;
 });
+
+/** The hand-over a mark came with. */
+export const handOverOf = (files: ShootFiles, mark: Mark) =>
+  Effect.map(
+    readHandOvers(files),
+    (records) => records.find(({ marks }) => marks.includes(mark.id))?.id ?? '',
+  );
 
 const planMark = Effect.fn('planMark')(function* (
   files: ShootFiles,
@@ -131,19 +155,33 @@ const planMark = Effect.fn('planMark')(function* (
     return yield* answered(files, carrying, mark, notDone(takenOut));
   }
   if (edited === null) {
-    const budget = yield* agreedDollars(files, known);
-    if (budget <= 0) {
-      return yield* answered(files, carrying, mark, notDone(noMoney));
-    }
     const before = progress?.before ?? (yield* versionOf(files, mark.photo));
+    // An edit that ended before it was noted is noted from what it came to,
+    // whatever is left of the money now.
+    const operation = progress?.operation ?? null;
+    const budget = yield* agreedDollars(files, known);
+    if (operation === null && budget <= 0) {
+      return yield* stopped(files, carrying, {
+        reason: changeUsedUp,
+        needs: 'money',
+        handOver: yield* handOverOf(files, mark),
+        photos: [mark.photo],
+      });
+    }
+    const given = operation ?? newId();
     yield* saveCarrying(files, {
       ...carrying,
       marks: {
         ...carrying.marks,
-        [mark.id]: { before, edited: null, published: false },
+        [mark.id]: { operation: given, before, edited: null, published: false },
       },
     });
-    return { kind: 'editMark', mark, budget } satisfies Step;
+    return {
+      kind: 'editMark',
+      mark,
+      budget,
+      operation: given,
+    } satisfies Step;
   }
   if (!isDone) {
     yield* saveCarrying(files, carrying);
@@ -174,11 +212,7 @@ const planOrder = Effect.fn('planOrder')(function* (
   );
   if (unedited.length === 0) {
     yield* saveCarrying(files, carrying);
-    return {
-      kind: 'publishOrder',
-      handOver: order.id,
-      photos: waiting,
-    } satisfies Step;
+    return { kind: 'publishOrder', handOver: order.id } satisfies Step;
   }
   const budget = yield* agreedDollars(files, known);
   if (budget <= 0) {
@@ -222,30 +256,36 @@ const nextMark = (
     .find((mark) => mark !== undefined && isWaiting(mark));
 };
 
+/** Whether the owner paid more for a stop, which then waits no more. */
+const isPaidFor = (stop: Stop, unsettled: ReadonlyArray<HandOverRecord>) =>
+  stop.needs === 'money' &&
+  unsettled.some(
+    (record) => record.id === stop.handOver && isApproved(record, stop.id),
+  );
+
 /**
- * Works out what to do next about a shoot and notes that this server does
- * it. Run it while nothing else on the page changes the shoot.
+ * Works out what to do next about a shoot. Run it while this server holds
+ * the shoot's runner lock, and while nothing else on the page changes the
+ * shoot.
  */
 export const plan = Effect.fn('plan')(function* (name: string) {
   const open = yield* openShoot(name);
   const { files } = open;
-  const before = yield* readCarrying(files);
-  if (yield* isElsewhere(before)) {
-    return end;
-  }
-  const carrying: Carrying = {
-    ...(before ?? (yield* beginning)),
-    process: process.pid,
-  };
+  const carrying = (yield* readCarrying(files)) ?? (yield* beginning);
   const known = yield* standingsOf(open);
   const unsettled = yield* unsettledOf(files, known);
   const stop = carrying.stopped;
-  if (stop !== null && isAbout(stop, unsettled) && !isLeftBehind(known, stop)) {
+  if (
+    stop !== null &&
+    isAbout(stop, unsettled) &&
+    !isLeftBehind(known, stop) &&
+    !isPaidFor(stop, unsettled)
+  ) {
     yield* saveCarrying(files, carrying);
     return end;
   }
-  // What it stopped at was settled meanwhile, or the owner took its photos
-  // out, which is their word to go on without them.
+  // What it stopped at was settled meanwhile, the owner took its photos
+  // out, which is their word to go on without them, or they paid more.
   const going: Carrying = { ...carrying, stopped: null };
   if (unsettled.length === 0) {
     if (going.toExplain) {
@@ -265,4 +305,25 @@ export const plan = Effect.fn('plan')(function* (name: string) {
     return end;
   }
   return yield* planOrder(files, known, going, order);
+});
+
+/**
+ * The edited photos of an order that are still chosen and not in the album
+ * yet, as they are now: run it under the choice lock up to the publish, so
+ * no photo the owner took out meanwhile comes back.
+ */
+export const stillOrdered = Effect.fn('stillOrdered')(function* (
+  open: OpenShoot,
+  handOver: string,
+) {
+  const order = (yield* readHandOvers(open.files)).find(
+    ({ id }) => id === handOver,
+  );
+  if (order === undefined) {
+    return [];
+  }
+  return yield* Effect.filter(
+    waitingOf(yield* standingsOf(open), order),
+    (photo) => isEdited(open.files, photo),
+  );
 });

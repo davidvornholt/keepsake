@@ -249,7 +249,7 @@ const writeChosen = (root: string, wanted: Wanted) => {
     ...(wanted.isOrdered === undefined
       ? []
       : [
-          write(root, 'carrying-out.json', ordering(wanted.isOrdered, toEdit)),
+          write(root, 'carrying-out.json', ordering(root, wanted, toEdit)),
           write(
             root,
             join('hand-overs', 'order.json'),
@@ -290,7 +290,7 @@ const writePublished = (root: string, wanted: Wanted) =>
         photo: shownOf(mark.photo),
       }),
     ),
-    write(root, 'carrying-out.json', stoppedAt(shownOf('D160'))),
+    write(root, 'carrying-out.json', stoppedAt(root, shownOf('D160'))),
     write(root, join('hand-overs', 'marks.json'), {
       id: 'marks',
       at: handed,

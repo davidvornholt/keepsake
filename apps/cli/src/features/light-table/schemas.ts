@@ -136,6 +136,11 @@ export const HandOverRecord = Schema.Struct({
   album: Schema.NullOr(Schema.Array(Schema.String)),
   /** When none of the ordered photos waited to be put into the album any more. */
   fulfilledAt: Schema.NullOr(Schema.String),
+  /**
+   * The stops for want of money that the owner paid more for, noted with
+   * `dollars` at once, so their word counts only once.
+   */
+  approved: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type HandOverRecord = typeof HandOverRecord.Type;
 
@@ -144,13 +149,19 @@ export type HandOverRecord = typeof HandOverRecord.Type;
  * POST /api/shoots/<shoot>/go-on. With more money when it ran out of it.
  */
 export const GoOn = Schema.Struct({
+  /** The stop the page showed, which the owner's word is about. */
+  stop: Schema.String,
   /** What the owner agrees to pay on top, as they were told. */
   dollars: Schema.Finite,
 });
 export type GoOn = typeof GoOn.Type;
 
-/** What the page sends once the owner looked at a photo: POST /api/shoots/<shoot>/seen */
-export const Seen = Schema.Struct({ photo: Schema.String });
+/**
+ * What the page sends once the owner looked at what is new about a photo:
+ * POST /api/shoots/<shoot>/seen. Only what it showed, by the keys of
+ * `newsItemsOf`, so what came later stays new.
+ */
+export const Seen = Schema.Struct({ items: Schema.Array(Schema.String) });
 export type Seen = typeof Seen.Type;
 
 /** What the page sends to make an album of a folder: POST /api/shoots */

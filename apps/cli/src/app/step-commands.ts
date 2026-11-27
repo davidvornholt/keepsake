@@ -4,6 +4,7 @@ import { cull as cullShoot } from '../features/cull/cull.ts';
 import { edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
+import { stillOrdered } from '../features/light-table/carry-out.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
 import { tellOutdated } from '../features/publish/outdated.ts';
 import { publish as publishShoot } from '../features/publish/publish.ts';
@@ -17,7 +18,7 @@ import {
 } from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
-import { openShoot } from '../shared/store.ts';
+import { type OpenShoot, openShoot } from '../shared/store.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
 import {
@@ -29,7 +30,8 @@ import {
   shootArgument,
   visionModel,
 } from './command-inputs.ts';
-import { emit, emitWithCost } from './output.ts';
+import { operationOf, resultOf, saveResult } from './operations.ts';
+import { emit, emitWithCost, withCost } from './output.ts';
 import { markOfChosen, whatToEdit } from './what-to-edit.ts';
 
 const lowestScore = 1;
@@ -189,11 +191,32 @@ export const edit = Command.make(
       'mark',
       'Edit the photo that a mark of the owner is about, with its note as the wish and at the places it marks. `keepsake marks` lists the marks.',
     ),
+    operation: optionalString(
+      'operation',
+      'An id for this edit: it notes what it came to under the id before it prints it, and an edit given the same id again prints that without editing again',
+    ),
     again,
   },
-  ({ shoot, photos, model, wish, mark, again: startOver, ...flags }) =>
+  ({
+    shoot,
+    photos,
+    model,
+    wish,
+    mark,
+    again: startOver,
+    operation,
+    ...flags
+  }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
+      const id = Option.isSome(operation)
+        ? yield* operationOf(operation.value)
+        : null;
+      const { files } = yield* openShoot(shoot);
+      const saved = id === null ? null : yield* resultOf(files, id);
+      if (saved !== null) {
+        return yield* emit(saved);
+      }
       const asked = yield* whatToEdit(shoot, {
         photos,
         wish,
@@ -207,9 +230,15 @@ export const edit = Command.make(
           again: startOver,
           wish: asked.wish,
           areas: asked.areas,
-        }),
+        }).pipe(
+          Effect.flatMap(withCost),
+          // Noted before it is printed, under the shoot's lock.
+          Effect.tap((result) =>
+            id === null ? Effect.void : saveResult(open.files, id, result),
+          ),
+        ),
       ).pipe(
-        Effect.flatMap(emitWithCost),
+        Effect.flatMap(emit),
         Effect.provide(editLayer(flags)),
         withVision(shoot, model),
       );
@@ -219,6 +248,40 @@ export const edit = Command.make(
     'Crop the picked photos, edit them with an image model, and keep the version that passes a review, or the camera’s own picture when none does. Photos edited before are kept. `--model` is the one that crops.',
   ),
 );
+
+/** Publishes what was asked for: photos, the photo of a mark, or what an order still has. */
+const publishAsked = Effect.fn('publishAsked')(function* (
+  open: OpenShoot,
+  asked: {
+    readonly photos: ReadonlyArray<string>;
+    readonly album: Option.Option<string>;
+    readonly mark: Option.Option<string>;
+    readonly order: Option.Option<string>;
+  },
+) {
+  const { photos, album, mark, order } = asked;
+  const named = [Option.isSome(mark), Option.isSome(order), photos.length > 0];
+  if (named.filter(Boolean).length > 1) {
+    return yield* new InvalidInput({
+      message: 'Name photos, a --mark or an --order, only one of them.',
+    });
+  }
+  if (Option.isSome(mark)) {
+    return yield* publishNamed(open, {
+      names: [(yield* markOfChosen(open, mark.value)).photo],
+      album,
+    });
+  }
+  if (Option.isNone(order)) {
+    return yield* publishNamed(open, { names: photos, album });
+  }
+  // Under the choice lock from here on, so what the owner takes out
+  // meanwhile waits until it is published, and none comes back.
+  const ordered = yield* stillOrdered(open, order.value);
+  yield* ordered.length === 0
+    ? emit({ shoot: open.shoot.name, published: 0, outdated: [], photos: [] })
+    : publishNamed(open, { names: ordered, album });
+});
 
 export const publish = Command.make(
   'publish',
@@ -233,23 +296,14 @@ export const publish = Command.make(
       'mark',
       'Publish the photo a mark is about, unless the owner took it out meanwhile',
     ),
+    order: optionalString(
+      'order',
+      'Publish the edited photos of the order handed over with this id that are still chosen when it starts, and list them under `photos`',
+    ),
   },
-  ({ shoot, photos, album, mark }) =>
+  ({ shoot, photos, album, mark, order }) =>
     workOn(shoot, (open) =>
-      Effect.gen(function* () {
-        if (Option.isSome(mark) && photos.length > 0) {
-          return yield* new InvalidInput({
-            message: 'Name no photos with --mark, which is about one already.',
-          });
-        }
-        const names = Option.isSome(mark)
-          ? [(yield* markOfChosen(open, mark.value)).photo]
-          : photos;
-        const published = yield* publishShoot(open, names, album);
-        yield* tellOutdated(open, published.outdated, (outdated, trashFailed) =>
-          emit({ ...published, outdated, trashFailed }),
-        );
-      }).pipe(
+      publishAsked(open, { photos, album, mark, order }).pipe(
         // Until it told, so the page publishes nothing in between, and
         // takes out no photo of a mark while it is published.
         withChoice(open.files),
@@ -260,6 +314,24 @@ export const publish = Command.make(
     'Upload the finished photos to an album in Immich with the photos command, each stacked on top of the camera’s own picture. Photos published before are not sent again.',
   ),
 );
+
+/** Publishes the photos named, and says which ones they were. */
+const publishNamed = (
+  open: OpenShoot,
+  {
+    names,
+    album,
+  }: {
+    readonly names: ReadonlyArray<string>;
+    readonly album: Option.Option<string>;
+  },
+) =>
+  Effect.gen(function* () {
+    const published = yield* publishShoot(open, names, album);
+    yield* tellOutdated(open, published.outdated, (outdated, trashFailed) =>
+      emit({ ...published, outdated, trashFailed, photos: names }),
+    );
+  });
 
 export const explain = Command.make(
   'explain',

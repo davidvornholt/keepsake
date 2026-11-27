@@ -1,4 +1,5 @@
 import type { ShootList } from '../../contract.ts';
+import { decisionOf } from '../../news-of.ts';
 
 // The order of the walk through what is new in all the albums.
 
@@ -21,3 +22,15 @@ export const walkOrder = (
 /** How many new things there are to look at in all the albums. */
 export const newsIn = (shoots: ReadonlyArray<Summary>): number =>
   shoots.reduce((sum, { news }) => sum + news, 0);
+
+/**
+ * Whether an album waits for the owner's word as a whole, which the walk
+ * shows before what is new about its photos.
+ */
+export const waitsForWord = (
+  shoots: ReadonlyArray<Summary>,
+  shoot: string,
+): boolean => {
+  const carrying = shoots.find(({ name }) => name === shoot)?.carrying;
+  return carrying !== undefined && decisionOf(carrying) !== null;
+};

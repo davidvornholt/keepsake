@@ -80,6 +80,10 @@ const decoded = (part: string): string => {
 
 const screens = ['hand-over', 'news', 'rate'] as const;
 
+/** What a walk through all the albums shows: what is new, and what waits for the owner. */
+const isWalked = (screen: string) =>
+  screen === 'news' || screen === 'hand-over';
+
 /** Where the walk through what is new was, before it was called that. */
 const formerly: Readonly<Record<string, (typeof screens)[number]>> = {
   answers: 'news',
@@ -111,7 +115,7 @@ export const routeOf = (pathname: string, query: string): Route => {
   }
   const screen =
     oneOf(screens, kind ?? null) ?? formerly[kind ?? ''] ?? 'sheet';
-  return screen === 'news' && search.has('across')
+  return isWalked(screen) && search.has('across')
     ? { screen, shoot, filters, across: true }
     : { screen, shoot, filters };
 };
@@ -150,7 +154,7 @@ export const hrefOf = (route: Route): string => {
   }
   const tail = route.screen === 'sheet' ? '' : `/${route.screen}`;
   const query = queryOf(route.filters, false);
-  if (route.screen === 'news' && route.across === true) {
+  if (isWalked(route.screen) && route.across === true) {
     return `${shoot}${tail}${query === '' ? '?' : `${query}&`}across`;
   }
   return `${shoot}${tail}${query}`;

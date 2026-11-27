@@ -176,6 +176,7 @@ describe('staggerOf', () => {
 describe('carryingStateOf', () => {
   const shoot = sampleShoot(photos);
   const stop = (needs: 'money' | 'retry', stopped: ReadonlyArray<string>) => ({
+    id: 'stop1',
     at,
     reason: 'It stopped.',
     needs,

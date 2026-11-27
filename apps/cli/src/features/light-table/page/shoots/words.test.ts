@@ -122,6 +122,7 @@ describe('what waits at an album', () => {
 
   it('says what an order waits for, and never that it is being edited then', () => {
     const stopped = {
+      id: 'stop1',
       at: since,
       reason: 'What you agreed to pay is used up.',
       needs: 'money' as const,

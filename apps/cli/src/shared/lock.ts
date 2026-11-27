@@ -23,6 +23,9 @@ import type { ShootFiles } from './store.ts';
 
 // LOCK_EX | LOCK_NB of <sys/file.h>: alone, and without waiting for it.
 const exclusiveAtOnce = 6;
+// LOCK_SH | LOCK_NB: beside others like it, and without waiting. LOCK_UN.
+const sharedAtOnce = 5;
+const unlock = 8;
 const ownerOnly = 0o600;
 
 let library: { readonly flock: (fd: number, how: number) => number } | null =
@@ -152,6 +155,41 @@ const holding =
               ),
       );
     });
+
+/**
+ * Whether some process holds a lock now, without taking it for longer than
+ * a look or making its file. Within one process nothing takes it meanwhile.
+ */
+export const isHeld = (path: string) =>
+  Effect.sync(() => {
+    let fd: number;
+    try {
+      fd = openSync(path, 'r');
+    } catch {
+      return false;
+    }
+    try {
+      if (flock(fd, sharedAtOnce) !== 0) {
+        return true;
+      }
+      flock(fd, unlock);
+      return false;
+    } finally {
+      closeSync(fd);
+    }
+  });
+
+/**
+ * Takes a lock for as long as this process runs, unless another holds it,
+ * as a stand-in for a server that works on a shoot.
+ */
+export const holdWhileRunning = (path: string) => tryToHold(path) !== null;
+
+/**
+ * Runs what the page's server carries out in a shoot while it alone does,
+ * or gives none when another server does it now.
+ */
+export const asTheRunner = (files: ShootFiles) => holding(files.runnerLock);
 
 const busy = (path: string) =>
   new ShootBusy({

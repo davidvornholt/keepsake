@@ -5,6 +5,7 @@ import type {
   NewChoice,
   NewMark,
 } from '../../contract.ts';
+import { keysAbout, newsItemsOf } from '../../news-of.ts';
 import {
   dismissChoice,
   forgetShoot,
@@ -215,15 +216,28 @@ const answering = (core: Core) => ({
     }
     await core.send(() => dismissChoice(core.name, action));
   },
-  /** Notes that the owner looked at everything new about a photo. */
+  /**
+   * Notes that the owner looked at what is new about a photo: only what the
+   * page shows of it now, so what comes later stays new.
+   */
   seen: async (photo: string) => {
     const now = new Date().toISOString();
-    const shoot = core.get().index?.shoot;
-    if (shoot !== undefined) {
-      core.setShoot(withSeen(shoot, photo, now));
+    const { index, carrying } = core.get();
+    if (index === null) {
+      return;
     }
-    core.set({ carrying: carryingSeen(core.get().carrying, photo, now) });
-    await core.send(() => seePhoto(core.name, { photo }));
+    const { shoot } = index;
+    const items = keysAbout(
+      newsItemsOf(shoot.marks, shoot.added, carrying),
+      photo,
+    );
+    if (items.length === 0) {
+      return;
+    }
+    const keys = new Set(items);
+    core.setShoot(withSeen(shoot, keys, now));
+    core.set({ carrying: carryingSeen(core.get().carrying, keys, now) });
+    await core.send(() => seePhoto(core.name, { items }));
   },
   /**
    * Hands the marks over, and agrees to what acting on them costs at most.
@@ -247,8 +261,8 @@ const answering = (core: Core) => ({
    * Goes on with what was handed over, where it stopped, and agrees to pay
    * up to `dollars` more when it stopped for money.
    */
-  goOnCarrying: async (dollars: number): Promise<void> => {
-    await core.send(() => goOnCarrying(core.name, { dollars }));
+  goOnCarrying: async (stop: string, dollars: number): Promise<void> => {
+    await core.send(() => goOnCarrying(core.name, { stop, dollars }));
   },
   /** Goes on with getting the album ready, after it stopped. */
   goOn: async (): Promise<void> => {

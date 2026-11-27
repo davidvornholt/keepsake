@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { keysAbout, newsItemsOf } from '../../news-of.ts';
 import {
   draftOf,
   isDraft,
@@ -110,9 +111,10 @@ describe('what keepsake answers', () => {
     expect(withoutMark([other, draft], 'draft-1')).toEqual([other]);
   });
 
-  it('notes that everything new about a photo was seen', () => {
+  it('notes as seen only what was shown of a photo', () => {
     const answer = { at: now, outcome: 'done' as const, note: 'Done.' };
     const stopped = {
+      id: 'stop1',
       at: now,
       reason: 'It stopped.',
       needs: 'retry' as const,
@@ -133,11 +135,28 @@ describe('what keepsake answers', () => {
       ],
       carrying: { since: null, stopped },
     };
-    const seen = withSeen(shoot, 'a', later);
+    const keysOf = (photo: string) =>
+      new Set(
+        keysAbout(newsItemsOf(shoot.marks, shoot.added, shoot.carrying), photo),
+      );
+    const seen = withSeen(shoot, keysOf('a'), later);
     expect(seen.marks.map(({ seenAt }) => seenAt)).toEqual([later, null]);
     expect(seen.added.map(({ seenAt }) => seenAt)).toEqual([later, null]);
     expect(seen.carrying.stopped?.seenAt).toBe(later);
-    expect(withSeen(shoot, 'b', later).carrying).toBe(shoot.carrying);
+    expect(withSeen(shoot, keysOf('b'), later).carrying).toBe(shoot.carrying);
+    // What came after the page showed the photo stays new.
+    const answeredAgain = {
+      ...shoot,
+      marks: shoot.marks.map((mark) =>
+        mark.id === 'one'
+          ? { ...mark, answer: { ...answer, at: later } }
+          : mark,
+      ),
+      added: [{ photo: 'a', at: later, seenAt: null }],
+    };
+    const late = withSeen(answeredAgain, keysOf('a'), later);
+    expect(late.marks.map(({ seenAt }) => seenAt)).toEqual([null, null]);
+    expect(late.added.map(({ seenAt }) => seenAt)).toEqual([null]);
   });
 });
 

@@ -191,12 +191,24 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
      */
     photoLock: (photo: string) =>
       path.join(locks, `${name}.photo-${editFolderName(photo)}`),
+    /**
+     * Held by the page's server for as long as it carries out what was
+     * handed over in the shoot, so no other server does it too.
+     */
+    runnerLock: path.join(locks, `${name}.runner`),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** What the owner handed over, a file for each time. */
     handOvers: path.join(root, 'hand-overs'),
     /** How the page's server carries out what was handed over. */
     carrying: path.join(root, 'carrying-out.json'),
+    /**
+     * What a step of the page's server came to, by the id it was given, so
+     * the step is never paid for twice when the server stopped before it
+     * noted it.
+     */
+    operation: (id: string) => path.join(root, 'operations', `${id}.json`),
+    operations: path.join(root, 'operations'),
     /** The photos an order put into the album, until the owner saw them. */
     added: path.join(root, 'added.json'),
     /** The program that gets the shoot ready for the owner. */

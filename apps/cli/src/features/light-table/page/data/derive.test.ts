@@ -286,6 +286,7 @@ describe('marks', () => {
       carrying: {
         since: null,
         stopped: {
+          id: 'stop1',
           at: '2026-05-05T00:00:00Z',
           reason: 'It stopped.',
           needs: 'retry',

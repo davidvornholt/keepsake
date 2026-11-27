@@ -149,6 +149,7 @@ const Over = ({
   <>
     <HandOver
       engineRef={engineRef}
+      isAcross={route.screen === 'hand-over' && route.across === true}
       isWanted={route.screen === 'hand-over'}
       sheet={sheet}
     />

@@ -49,6 +49,9 @@ describe('routeOf', () => {
     ).toBe('/lisbon/news?across');
     // Only what is new is walked through.
     expect(routeOf('/lisbon/rate', '?across')).not.toHaveProperty('across');
+    const decision = routeOf('/lisbon/hand-over', '?across');
+    expect(decision).toMatchObject({ screen: 'hand-over', across: true });
+    expect(hrefOf(decision)).toBe('/lisbon/hand-over?across');
   });
 
   it('reads the photo keepsake links to', () => {

@@ -1,7 +1,6 @@
-import process from 'node:process';
 import { DateTime, Effect, FileSystem, Option, Schema } from 'effect';
 import { StoreFailed } from '../../shared/errors/errors.ts';
-import { isRunning } from '../../shared/processes.ts';
+import { isHeld } from '../../shared/lock.ts';
 import { readJson, type ShootFiles, writeJson } from '../../shared/store.ts';
 import type { CarryingOut } from './contract.ts';
 import type { HandOverRecord } from './schemas.ts';
@@ -12,6 +11,8 @@ import type { HandOverRecord } from './schemas.ts';
 
 /** What can't go on without the owner. */
 const Stop = Schema.Struct({
+  /** Which stop it is, so the owner's word to go on counts once. */
+  id: Schema.String,
   at: Schema.String,
   /** What it waits for, in a sentence for the owner. */
   reason: Schema.String,
@@ -28,6 +29,12 @@ export type Stop = typeof Stop.Type;
 
 /** How far a mark got, until it is answered. */
 const Progress = Schema.Struct({
+  /**
+   * The id of the edit it is given, under which the edit notes what it came
+   * to, so an edit that ended before the server noted it isn't paid again.
+   * Null once that was noted.
+   */
+  operation: Schema.NullOr(Schema.String),
   /** Which file the finished photo was before the change, if it had one. */
   before: Schema.NullOr(Schema.String),
   /** What came of the edit, once it ended. */
@@ -39,8 +46,6 @@ const Progress = Schema.Struct({
 export type Progress = typeof Progress.Type;
 
 const Carrying = Schema.Struct({
-  /** The server that carries it out. */
-  process: Schema.Int,
   since: Schema.String,
   stopped: Schema.NullOr(Stop),
   marks: Schema.Record(Schema.String, Progress),
@@ -70,23 +75,22 @@ export const endCarrying = Effect.fn('endCarrying')(function* (
     .pipe(Effect.mapError(storeFailed));
 });
 
-/** Carrying out from the start, by this server. */
+const idLength = 8;
+
+/** A new id for a stop or an edit. */
+export const newId = () =>
+  crypto.randomUUID().replaceAll('-', '').slice(0, idLength);
+
+/** Carrying out from the start. */
 export const beginning = Effect.map(
   DateTime.now,
   (now): Carrying => ({
-    process: process.pid,
     since: DateTime.formatIso(now),
     stopped: null,
     marks: {},
     toExplain: false,
   }),
 );
-
-/** Whether another server that runs carries it out. */
-export const isElsewhere = (carrying: Carrying | null) =>
-  carrying === null || carrying.process === process.pid
-    ? Effect.succeed(false)
-    : isRunning(carrying.process);
 
 /** Whether a stop is about something still to be done. */
 export const isAbout = (
@@ -97,14 +101,18 @@ export const isAbout = (
     ? unsettled.length > 0
     : unsettled.some(({ id }) => id === handOver);
 
+/** The id of what waits for the owner when nothing works on it and nothing says why. */
+export const nobodyId = 'nobody';
+
 const nobody =
   'Nothing works on what you handed over now. Go on, and keepsake picks it up where it stopped.';
 
 /**
- * How what was handed over goes, as the page shows it: whether something
- * works on it now, which `isWorking` says for this server, and what waits for
- * the owner. What is still to be done while nothing works on it and nothing
- * says why waits for the owner too, so the page never says it is being done.
+ * How what was handed over goes, as the page shows it: whether a server
+ * holds the shoot's runner lock and works on it now, which `isWorking` says
+ * for this server, and what waits for the owner. What is still to be done
+ * while nothing works on it and nothing says why waits for the owner too, so
+ * the page never says it is being done.
  */
 export const carryingOf = Effect.fn('carryingOf')(function* (
   files: ShootFiles,
@@ -112,8 +120,7 @@ export const carryingOf = Effect.fn('carryingOf')(function* (
   isWorking: boolean,
 ) {
   const carrying = yield* readCarrying(files);
-  const isOwn = carrying === null || carrying.process === process.pid;
-  const working = isOwn ? isWorking : yield* isRunning(carrying.process);
+  const working = isWorking || (yield* isHeld(files.runnerLock));
   const stop = carrying?.stopped ?? null;
   const stopped = stop !== null && isAbout(stop, unsettled) ? stop : null;
   const [first] = unsettled;
@@ -130,6 +137,7 @@ export const carryingOf = Effect.fn('carryingOf')(function* (
         stopped === null
           ? null
           : {
+              id: stopped.id,
               at: stopped.at,
               reason: stopped.reason,
               needs: stopped.needs,
@@ -141,6 +149,7 @@ export const carryingOf = Effect.fn('carryingOf')(function* (
   return {
     since: null,
     stopped: {
+      id: nobodyId,
       at: first.at,
       reason: nobody,
       needs: 'retry',

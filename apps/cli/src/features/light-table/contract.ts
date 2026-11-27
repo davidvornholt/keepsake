@@ -122,6 +122,8 @@ export type CarryingOut = {
   readonly since: string | null;
   /** What can't go on without the owner. */
   readonly stopped: {
+    /** Which stop it is, which the owner's word to go on names. */
+    readonly id: string;
     readonly at: string;
     /** What it waits for, in a sentence for the owner. */
     readonly reason: string;
@@ -239,8 +241,9 @@ export type ShootList = {
     /** How what was handed over is carried out. */
     readonly carrying: CarryingOut;
     /**
-     * The photos with something the owner hasn't looked at: an answer to a
-     * mark, a photo an order put in, or what waits for them.
+     * The photos with something the owner hasn't looked at, an answer to a
+     * mark, a photo an order put in, or what waits for them, and one more
+     * while the album as a whole waits for their word.
      */
     readonly news: number;
     /** When the oldest of that came. */
