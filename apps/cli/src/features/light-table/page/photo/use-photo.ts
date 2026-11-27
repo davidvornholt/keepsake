@@ -176,7 +176,6 @@ export const useComposing = (photo: PhotoView) => {
     begin: () => setDraft(fresh()),
     cancel: end,
     addBox,
-    /** Adds a box in the middle of the photo, to be moved and sized from there. */
     placeBox: () => addBox(middle),
     /** Moves or resizes a box. What it was is noted with `record` before. */
     setBox: (at: number, box: Box) =>

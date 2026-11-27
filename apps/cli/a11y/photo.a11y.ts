@@ -254,6 +254,7 @@ test('draws a box on a change, moves it with the keys and removes it', async ({
   await page.mouse.up();
   const box = page.getByRole('button', { name: boxName });
   await expect(box).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('or use the arrow keys')).toBeVisible();
   await scan(page);
 
   // The keyboard reaches the box by its number: arrows move it, Delete removes it.
@@ -281,15 +282,16 @@ test('adds a box to a change, places it and saves it with the keys alone', async
   await page.keyboard.press('c');
   const note = page.getByRole('textbox', { name: 'What should change?' });
   await expect(note).toBeFocused();
-  await page.getByRole('button', { name: 'Add a box' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Add a box' })).toBeFocused();
   await page.keyboard.press('Enter');
   const box = page.getByRole('button', { name: boxName });
   await expect(box).toBeFocused();
   await expect(box).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('or use the arrow keys')).toBeVisible();
   await scan(page);
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Shift+ArrowDown');
-  // The next letter goes back to the words, and Enter saves them with the box.
   await page.keyboard.type('Less sky.');
   await expect(note).toHaveValue('Less sky.');
   const saved = page.waitForRequest(

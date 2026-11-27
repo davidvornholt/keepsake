@@ -26,7 +26,7 @@ const boxesSay = ({ note, boxes }: Draft): string => {
   if (boxes.length === 0) {
     return 'Drag on the photo to show where, or add a box.';
   }
-  const said = `${count(boxes.length, 'box', 'boxes')}. Drag one to move it, its corners to change its size.`;
+  const said = `${count(boxes.length, 'box', 'boxes')}. Drag one to move it, its corners to change its size, or use the arrow keys, and Shift with them for the size.`;
   return note.trim() === '' ? `${said} Say what should change there.` : said;
 };
 
@@ -39,7 +39,6 @@ type Props = {
   /** Whether something was done to the boxes that can be undone. */
   readonly canUndo: boolean;
   readonly onUndo: () => void;
-  /** Adds a box in the middle of the photo, for the keyboard to place. */
   readonly onAddBox: () => void;
   readonly onDraft: (draft: Draft) => void;
   readonly onSave: () => void;
