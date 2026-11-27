@@ -1,6 +1,7 @@
-import { Effect, Path } from 'effect';
-import { type Album, Publication } from './domain.ts';
-import type { Asset } from './immich.ts';
+import { Effect, Option, Path } from 'effect';
+import { Album, Publication } from './domain.ts';
+import { type Asset, albumAssets, type NamedAlbum } from './immich.ts';
+import { withAlbum } from './lock.ts';
 import {
   type AlbumRecord,
   readPublication,
@@ -8,7 +9,7 @@ import {
   uploadsOfOthers,
   withUploads,
 } from './publication.ts';
-import { type OpenShoot, writeJson } from './store.ts';
+import { type OpenShoot, readJson, writeJson } from './store.ts';
 
 // Publishes from before keepsake noted every upload found the shoot's photos
 // in the album by their file's name, and `album.json` kept what they found.
@@ -76,3 +77,28 @@ export const adoptNamed = Effect.fn('adoptNamed')(function* (
   });
   return { ...record, adopted };
 });
+
+/**
+ * Takes on what `album.json` named of the album the shoot published to last,
+ * before a publish to another album forgets what it read of it. Nothing is
+ * taken on of an album that is gone.
+ */
+export const adoptBeforeLeaving = (
+  open: OpenShoot,
+  albums: ReadonlyArray<NamedAlbum>,
+) =>
+  Effect.gen(function* () {
+    const published = yield* readPublication(open);
+    const albumId = published?.albumId;
+    if (
+      published === null ||
+      albumId === undefined ||
+      published.namesAdopted === true ||
+      !albums.some(({ id }) => id === albumId)
+    ) {
+      return;
+    }
+    const before = Option.getOrNull(yield* readJson(Album, open.files.album));
+    const assets = yield* albumAssets(albumId);
+    yield* adoptNamed(open, published, { albumId, assets, before });
+  }).pipe(withAlbum(open.files));

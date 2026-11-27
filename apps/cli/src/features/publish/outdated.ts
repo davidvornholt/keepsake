@@ -3,6 +3,7 @@ import { Publication } from '../../shared/domain.ts';
 import { withChoice } from '../../shared/lock.ts';
 import {
   assetsInUse,
+  madeFor,
   readPublication,
   uploadsOfOthers,
 } from '../../shared/publication.ts';
@@ -11,10 +12,14 @@ import { type OpenShoot, writeJson } from '../../shared/store.ts';
 /**
  * The upload of a photo that a new one replaced and that is a photo of no
  * album keepsake knows of, as Immich gives a file that it has the same id.
+ * Only an asset keepsake made counts: another may be the owner's.
  */
 export const outdatedOf = (publication: Publication) => {
   const inUse = assetsInUse(publication);
-  return (publication.outdated ?? []).filter((asset) => !inUse.has(asset));
+  const made = madeFor(publication);
+  return (publication.outdated ?? []).filter(
+    (asset) => made.has(asset) && !inUse.has(asset),
+  );
 };
 
 /**

@@ -7,8 +7,9 @@ import { withChoice } from '../../shared/lock.ts';
 import {
   assetsInUse,
   isAdded,
-  isCreated,
+  madeFor,
   readPublication,
+  uploadsOf,
   uploadsOfOthers,
 } from '../../shared/publication.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
@@ -31,12 +32,13 @@ export const unpublish = (
       return;
     }
     // Immich has the same file once, so it may be another photo's upload,
-    // also one of another shoot, or have been in the album before.
+    // also one taken on or on its way, one of another shoot, or have been in
+    // the album before.
     const others = yield* uploadsOfOthers(open);
     const isShared =
       !isAdded(now) ||
       others.inAlbum(publication.albumId, now.asset) ||
-      publication.photos.some(
+      uploadsOf(publication).some(
         (one) => one.photo !== photo && one.asset === now.asset,
       );
     const refused = isShared
@@ -58,7 +60,9 @@ export const unpublish = (
     const inUse = assetsInUse(restored);
     const outdated = new Set([
       ...(publication.outdated ?? []),
-      ...(isAdded(now) && isCreated(now) ? [now.asset] : []),
+      ...(isAdded(now) && madeFor(publication).has(now.asset)
+        ? [now.asset]
+        : []),
     ]);
     yield* writeJson(Publication, open.files.publication, {
       ...restored,

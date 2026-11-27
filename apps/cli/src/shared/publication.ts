@@ -68,11 +68,10 @@ export const albumsOf = (
         ...(published.elsewhere ?? []),
       ];
 
-/** An upload of a photo, and what Immich answered to it. */
+/** An upload of a photo, and whether the shoot put it into the album. */
 export type Upload = {
   readonly photo: string;
   readonly asset: string;
-  readonly created?: boolean | undefined;
   readonly added?: boolean | undefined;
 };
 
@@ -89,25 +88,12 @@ export const uploadsOf = (record: AlbumRecord): ReadonlyArray<Upload> => [
  */
 export const isAdded = ({ added }: Upload) => added !== false;
 
-/** Whether keepsake made the asset, so it may tell it is to be trashed. */
-export const isCreated = ({ created }: Upload) => created !== false;
-
 /**
- * The assets keepsake made for the shoot, in any album it knows of, also
- * those replaced since.
+ * The assets keepsake made for the shoot, in any album, which alone it may
+ * call outdated. Uploads from before it noted them count as the owner's.
  */
-export const madeFor = (published: Publication | null) => {
-  const records = albumsOf(published);
-  return new Set([
-    ...records
-      .flatMap(uploadsOf)
-      .flatMap((one) => (isCreated(one) ? [one.asset] : [])),
-    ...records.flatMap(({ photos }) =>
-      photos.flatMap(({ replaced }) => replaced ?? []),
-    ),
-    ...(published?.outdated ?? []),
-  ]);
-};
+export const madeFor = (published: Publication | null) =>
+  new Set(published?.made ?? []);
 
 /** Whether the shoot put the asset into this album, as some photo of it. */
 export const isPutInto = (
@@ -121,12 +107,20 @@ export const isPutInto = (
       uploadsOf(record).some((one) => one.asset === asset && isAdded(one)),
   );
 
-/** The uploads that are a photo of some album now, which are not outdated. */
+/** The camera's originals that keepsake stacked the photos on. */
+const camerasOf = (record: AlbumRecord) =>
+  record.photos.map(({ cameraAsset }) => cameraAsset);
+
+/**
+ * The uploads that are a photo of some album now, which are not outdated, and
+ * the camera's originals of those, as Immich has a file once.
+ */
 export const assetsInUse = (published: Publication) =>
   new Set(
-    albumsOf(published).flatMap((record) =>
-      uploadsOf(record).map(({ asset }) => asset),
-    ),
+    albumsOf(published).flatMap((record) => [
+      ...uploadsOf(record).map(({ asset }) => asset),
+      ...camerasOf(record),
+    ]),
   );
 
 type Uploads = Pick<AlbumRecord, 'sending' | 'adopted'>;
@@ -190,6 +184,8 @@ export const uploadsOfOthers = Effect.fn('uploadsOfOthers')(function* (
   );
   const assets = new Map<string | undefined, Set<string>>();
   const photos = new Map<string | undefined, Set<string>>();
+  // The camera's originals are in no album, but may be the same file.
+  const cameras = new Set(records.flat().flatMap(camerasOf));
   for (const record of records.flat()) {
     const uploads = uploadsOf(record);
     addTo(assets, record.albumId, [
@@ -212,9 +208,12 @@ export const uploadsOfOthers = Effect.fn('uploadsOfOthers')(function* (
   return {
     /** Whether another shoot published the upload in this album. */
     inAlbum: (albumId: string, asset: string) => has(assets, albumId, asset),
-    /** Whether another shoot published the upload in any album. */
+    /**
+     * Whether another shoot published the upload in any album, or stacked a
+     * photo on it as the camera's original.
+     */
     anywhere: (asset: string) =>
-      [...assets.values()].some((set) => set.has(asset)),
+      cameras.has(asset) || [...assets.values()].some((set) => set.has(asset)),
     /** Whether another shoot published a photo of this name in this album. */
     hasPhoto: (albumId: string, photo: string) => has(photos, albumId, photo),
   };

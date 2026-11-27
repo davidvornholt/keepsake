@@ -7,8 +7,8 @@ import type { NamedAlbum } from '../../shared/immich.ts';
 import {
   albumsOf,
   isAdded,
-  isCreated,
   listed,
+  madeFor,
   type Upload,
   withUploads,
 } from '../../shared/publication.ts';
@@ -20,19 +20,31 @@ import { outdatedOf } from './outdated.ts';
 /**
  * The publication with the upload of a photo's finished file that Immich
  * took, so that a publish that stops before the rest of the photo is sent
- * knows the upload, and whether it may take it back out of the album.
+ * knows the upload, and whether it may take it back out of the album, and
+ * the asset as keepsake's when Immich made it.
  */
 export const withSending = (
   publication: Publication,
   sending: SendingPhoto,
-): Publication =>
-  withUploads(publication, publication.albumId, (uploads) => ({
-    ...uploads,
-    sending: [
-      ...(uploads.sending ?? []).filter(({ photo }) => photo !== sending.photo),
-      sending,
-    ],
-  }));
+  isMade: boolean,
+): Publication => {
+  const made = madeFor(publication);
+  if (isMade) {
+    made.add(sending.asset);
+  }
+  return {
+    ...withUploads(publication, publication.albumId, (uploads) => ({
+      ...uploads,
+      sending: [
+        ...(uploads.sending ?? []).filter(
+          ({ photo }) => photo !== sending.photo,
+        ),
+        sending,
+      ],
+    })),
+    ...(made.size === 0 ? {} : { made: [...made] }),
+  };
+};
 
 /**
  * The publication with a photo's upload in it, and the one it replaced, which
@@ -60,7 +72,7 @@ export const withSent = (
     before !== undefined &&
     before.asset !== done.asset &&
     isAdded(before) &&
-    isCreated(before);
+    madeFor(publication).has(before.asset);
   return {
     ...sent,
     outdated: outdatedOf({
@@ -104,6 +116,7 @@ export const publicationFor = (
     ...(before === null || before.namesAdopted === true
       ? { namesAdopted: true }
       : {}),
+    ...(before?.made === undefined ? {} : { made: before.made }),
     outdated: before?.outdated ?? [],
     elsewhere: records.flatMap(
       ({ album: name, albumId, owned, photos, sending, adopted }) =>

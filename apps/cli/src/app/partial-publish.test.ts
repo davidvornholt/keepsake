@@ -33,33 +33,52 @@ const assetsOf = (album: string) =>
 const finalOf = (photo: string) =>
   shootFile('edits', photo, `${photo}-keepsake.jpg`);
 
+const own = 'asset-own';
+
+/**
+ * Publishes the shoot into an album that had A1's finished file, after a
+ * first try that Immich took only A1's finished file of.
+ */
+const publishOverOwn = async () => {
+  await pickLisbon();
+  await editLisbon();
+  const bytes = await readFile(finalOf('A1'));
+  fakeTools.library.push({
+    id: own,
+    file: '/camera/IMG_0001.jpg',
+    checksum: createHash('sha1').update(bytes).digest('hex'),
+  });
+  fakeTools.albums.push({
+    id: 'album-own',
+    name: 'Holidays',
+    assets: [
+      { id: own, fileName: 'IMG_0001.jpg', favorite: false, trashed: false },
+    ],
+  });
+  failCameraUploadOf('A1');
+  await failureOf('publish', 'lisbon', '--album', 'Holidays');
+  const afterFailure = assetsOf('album-own');
+  fakeTools.pause = undefined;
+  fakeTools.late = undefined;
+  return { afterFailure, again: await runOk('publish', 'lisbon') };
+};
+
 describe('a photo Immich took only part of', () => {
-  it('leaves what the album had of the same file', async () => {
-    await pickLisbon();
-    await editLisbon();
-    const bytes = await readFile(finalOf('A1'));
-    const own = 'asset-own';
-    fakeTools.library.push({
-      id: own,
-      file: '/camera/IMG_0001.jpg',
-      checksum: createHash('sha1').update(bytes).digest('hex'),
-    });
-    fakeTools.albums.push({
-      id: 'album-own',
-      name: 'Holidays',
-      assets: [
-        { id: own, fileName: 'IMG_0001.jpg', favorite: false, trashed: false },
-      ],
-    });
-    failCameraUploadOf('A1');
-    await failureOf('publish', 'lisbon', '--album', 'Holidays');
-    expect(assetsOf('album-own')).toContain(own);
-    fakeTools.pause = undefined;
-    fakeTools.late = undefined;
-    const again = await runOk('publish', 'lisbon');
+  it('leaves what the album had of the same file, once it is replaced', async () => {
+    const { afterFailure, again } = await publishOverOwn();
+    expect(afterFailure).toContain(own);
     expect(again).toMatchObject({ album: { id: 'album-own' }, published: 3 });
-    const because = ['--because', 'It is blurred.'];
-    await runOk('take-out', 'lisbon', 'A1', ...because);
+    await Bun.write(finalOf('A1'), 'another A1');
+    const edited = await runOk('publish', 'lisbon', 'A1');
+    expect(edited).toMatchObject({ published: 1, outdated: [] });
+    expect(assetsOf('album-own')).toContain(own);
+  });
+
+  it('leaves what the album had of the same file, once it is taken out', async () => {
+    const { afterFailure, again } = await publishOverOwn();
+    expect(afterFailure).toContain(own);
+    expect(again).toMatchObject({ album: { id: 'album-own' }, published: 3 });
+    await runOk('take-out', 'lisbon', 'A1', '--because', 'It is blurred.');
     expect(assetsOf('album-own')).toContain(own);
     await Bun.write(finalOf('A1'), 'another A1');
     const edited = await runOk('publish', 'lisbon', 'A1');

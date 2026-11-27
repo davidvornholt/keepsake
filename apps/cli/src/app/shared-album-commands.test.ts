@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import {
   editLisbon,
+  failureOf,
   pickLisbon,
   run,
   runOk,
@@ -147,6 +148,44 @@ describe('keepsake publish, of two shoots into one album', () => {
     expect(results.map(({ _tag }) => _tag)).toEqual(['Success', 'Success']);
     expect(fakeTools.albums).toHaveLength(1);
     expect(fakeTools.albums[0]?.assets).toHaveLength(6);
+  });
+});
+
+describe('keepsake publish, of a file another shoot has too', () => {
+  it('leaves the other shoot’s upload when its retry fails again', async () => {
+    await pickLisbon();
+    await editLisbon();
+    await editLater(sameAsLisbon);
+    // The first shoot's camera file of A1 fails each time.
+    fakeTools.broken.add(shootFile('edits', 'A1', 'A1.jpg'));
+    await failureOf('publish', 'lisbon', 'A1');
+    const { sending } = await shootJson('publication.json');
+    expect(sending).toEqual([{ photo: 'A1', asset: 'asset-1', added: false }]);
+    await runOk('publish', 'later', 'A1');
+    expect(inImmich()).toEqual(['asset-1']);
+    await failureOf('publish', 'lisbon', 'A1');
+    expect(inImmich()).toEqual(['asset-1']);
+  });
+
+  it('calls no upload outdated that is another shoot’s camera file', async () => {
+    await pickLisbon();
+    await editLisbon();
+    // The other shoot's A1 is finished as the camera took the first's.
+    await editLater((photo) =>
+      photo === 'A1'
+        ? copyFile(shootFile('edits', 'A1', 'A1.jpg'), laterFinal(photo))
+        : Bun.write(laterFinal(photo), `later ${photo}`),
+    );
+    await runOk('publish', 'later');
+    const [made] = (await laterAlbum()).photos;
+    await runOk('publish', 'lisbon');
+    const { photos } = await shootJson('publication.json');
+    expect(photos).toContainEqual(
+      expect.objectContaining({ photo: 'A1', cameraAsset: made.asset }),
+    );
+    await Bun.write(laterFinal('A1'), 'another A1');
+    const again = await runOk('publish', 'later', 'A1');
+    expect(again).toMatchObject({ published: 1, outdated: [] });
   });
 });
 

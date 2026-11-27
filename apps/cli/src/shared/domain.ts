@@ -251,14 +251,12 @@ export const EditRecord = Schema.Struct({
 export type EditRecord = typeof EditRecord.Type;
 
 /**
- * What Immich answered to the shoot's upload of a file: whether it made a new
- * asset of it, and whether the shoot put the asset into the album. Immich
- * keeps a file once, so the asset may be the owner's or another shoot's, and
- * be in the album already. Records from before keepsake noted this have
- * neither: all their uploads were keepsake's own files, which it put there.
+ * Whether the shoot put the upload into the album, as Immich answered: it
+ * keeps a file once, so the asset may have been in the album already, as the
+ * owner's or another shoot's. Records from before keepsake noted this don't
+ * have it, and their uploads count as put there.
  */
 const Ownership = {
-  created: Schema.optionalKey(Schema.Boolean),
   added: Schema.optionalKey(Schema.Boolean),
 };
 
@@ -270,8 +268,8 @@ export const PublishedPhoto = Schema.Struct({
   /** The SHA-256 of the file that was published. */
   digest: Schema.String,
   /**
-   * Earlier uploads of the photo that keepsake made and put into the album,
-   * which may wait there for the trash.
+   * Earlier uploads of the photo that keepsake put into the album, which may
+   * wait there for the trash.
    */
   replaced: Schema.optionalKey(Schema.Array(Schema.String)),
   ...Ownership,
@@ -293,7 +291,7 @@ export type SendingPhoto = typeof SendingPhoto.Type;
 /**
  * An upload that a publish from before keepsake noted every upload found by
  * its file's name, `<photo>-keepsake.jpg`, and that keepsake took on once as
- * the photo's. It is keepsake's own.
+ * the photo's. It counts as put there, like other uploads from then.
  */
 export const AdoptedPhoto = Schema.Struct({
   photo: Schema.String,
@@ -333,6 +331,12 @@ export const Publication = Schema.Struct({
    * Missing in records from before keepsake noted every upload.
    */
   namesAdopted: Schema.optionalKey(Schema.Boolean),
+  /**
+   * The assets keepsake made for the shoot, as Immich answered, which alone
+   * may be called outdated. Missing in records from before keepsake noted
+   * this, whose uploads may have been files the owner had.
+   */
+  made: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
   outdated: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The other albums keepsake published to, by their id. */
