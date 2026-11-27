@@ -245,8 +245,7 @@ describe('keepsake edit, with a wish and a budget', () => {
     const box = { left: 0.1, top: 0.4, right: 0.3, bottom: 0.6 };
     fakeModels.answers.places = {
       everywhere: false,
-      back: [],
-      replaces: [],
+      bringsBack: false,
       places: [{ part: 0, what: 'Remove the chair', isRemoval: true, box }],
     };
     fakeModels.answers.choices = {

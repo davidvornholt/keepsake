@@ -1,5 +1,5 @@
 import type { Shoot } from '../../../shared/domain.ts';
-import { sentence } from '../../../shared/sentence.ts';
+import { sentence } from '../prompt.ts';
 import { listed } from '../removals.ts';
 import type { Place } from './places.ts';
 

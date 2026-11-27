@@ -93,6 +93,13 @@ export const withoutUnwanted = (
       ]),
 ];
 
+/**
+ * What stays although the list of what to remove may name it, which the edit
+ * and the reviews are told alike.
+ */
+export const keepingFirst =
+  'Keeping the subject, someone who is with the people the photo was taken of, and what tells the place, such as a landmark, a sight or a distinctive mast or tower that stands there for good, comes before this list.';
+
 /** What to know about versions something was removed from. */
 export const aboutRemoved = (
   removed: ReadonlyArray<string>,
@@ -100,5 +107,5 @@ export const aboutRemoved = (
   removed.length === 0
     ? []
     : [
-        `The edit was asked to remove the following and to continue what is behind it. Taking away just that is no fault and changes neither the moment nor the place, the people or the text. It is a fault when any of it is still there, when a trace, a smear or a gap shows where it was, or when something else was put there:\n${listed(removed)}\nIt is a fault too when the edit took away more than a distraction: the subject, someone who is with the people the photo was taken of, or what tells the place, such as a landmark, a sight or a distinctive mast or tower that stands there for good, also where the list above names it.`,
+        `The edit was asked to remove the following and to continue what is behind it. Taking away just that is no fault and changes neither the moment nor the place, the people or the text. It is a fault when any of it is still there, when a trace, a smear or a gap shows where it was, or when something else was put there:\n${listed(removed)}\n${keepingFirst} Where the list names any of that, it is no fault that it is still there, and a fault when it is gone.`,
       ];

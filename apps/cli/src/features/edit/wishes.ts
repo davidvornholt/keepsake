@@ -1,5 +1,10 @@
 import { Effect, FileSystem } from 'effect';
 import { StoreFailed } from '../../shared/errors/errors.ts';
+import { sentence } from './prompt.ts';
+
+/** What the user wanted before and what they want now. */
+export const bothWishes = (before: string | null, now: string): string =>
+  before === null ? now : `${sentence(before)} ${now}`;
 
 /** Removes what is in a directory, except some files. */
 export const emptied = (directory: string, kept: ReadonlyArray<string>) =>

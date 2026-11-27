@@ -39,6 +39,12 @@ const herWithSticker = () => {
 
 const isAboutSticker = (what: string) => what.includes(sticker);
 
+/** What the page says was removed from B. */
+const removedOnPage = async () =>
+  (await whileServing(shootOf)).photos.find(
+    ({ id }: { readonly id: string }) => id === 'B',
+  )?.edit?.removed;
+
 /** What a command says wasn't done. */
 const notDoneIn = (result: {
   readonly notDone: ReadonlyArray<{ readonly what: string }>;
@@ -64,8 +70,7 @@ describe('keepsake edit, removing what is on a face', () => {
     herWithSticker();
     fakeModels.answers.places = {
       everywhere: false,
-      back: [],
-      replaces: [],
+      bringsBack: false,
       places: [
         { part: 0, what: sticker, isRemoval: true, box: onCheek },
         { part: 0, what: chair, isRemoval: true, box: beside },
@@ -104,15 +109,16 @@ describe('keepsake edit, removing what is on a face', () => {
     expect(notDone).toHaveLength(1);
     expect(notDone.every(isAboutSticker)).toBe(true);
     expect(notDone[0]).toContain('face');
-    // Neither the page nor a change counts it as taken out.
-    const shown = await whileServing(shootOf);
-    const edit = shown.photos.find(
-      ({ id }: { readonly id: string }) => id === 'B',
-    )?.edit;
-    expect(edit?.removed).toEqual([{ what: chair, box: beside }]);
+    // Neither the page nor a change counts it as taken out, also for an edit
+    // from before that was noted.
+    expect(await removedOnPage()).toEqual([{ what: chair, box: beside }]);
+    const record = shootFile('edits', 'B', 'edit.json');
+    const { removed: _, ...before } = await Bun.file(record).json();
+    await Bun.write(record, JSON.stringify(before));
+    expect(await removedOnPage()).toEqual([{ what: chair, box: beside }]);
     await editLisbon('B', '--wish', 'Warmer');
     const question = asked('places')[0]?.texts.join(' ') ?? '';
-    expect(question).toContain(`1. ${chair}`);
+    expect(question).toContain(`- ${chair}`);
     expect(question).not.toContain(sticker);
   });
 });

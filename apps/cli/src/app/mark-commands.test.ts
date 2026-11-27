@@ -286,8 +286,7 @@ describe('keepsake edit --mark', () => {
     await editLisbon('B');
     fakeModels.answers.places = {
       everywhere: false,
-      back: [],
-      replaces: [],
+      bringsBack: false,
       places: [{ part: 0, what: 'Remove the chair', isRemoval: true, box }],
     };
     fakeModels.answers.choices = {

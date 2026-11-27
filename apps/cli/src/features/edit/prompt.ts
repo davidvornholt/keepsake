@@ -1,7 +1,12 @@
 import type { Box, Photo, Pick, Shoot } from '../../shared/domain.ts';
-import { sentence } from '../../shared/sentence.ts';
 import { edgesBeyond } from './beyond.ts';
-import { listed } from './removals.ts';
+import { keepingFirst, listed } from './removals.ts';
+
+/** A text that ends like a sentence. */
+export const sentence = (text: string): string => {
+  const trimmed = text.trim();
+  return trimmed === '' || trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
+};
 
 type Wanted = {
   readonly shoot: Shoot;
@@ -23,7 +28,8 @@ const removing = (removed: ReadonlyArray<string>): string =>
     : `
 
 Remove all of the following, each with its shadow and reflection, and continue what is behind it as it would look there, without a trace, a blur or a gap. Put nothing else in its place:
-${listed(removed)}`;
+${listed(removed)}
+${keepingFirst} Should the list name any of that, leave it as it is.`;
 
 /** What the image model is asked to do with a photo. */
 export const editPrompt = ({

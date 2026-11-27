@@ -41,8 +41,7 @@ const finalFile = () => shootFile('edits', 'B', 'B-keepsake.jpg');
 const chairAt = (box: object) => {
   fakeModels.answers.places = {
     everywhere: false,
-    back: [],
-    replaces: [],
+    bringsBack: false,
     places: [{ part: 0, what: chair, isRemoval: true, box }],
   };
   fakeModels.answers.choices = {
@@ -229,9 +228,8 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await markB();
     fakeModels.answers.places = {
       everywhere: true,
+      bringsBack: false,
       places: [],
-      back: [],
-      replaces: [],
     };
     const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toHaveLength(1);
@@ -244,8 +242,7 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await editLisbon('B');
     await Bun.write(finalFile(), 'the former edit');
     await markB();
-    // What a change that stopped left behind, before marks were kept to and
-    // before it was asked what is to come back.
+    // What a change that stopped left behind, before marks were kept to.
     const correction = (name: string, value: object) =>
       Bun.write(
         shootFile('edits', 'B', 'correction', name),
