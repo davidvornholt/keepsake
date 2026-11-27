@@ -1,4 +1,4 @@
-import { Effect, Stream } from 'effect';
+import { Effect, Result, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { ToolFailed } from './errors/errors.ts';
 
@@ -21,11 +21,14 @@ type RunOptions = {
   readonly env?: Readonly<Record<string, string | undefined>>;
 };
 
+const notRun = (command: string, { message }: { readonly message: string }) =>
+  failed(command, `${message}. Is ${command} installed and on the PATH?`);
+
 /**
- * Runs a program without a shell and returns what it printed, whatever its
- * exit code.
+ * Runs a program without a shell and returns what it printed, and its exit
+ * code or why it has none, as when a signal stopped it.
  */
-export const runTool = Effect.fn('runTool')(
+export const runToolToEnd = Effect.fn('runToolToEnd')(
   function* (
     command: string,
     args: ReadonlyArray<string>,
@@ -47,25 +50,44 @@ export const runTool = Effect.fn('runTool')(
         extendEnv: true,
       }),
     );
-    const [stdout, stderr, exitCode] = yield* Effect.all(
-      [collect(handle.stdout), collect(handle.stderr), handle.exitCode],
+    const [stdout, stderr, ending] = yield* Effect.all(
+      [
+        collect(handle.stdout),
+        collect(handle.stderr),
+        Effect.result(handle.exitCode),
+      ],
       { concurrency: 'unbounded' },
     );
     return {
       stdout,
       stderr: new TextDecoder().decode(stderr).trim(),
-      exitCode: Number(exitCode),
+      ending: Result.mapBoth(ending, {
+        onSuccess: Number,
+        onFailure: (error) => notRun(command, error),
+      }),
     };
   },
   Effect.scoped,
   (effect, command) =>
-    Effect.mapError(effect, (error) =>
-      failed(
-        command,
-        `${error.message}. Is ${command} installed and on the PATH?`,
-      ),
-    ),
+    Effect.mapError(effect, (error) => notRun(command, error)),
 );
+
+/**
+ * Runs a program without a shell and returns what it printed, whatever its
+ * exit code.
+ */
+export const runTool = Effect.fn('runTool')(function* (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: RunOptions = {},
+) {
+  const { stdout, stderr, ending } = yield* runToolToEnd(
+    command,
+    args,
+    options,
+  );
+  return { stdout, stderr, exitCode: yield* Effect.fromResult(ending) };
+});
 
 /** Runs a program that must succeed and returns the bytes it printed. */
 export const toolBytes = Effect.fn('toolBytes')(function* (

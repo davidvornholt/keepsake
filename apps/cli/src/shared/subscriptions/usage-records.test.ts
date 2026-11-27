@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -56,6 +56,46 @@ describe('a usage record', () => {
     const started = performance.now();
     await recordOnce(() => ({ writeFileString: () => Effect.never }));
     expect(performance.now() - started).toBeLessThan(2000);
+  });
+
+  it('stays whole after a write that stopped part of the way', async () => {
+    let writes = 0;
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const record = yield* usageRecorder({
+          folder: Effect.sync(() => home),
+          lines: (_events, { id }) => [{ type: 'assistant', id }],
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            writeFileString: (path, text, options) => {
+              writes += 1;
+              return writes === 1
+                ? Effect.andThen(
+                    fs.writeFileString(path, text.slice(0, -10), options),
+                    Effect.never,
+                  )
+                : fs.writeFileString(path, text, options);
+            },
+          }),
+        );
+        yield* record([]);
+        yield* record([]);
+      }).pipe(Effect.provide(BunServices.layer)),
+    );
+    const folder = join(home, 'keepsake');
+    const [file = ''] = await readdir(folder);
+    const read = (await readFile(join(folder, file), 'utf8'))
+      .split('\n')
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line)];
+        } catch {
+          return [];
+        }
+      });
+    expect(read).toEqual([{ type: 'assistant', id: expect.any(String) }]);
   });
 
   it('is left out when there is no folder for it', async () => {

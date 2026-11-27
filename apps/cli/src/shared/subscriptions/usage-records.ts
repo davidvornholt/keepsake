@@ -58,12 +58,14 @@ export const usageRecorder = Effect.fn('usageRecorder')(function* ({
         id: crypto.randomUUID(),
         at: DateTime.formatIso(yield* DateTime.now),
       };
-      const text = lines(events, call)
-        .map((line) => `${JSON.stringify(line)}\n`)
-        .join('');
-      if (text === '') {
+      const written = lines(events, call).map((line) => JSON.stringify(line));
+      if (written.length === 0) {
         return;
       }
+      // Starting on a line of its own keeps the record whole after a write
+      // that ended part of the way through a line. That part is a line no
+      // reader can parse, and they skip it.
+      const text = `\n${written.join('\n')}\n`;
       // Only the owner reads them, like the programs' own sessions.
       yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
       // One write for each call keeps its lines together beside other calls.

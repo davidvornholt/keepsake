@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
-import { Effect, Layer, Sink, Stream } from 'effect';
+import { Effect, Layer, PlatformError, Sink, Stream } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { answerPhotos, type FakeAlbum } from './fake-photos.ts';
 
@@ -84,6 +84,8 @@ export const fakeTools = {
   pause: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
   /** Holds back what a program answered, as it was when it ran, until the promise settles. */
   late: undefined as ((run: Run) => Promise<void> | undefined) | undefined,
+  /** The signal that stops a program after it printed its output, if any. */
+  killedBy: undefined as ((run: Run) => string | undefined) | undefined,
 };
 
 export const resetTools = () => {
@@ -100,6 +102,7 @@ export const resetTools = () => {
   fakeTools.pictures = {};
   fakeTools.pause = undefined;
   fakeTools.late = undefined;
+  fakeTools.killedBy = undefined;
 };
 
 const exiftool = (args: ReadonlyArray<string>): string => {
@@ -258,6 +261,21 @@ const inputOf = (stdin: unknown) =>
       )
     : Effect.succeed(new Uint8Array());
 
+/** How the program ends: with an exit code, or stopped by a signal. */
+const exitCodeOf = (run: Run, error: string) => {
+  const signal = fakeTools.killedBy?.(run);
+  return signal === undefined
+    ? Effect.succeed(ChildProcessSpawner.ExitCode(error === '' ? 0 : 1))
+    : Effect.fail(
+        PlatformError.systemError({
+          _tag: 'Unknown',
+          module: 'ChildProcess',
+          method: 'exitCode',
+          description: `Process interrupted due to receipt of signal: '${signal}'`,
+        }),
+      );
+};
+
 const spawner = ChildProcessSpawner.make((spawned) =>
   Effect.gen(function* () {
     const inputBytes = ChildProcess.isStandardCommand(spawned)
@@ -287,9 +305,7 @@ const spawner = ChildProcessSpawner.make((spawned) =>
     );
     return ChildProcessSpawner.makeHandle({
       pid: ChildProcessSpawner.ProcessId(firstPid + fakeTools.runs.length),
-      exitCode: Effect.succeed(
-        ChildProcessSpawner.ExitCode(error === '' ? 0 : 1),
-      ),
+      exitCode: exitCodeOf(run, error),
       isRunning: Effect.succeed(false),
       kill: () => Effect.void,
       stdin: Sink.drain,

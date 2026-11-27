@@ -32,8 +32,8 @@ const recordFiles = (folder: string) => {
       name,
       text,
       lines: text
-        .trimEnd()
         .split('\n')
+        .filter((line) => line !== '')
         .map((line) => JSON.parse(line)),
     };
   });
@@ -45,14 +45,69 @@ const saidIn = (text: string) =>
     (said) => text.includes(said),
   );
 
+/** A block of message `msg_1`, with its usage so far. */
+const block = (usage: object) => ({
+  type: 'assistant',
+  message: {
+    id: 'msg_1',
+    model: 'claude-opus-5-5',
+    content: [{ type: 'text', text: 'A heron' }],
+    usage: {
+      input_tokens: 2,
+      cache_creation_input_tokens: 1000,
+      cache_read_input_tokens: 500,
+      output_tokens: 3,
+      ...usage,
+    },
+  },
+});
+
+/**
+ * What Claude Code's calls left: how many files, whether each call left one
+ * line, what was said in them, and each different usage they name.
+ */
+const claudeUsage = () => {
+  const calls = fakeTools.runs.filter(
+    ({ command, args }) => command === 'claude' && args[0] === '--print',
+  );
+  const files = recordFiles(join(fake.home, '.claude', 'projects'));
+  const text = files.map((file) => file.text).join('');
+  const recorded = files.flatMap((file) => file.lines);
+  const usage = recorded.map(({ costUSD, message }) =>
+    JSON.stringify({ costUSD, ...message.usage }),
+  );
+  return {
+    files: files.length,
+    onePerCall: recorded.length === calls.length,
+    said: [...saidIn(text), ...(text.includes('A heron') ? ['A heron'] : [])],
+    usage: [...new Set(usage)].map((used) => JSON.parse(used)),
+  };
+};
+
+/** One file, with a line for each call that names `usage`. */
+const recordedOnce = (usage: object) => ({
+  files: 1,
+  onePerCall: true,
+  said: [],
+  usage: [usage],
+});
+
+const fromBlocks = {
+  input_tokens: 2,
+  cache_creation_input_tokens: 1000,
+  cache_read_input_tokens: 500,
+  output_tokens: 80,
+  cache_creation: { ephemeral_1h_input_tokens: 0 },
+};
+
+const opus = 'claude/claude-opus-5-5';
+
 const isoTime = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/u;
 
 /** Named so that neither program lists it among its sessions. */
 const recordName = /^keepsake-(?<session>[\da-f-]{36})\.jsonl$/u;
 
 describe('the usage of Claude Code', () => {
-  const opus = 'claude/claude-opus-5-5';
-
   it('is recorded where Claude Code keeps its sessions', async () => {
     fakeTools.assistant = () =>
       claudeAnswer({ is_error: false, structured_output: verdictAnswer });
@@ -94,41 +149,6 @@ describe('the usage of Claude Code', () => {
     expect(file?.lines[0].message.usage.output_tokens).toBe(80);
   });
 
-  it('is recorded from the messages when Claude Code stops before its result', async () => {
-    const block = (output_tokens: number) => ({
-      type: 'assistant',
-      message: {
-        id: 'msg_1',
-        model: 'claude-opus-5-5',
-        content: [{ type: 'text', text: 'A heron' }],
-        usage: {
-          input_tokens: 2,
-          cache_creation_input_tokens: 1000,
-          cache_read_input_tokens: 500,
-          output_tokens,
-        },
-      },
-    });
-    fakeTools.assistant = () =>
-      lines({ type: 'system', subtype: 'init' }, block(3), block(80));
-    await failureOf('cull', 'lisbon', '--model', opus);
-    const [file] = recordFiles(join(fake.home, '.claude', 'projects'));
-    expect(file?.lines).toHaveLength(3);
-    expect(file?.lines[0]).not.toHaveProperty('costUSD');
-    expect(file?.lines[0].message).toEqual({
-      model: 'claude-opus-5-5',
-      usage: {
-        input_tokens: 2,
-        cache_creation_input_tokens: 1000,
-        cache_read_input_tokens: 500,
-        output_tokens: 80,
-        cache_creation: { ephemeral_1h_input_tokens: 0 },
-      },
-    });
-    expect(saidIn(file?.text ?? '')).toEqual([]);
-    expect(file?.text).not.toContain('A heron');
-  });
-
   it('is not recorded without a home, and the answers still come', async () => {
     fake.env = { HOME: undefined };
     fakeTools.assistant = () =>
@@ -136,6 +156,91 @@ describe('the usage of Claude Code', () => {
     const { models } = await cull(opus);
     expect(models[opus].calls).toBe(3);
     expect(existsSync(join(fake.home, '.claude'))).toBe(false);
+  });
+});
+
+describe('the usage of Claude Code cut short', () => {
+  it('is read from the messages when it stops before its result', async () => {
+    fakeTools.assistant = () =>
+      lines(
+        { type: 'system', subtype: 'init' },
+        block({}),
+        block({ output_tokens: 80 }),
+      );
+    await failureOf('cull', 'lisbon', '--model', opus);
+    expect(claudeUsage()).toEqual(recordedOnce(fromBlocks));
+  });
+
+  it('is recorded when a signal stops Claude Code after it printed', async () => {
+    fakeTools.assistant = () =>
+      claudeAnswer({ is_error: false, structured_output: verdictAnswer });
+    fakeTools.killedBy = ({ args }) =>
+      args[0] === '--print' ? 'SIGTERM' : undefined;
+    const failure = await failureOf('cull', 'lisbon', '--model', opus);
+    expect(failure.message).toContain('SIGTERM');
+    expect(claudeUsage()).toEqual(
+      recordedOnce({ ...fromBlocks, costUSD: 0.03 }),
+    );
+  });
+
+  it('is recorded from what was printed before a line was cut off', async () => {
+    fakeTools.assistant = () =>
+      `${lines(block({ output_tokens: 80 }))}\n{"type":`;
+    await failureOf('cull', 'lisbon', '--model', opus);
+    expect(claudeUsage()).toEqual(recordedOnce(fromBlocks));
+  });
+
+  it('counts tokens of a message whose other kinds are null', async () => {
+    fakeTools.assistant = () =>
+      lines({
+        type: 'assistant',
+        message: {
+          id: 'msg_1',
+          model: 'claude-opus-5-5',
+          usage: {
+            input_tokens: 12,
+            cache_creation_input_tokens: null,
+            cache_read_input_tokens: null,
+            cache_creation: null,
+            output_tokens: 7,
+          },
+        },
+      });
+    await failureOf('cull', 'lisbon', '--model', opus);
+    expect(claudeUsage()).toEqual(
+      recordedOnce({
+        input_tokens: 12,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        output_tokens: 7,
+        cache_creation: { ephemeral_1h_input_tokens: 0 },
+      }),
+    );
+  });
+
+  it('is read from the messages when the summary names no model', async () => {
+    fakeTools.assistant = () =>
+      lines(block({ output_tokens: 80 }), {
+        type: 'result',
+        is_error: true,
+        result: 'Stopped.',
+        modelUsage: {},
+      });
+    await failureOf('cull', 'lisbon', '--model', opus);
+    expect(claudeUsage()).toEqual(recordedOnce(fromBlocks));
+  });
+
+  it('is counted once from the summary when the messages say it too', async () => {
+    const answer = claudeAnswer({
+      is_error: false,
+      structured_output: verdictAnswer,
+    });
+    fakeTools.assistant = () =>
+      `${lines(block({}), block({ output_tokens: 80 }))}\n${answer}`;
+    await cull(opus);
+    expect(claudeUsage()).toEqual(
+      recordedOnce({ ...fromBlocks, costUSD: 0.03 }),
+    );
   });
 });
 

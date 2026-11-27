@@ -30,13 +30,20 @@ const isBlock = Schema.is(
       model: Schema.String,
       usage: Schema.Struct({
         input_tokens: Schema.Int,
-        cache_creation_input_tokens: Schema.optionalKey(Schema.Int),
-        cache_read_input_tokens: Schema.optionalKey(Schema.Int),
+        // Anthropic sends null for a kind of token it doesn't count.
+        cache_creation_input_tokens: Schema.optionalKey(
+          Schema.NullOr(Schema.Int),
+        ),
+        cache_read_input_tokens: Schema.optionalKey(Schema.NullOr(Schema.Int)),
         output_tokens: Schema.Int,
         cache_creation: Schema.optionalKey(
-          Schema.Struct({
-            ephemeral_1h_input_tokens: Schema.optionalKey(Schema.Int),
-          }),
+          Schema.NullOr(
+            Schema.Struct({
+              ephemeral_1h_input_tokens: Schema.optionalKey(
+                Schema.NullOr(Schema.Int),
+              ),
+            }),
+          ),
         ),
       }),
     }),
@@ -55,7 +62,8 @@ type Used = {
 
 const byModel = (events: ReadonlyArray<unknown>) => {
   const spent = events.findLast(isSpent);
-  return spent === undefined
+  // An empty summary, as Claude Code gives when it fails early, says nothing.
+  return spent === undefined || Object.keys(spent.modelUsage).length === 0
     ? undefined
     : Object.entries(spent.modelUsage).map(
         ([model, used]): Used => ({
