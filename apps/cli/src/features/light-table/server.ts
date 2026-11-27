@@ -80,7 +80,11 @@ const unframed =
     const etag = request.headers.get('if-none-match');
     const own = await fetch(
       new URL(hidden, `http://127.0.0.1:${server.port}`),
-      { headers: etag === null ? {} : { 'if-none-match': etag } },
+      {
+        headers: etag === null ? {} : { 'if-none-match': etag },
+        // The page is here, not behind a proxy the environment names.
+        proxy: false,
+      },
     );
     const headers = new Headers({
       'content-security-policy': "frame-ancestors 'none'",
@@ -94,7 +98,6 @@ const unframed =
     return new Response(own.body, { status: own.status, headers });
   };
 
-/** The page under the route `unframed` reads it from. */
 const pageAt = (hidden: string): Record<string, Bun.HTMLBundle> => ({
   [hidden]: page,
 });

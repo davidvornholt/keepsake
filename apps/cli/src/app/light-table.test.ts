@@ -316,6 +316,21 @@ describe('who the light table answers', () => {
     expect(policies).toEqual(new Array(2).fill("frame-ancestors 'none'"));
   });
 
+  it('serves the page also where requests go through a proxy', async () => {
+    process.env.HTTP_PROXY = 'http://127.0.0.1:9';
+    try {
+      const response = await whileServing((address) =>
+        fetch(`${address}/lisbon/photos/B`, { proxy: false }),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-security-policy')).toBe(
+        "frame-ancestors 'none'",
+      );
+    } finally {
+      delete process.env.HTTP_PROXY;
+    }
+  });
+
   it('says that something else uses its port', async () => {
     const other = Bun.serve({ port: 0, fetch: () => new Response() });
     try {
