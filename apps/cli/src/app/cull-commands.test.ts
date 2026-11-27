@@ -277,6 +277,24 @@ describe('keepsake pick', () => {
     const failure = await failureOf('pick', 'lisbon');
     expect(failure.message).toContain('keepsake cull lisbon');
   });
+});
+
+describe('keepsake pick --minimum-score', () => {
+  it('picks from score 6 on unless told otherwise', async () => {
+    await scanLisbon();
+    const scores = [5, 6, 8];
+    fakeModels.answers.judgement = () => ({
+      ...verdictAnswer,
+      score: scores.shift() ?? 8,
+    });
+    await runOk('cull', 'lisbon');
+    expect(await runOk('pick', 'lisbon')).toMatchObject({
+      candidates: 2,
+      picked: 2,
+    });
+    const stricter = await runOk('pick', 'lisbon', '--minimum-score', '7');
+    expect(stricter).toMatchObject({ candidates: 1, picked: 1 });
+  });
 
   it('refuses a score outside 1 to 10', async () => {
     const failure = await failureOf('pick', 'lisbon', '--minimum-score', '11');

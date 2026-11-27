@@ -71,7 +71,7 @@ describe('the light table', () => {
     expect(view).toMatchObject({
       name: 'lisbon',
       album: { url: 'https://photos.example.com/albums/album-1' },
-      picked: { minimumScore: 7, maximum: null },
+      picked: { minimumScore: 6, maximum: null },
       activity: null,
       preparation: null,
       agent: { waitsSince: null, canStart: false, started: null },
