@@ -1,7 +1,7 @@
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { wholePicture } from '../../shared/boxes.ts';
 import type { Box } from '../../shared/domain.ts';
-import { putBack } from './keep-originals.ts';
+import { putBack, removedIn } from './keep-originals.ts';
 import { isBlock, picture, valueAt } from './pixels/test-pictures.ts';
 
 /** Looking for the photo in an edit takes seconds on a slow machine. */
@@ -224,5 +224,27 @@ describe.each([
     const changed = changes({ ...box, top: face.top });
     expect(changed(place.top + 10, faceBottom - 10)).toBeGreaterThan(0);
     expect(changed(faceBottom + 20, place.bottom - 10)).toBe(0);
+  });
+});
+
+describe('removedIn', () => {
+  it('says where an edit that moved the photo shows what was removed', () => {
+    const [removed] = removedIn(photoWith(letters), editWith(letters), {
+      crop: wholePicture,
+      removals: [{ what: 'a bin', box }],
+    });
+    const shown = (position: number, along: 'x' | 'y', side: number) =>
+      (position * side * scale + offset[along]) / side;
+    expect(removed?.what).toBe('a bin');
+    expect(removed?.box.left).toBeCloseTo(shown(box.left, 'x', size.width), 2);
+    expect(removed?.box.top).toBeCloseTo(shown(box.top, 'y', size.height), 2);
+    expect(removed?.box.right).toBeCloseTo(
+      shown(box.right, 'x', size.width),
+      2,
+    );
+    expect(removed?.box.bottom).toBeCloseTo(
+      shown(box.bottom, 'y', size.height),
+      2,
+    );
   });
 });

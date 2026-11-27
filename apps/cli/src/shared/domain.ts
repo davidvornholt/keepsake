@@ -242,6 +242,11 @@ export const EditRecord = Schema.Struct({
   review: Schema.String,
   /** How many versions the image model made. */
   attempts: Schema.Int,
+  /**
+   * What the edit took out of the photo, in fractions of the finished photo.
+   * Edits from before it was noted took out what `removals.json` lists.
+   */
+  removed: Schema.optionalKey(Schema.Array(Removal)),
 });
 export type EditRecord = typeof EditRecord.Type;
 
