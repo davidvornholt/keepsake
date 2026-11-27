@@ -8,6 +8,7 @@ import {
   standingOf,
 } from './choice-fixtures.ts';
 import { editLisbon, setUp, shootFile, tearDown } from './command-fixtures.ts';
+import { fakeTools } from './fake-tools.ts';
 import { whileServing } from './light-table-fixtures.ts';
 
 // What the page does with a choice it stopped in the middle of, or that
@@ -42,5 +43,30 @@ describe('a photo used instead of one that is the same file in Immich', () => {
     expect(failed).toHaveLength(2);
     expect(inImmich()).toEqual(['A1', 'B', 'C']);
     expect(await standingOf('A1')).toEqual(before);
+  });
+});
+
+describe('a photo Immich took only part of', () => {
+  it('isn’t left in the album', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const before = await standingOf('A2');
+    // Immich takes the finished file, and then not the camera's own one.
+    const camera = '/A2/A2.jpg';
+    fakeTools.pause = ({ args }) => {
+      if (args[0] === 'upload' && args[1]?.endsWith(camera)) {
+        fakeTools.broken.add(camera);
+      }
+    };
+    fakeTools.late = () => {
+      fakeTools.broken.delete(camera);
+    };
+    const failed = await whileServing(async (address) => {
+      await choose(address, { photo: 'A2', wants: 'in' });
+      return settled(address);
+    });
+    expect(failed).toMatchObject([{ photo: 'A2', wants: 'in' }]);
+    expect(inImmich()).toEqual(['A1', 'B', 'C']);
+    expect(await standingOf('A2')).toEqual(before);
   });
 });

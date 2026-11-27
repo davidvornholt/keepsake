@@ -19,6 +19,7 @@ import {
   listAlbums,
   markFavorite,
   type NamedAlbum,
+  removeFromAlbum,
   signedInUser,
   stackPhotos,
   tagPhoto,
@@ -144,17 +145,29 @@ const send = Effect.fn('send')(function* (
   open: OpenShoot,
   job: Job,
   album: string,
+  /** The uploads in the album before. */
+  there: ReadonlySet<string>,
 ) {
   const { photo, digest, before } = job;
   const files = open.files.edit(photo);
   const asset = yield* uploadPhoto(files.final, album);
-  const cameraAsset = yield* uploadPhoto(files.camera, null);
-  yield* stackPhotos(asset, cameraAsset);
-  yield* tagPhoto(tag, asset);
   const isReplaced = before !== undefined && before.asset !== asset;
-  if (isReplaced) {
-    yield* carryFavorite(open, album, before.asset, asset);
-  }
+  // A photo that isn't published whole doesn't stay in the album.
+  const cameraAsset = yield* Effect.gen(function* () {
+    const camera = yield* uploadPhoto(files.camera, null);
+    yield* stackPhotos(asset, camera);
+    yield* tagPhoto(tag, asset);
+    if (isReplaced) {
+      yield* carryFavorite(open, album, before.asset, asset);
+    }
+    return camera;
+  }).pipe(
+    Effect.onError(() =>
+      there.has(asset)
+        ? Effect.void
+        : Effect.ignore(removeFromAlbum(album, [asset])),
+    ),
+  );
   const replaced = before === undefined ? [] : [...(before.replaced ?? [])];
   return {
     photo,
@@ -307,6 +320,7 @@ const publishNow = Effect.fn('publish')(function* (
   const target = yield* targetOf(open, before, chosenAlbum, albums);
   const { published, there } = yield* albumNow(open, before, target);
   const inAlbum = new Set(there?.photos.map(({ photo }) => photo));
+  const uploads = new Set(there?.photos.map(({ asset }) => asset));
   const ready = yield* jobs(open, names, target, published);
   const todo = ready.filter(
     ({ photo, digest, before: earlier }) =>
@@ -321,7 +335,7 @@ const publishNow = Effect.fn('publish')(function* (
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
-      const done = yield* send(open, job, album.id);
+      const done = yield* send(open, job, album.id, uploads);
       publication = withSent(publication, done, job.before);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;

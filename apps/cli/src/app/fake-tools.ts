@@ -13,7 +13,7 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { answerPhotos, type FakeAlbum } from './fake-photos.ts';
 
 /** A program that was run. */
-type Run = {
+export type Run = {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   /** What it read from its standard input. */
