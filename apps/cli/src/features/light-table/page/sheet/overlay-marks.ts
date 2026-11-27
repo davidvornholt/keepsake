@@ -99,11 +99,10 @@ const drawBlue = (
 const drawMark = (
   { pencil, madeAt, now, scale, ceiling }: Drawn,
   rect: Rect,
-  shown: Frame['marks'][number] & { readonly photo: string },
+  shown: Frame['marks'][number],
 ): boolean => {
-  const { kind } = shown.mark;
-  const look = lookOf[kind];
-  const key = seedTextOf(shown.photo, kind);
+  const look = lookOf[shown.pencil];
+  const key = seedTextOf(shown.photo, shown.pencil);
   const stamp = { shape: look.shape, seed: seedOf(key), wax: look.wax };
   const place = markOnFrame(rect);
   if (shown.state === 'news') {
@@ -137,9 +136,7 @@ export const drawMarks = (drawn: Drawn, frame: Frame, rect: Rect): boolean => {
       ...rect,
       x: rect.x + at * markOnFrame(rect).size * besideShare,
     };
-    isDrawing =
-      drawMark(drawn, beside, { ...shown, photo: shown.mark.photo }) ||
-      isDrawing;
+    isDrawing = drawMark(drawn, beside, shown) || isDrawing;
   }
   if (frame.isFavorite) {
     const place = heartPlace(rect, drawn.ceiling);

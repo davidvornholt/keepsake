@@ -9,21 +9,6 @@ import type { Ledger } from './ledger.ts';
 
 const iconSize = 16;
 
-/** How many photos the album has afterwards, when the marks change that. */
-const Album = ({ ledger }: { readonly ledger: Ledger }) => {
-  const { chosen, chosenAfter, limit } = ledger;
-  if (chosen === chosenAfter) {
-    return null;
-  }
-  const isOver = limit !== null && chosenAfter > limit;
-  return (
-    <span className={isOver ? 'text-wax-yellow' : ''}>
-      {ledger.isFirst ? 'Chosen' : 'Album'} {chosen} to {chosenAfter}
-      {limit === null ? '' : ` of ${limit}`}
-    </span>
-  );
-};
-
 /** Who acts on it, said before it is handed over. */
 const whoOf = ({
   waitsSince,
@@ -89,7 +74,6 @@ export const HandOverFoot = ({
       {hasSomething ? (
         <p className="type-edge tabular mr-auto flex flex-wrap gap-x-4 gap-y-1 text-quiet">
           <span>{ask.cost}</span>
-          <Album ledger={ledger} />
           <span>{whoOf(state.agent)}</span>
         </p>
       ) : (

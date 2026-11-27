@@ -29,64 +29,37 @@ const photos = [
 ];
 
 const marks = [
-  sampleMark('1', { photo: 'd', kind: 'put-in' }),
-  sampleMark('2', { photo: 'c', kind: 'swap', other: 'b' }),
-  sampleMark('3', { photo: 'a', kind: 'change', note: 'Lighter' }),
-  sampleMark('5', { photo: 'b', kind: 'take-out', ...handedOver }),
+  sampleMark('3', { photo: 'a', note: 'Lighter' }),
+  sampleMark('4', { photo: 'b', note: 'Warmer' }),
+  sampleMark('5', { photo: 'b', note: 'Straighter', ...handedOver }),
   sampleMark('6', {
     photo: 'a',
-    kind: 'change',
+    note: 'Less sky',
     ...handedOver,
     answer: { outcome: 'done', note: '', at: '2026-05-21T11:00:00.000Z' },
   }),
-  sampleMark('7', { photo: 'gone', kind: 'take-out' }),
+  sampleMark('7', { photo: 'gone', note: 'Gone' }),
 ];
 
 describe('ledgerOf', () => {
   const ledger = ledgerOf(indexOf(sampleShoot(photos, marks)));
 
   it('lists what an agent is to do in the order of the shoot', () => {
-    expect(ledger.open.map(({ mark }) => mark.id)).toEqual(['3', '2', '1']);
+    expect(ledger.open.map(({ mark }) => mark.id)).toEqual(['3', '4']);
     expect(ledger.waiting.map(({ mark }) => mark.id)).toEqual(['5']);
-    expect(ledger.open[1]?.other?.id).toBe('b');
     expect(ledger.news).toBe(1);
   });
 
-  it('counts what costs money and how many photos are chosen afterwards', () => {
-    // The change, and the swap of a photo that has no edit yet; the photo
-    // that is put in was edited before.
-    expect(ledger.open.map(({ costs }) => costs)).toEqual([true, true, false]);
+  it('counts what costs money', () => {
+    expect(ledger.open.map(({ costs }) => costs)).toEqual([true, true]);
     expect(ledger.ordersAlbum).toBe(false);
     expect(ledger.edits).toBe(2);
     expect(ledger.dollars).toBeCloseTo(1.5);
-    expect(ledger.chosen).toBe(2);
-    expect(ledger.chosenAfter).toBe(3);
-    expect(ledger.limit).toBe(170);
-  });
-
-  it('costs an edit for a wish that comes in with a photo edited before', () => {
-    const wished = marks.map((mark) =>
-      mark.id === '1' ? { ...mark, note: 'Warmer' } : mark,
-    );
-    const wishedFor = ledgerOf(indexOf(sampleShoot(photos, wished)));
-    expect(wishedFor.open.map(({ costs }) => costs)).toEqual([
-      true,
-      true,
-      true,
-    ]);
-    expect(wishedFor.edits).toBe(3);
-  });
-
-  it('counts a wish for a photo without an edit as part of its first edit', () => {
-    const wished = marks.map((mark) =>
-      mark.id === '2' ? { ...mark, note: 'Warmer' } : mark,
-    );
-    expect(ledgerOf(indexOf(sampleShoot(photos, wished))).edits).toBe(2);
   });
 
   it('keeps marks with the open ones while they are shown going', () => {
     const held = ledgerOf(indexOf(sampleShoot(photos, marks)), new Set(['5']));
-    expect(held.open.map(({ mark }) => mark.id)).toEqual(['3', '5', '2', '1']);
+    expect(held.open.map(({ mark }) => mark.id)).toEqual(['3', '4', '5']);
     expect(held.waiting).toEqual([]);
   });
 });
@@ -108,28 +81,14 @@ describe('an album that is ordered', () => {
     expect(ledger.dollars).toBeCloseTo(2.25);
   });
 
-  it('counts what the marks add and spare', () => {
+  it('counts a wish as part of the first edit of its photo', () => {
     const ledger = ledgerOf(
       indexOf(
-        sampleShoot(chosen, [
-          // A wish is part of the first edit of its photo.
-          sampleMark('1', { photo: 'a', kind: 'change', note: 'Warmer' }),
-          // One edit for another: the photo in front isn't edited.
-          sampleMark('2', { photo: 'c', kind: 'swap', other: 'b' }),
-          sampleMark('3', { photo: 'd', kind: 'take-out' }),
-          sampleMark('4', { photo: 'e', kind: 'put-in' }),
-        ]),
+        sampleShoot(chosen, [sampleMark('1', { photo: 'a', note: 'Warmer' })]),
       ),
     );
-    expect(ledger.open.map(({ costs }) => costs)).toEqual([
-      false,
-      true,
-      false,
-      true,
-    ]);
-    // Three chosen, two more to edit, two spared.
+    expect(ledger.open.map(({ costs }) => costs)).toEqual([false]);
     expect(ledger.edits).toBe(3);
-    expect(ledger.chosenAfter).toBe(3);
   });
 
   it('costs nothing for what is edited already', () => {
@@ -140,8 +99,7 @@ describe('an album that is ordered', () => {
       indexOf(
         sampleShoot(edited, [
           // A wish for a photo that is edited already is one more edit.
-          sampleMark('1', { photo: 'a', kind: 'change', note: 'Warmer' }),
-          sampleMark('2', { photo: 'd', kind: 'take-out' }),
+          sampleMark('1', { photo: 'a', note: 'Warmer' }),
         ]),
       ),
     );
@@ -163,25 +121,15 @@ describe('an album that is ordered', () => {
     expect(ledger.firstEdits).toBe(3);
   });
 
-  it('counts each photo that comes in for the same one', () => {
-    const ledger = ledgerOf(
-      indexOf(
-        sampleShoot(
-          [
-            samplePhoto('a', picked),
-            sampleBehind('b', 'a'),
-            sampleBehind('c', 'a'),
-          ],
-          [
-            sampleMark('1', { photo: 'b', kind: 'swap', other: 'a' }),
-            sampleMark('2', { photo: 'c', kind: 'swap', other: 'a' }),
-          ],
-        ),
-      ),
-    );
-    // A is spared once, and both B and C are edited instead.
-    expect(ledger.edits).toBe(2);
-    expect(ledger.firstEdits).toBe(0);
+  it('is offered for a photo put in after the album was made', () => {
+    // z is in the album; e was left out, and the owner put it in.
+    const album = samplePhoto('z', { edit: sampleEdit('z') });
+    const putIn = samplePhoto('e', picked);
+    const ledger = ledgerOf(indexOf(sampleShoot([album, putIn])));
+    expect(ledger.ordersAlbum).toBe(true);
+    expect(ledger.isFirst).toBe(false);
+    expect(ledger.picked).toBe(1);
+    expect(ledger.edits).toBe(1);
   });
 
   it('isn’t ordered a second time', () => {

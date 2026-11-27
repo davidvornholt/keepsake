@@ -5,6 +5,7 @@ import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
 import { standings } from '../../shared/standing.ts';
 import { type OpenShoot, openShoot } from '../../shared/store.ts';
 import { startAgent } from './agent.ts';
+import { choose, dismissChoice } from './choices.ts';
 import { pictureWidths } from './contract.ts';
 import { setFavorite } from './favorites.ts';
 import { type Folders, lookAtFolder } from './folders.ts';
@@ -15,7 +16,15 @@ import { makeMark, seeMark, takeBack } from './marks.ts';
 import { forgetShoot, makeShoot } from './new-shoot.ts';
 import { fullSize, isCurrent, smaller } from './pictures.ts';
 import type { Preparations } from './preparation.ts';
-import { Favorite, HandOver, NewLabels, NewMark, NewShoot } from './schemas.ts';
+import {
+  Favorite,
+  HandOver,
+  NewChoice,
+  NewLabels,
+  NewMark,
+  NewShoot,
+} from './schemas.ts';
+import type { Settling } from './settling.ts';
 import type { Shoots } from './shoots.ts';
 import { agentWaitsSince } from './waiting.ts';
 
@@ -101,6 +110,7 @@ export type Has = {
   readonly shoots: Shoots;
   readonly folders: Folders;
   readonly preparations: Preparations;
+  readonly settling: Settling;
   readonly workers: Semaphore.Semaphore;
   /** The program that starts an agent, if there is one. */
   readonly agent: string | undefined;
@@ -222,6 +232,7 @@ export const makeAnswers = (has: Has) => ({
   forget: (name: string) =>
     Effect.gen(function* () {
       yield* has.preparations.stop(name);
+      yield* has.settling.stop(name);
       yield* forgetShoot(name);
       yield* has.shoots.forget(name);
       return nothing();
@@ -243,6 +254,19 @@ export const makeAnswers = (has: Has) => ({
   seen: (name: string, mark: string) =>
     Effect.gen(function* () {
       yield* seeMark((yield* openShoot(name)).files, mark);
+      return nothing();
+    }),
+  choose: (name: string, request: Request) =>
+    Effect.gen(function* () {
+      const wanted = yield* sent(NewChoice, request);
+      const open = yield* openShoot(name);
+      yield* choose(open, yield* standingsOf(open), wanted);
+      yield* has.settling.now(name);
+      return nothing();
+    }),
+  dismiss: (name: string, action: string) =>
+    Effect.gen(function* () {
+      yield* dismissChoice((yield* openShoot(name)).files, action);
       return nothing();
     }),
   handOver: (name: string, request: Request) =>

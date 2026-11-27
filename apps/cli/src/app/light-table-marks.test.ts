@@ -27,18 +27,18 @@ describe('marks on the light table', () => {
     await pickLisbon();
     const [open, handed] = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon/marks`;
-      await send('PUT', path, { ...change, kind: 'put-in', note: '' });
+      await send('PUT', path, { ...change, note: 'Warmer light' });
       await send('PUT', path, change);
       const before = await marksOf(address);
       await handOver(address);
-      await send('PUT', path, { ...change, kind: 'take-out' });
+      await send('PUT', path, { ...change, note: 'Brighter' });
       return [before, await marksOf(address)];
     });
-    const kinds = (all: ReadonlyArray<{ readonly kind: string }>) =>
-      all.map(({ kind }) => kind);
-    expect(kinds(open)).toEqual(['change']);
+    const notes = (all: ReadonlyArray<{ readonly note: string }>) =>
+      all.map(({ note }) => note);
+    expect(notes(open)).toEqual(['Remove the chair']);
     expect(open[0]).toMatchObject({ ...change, note: 'Remove the chair' });
-    expect(kinds(handed)).toEqual(['change', 'take-out']);
+    expect(notes(handed)).toEqual(['Remove the chair', 'Brighter']);
   });
 
   it('are handed over with the price that was shown', async () => {
@@ -103,10 +103,6 @@ describe('marks on the light table', () => {
 
   it.each([
     { ...change, photo: 'D' },
-    { ...change, kind: 'burn' },
-    { ...change, kind: 'swap' },
-    { ...change, kind: 'swap', other: 'D' },
-    { ...change, other: 'C' },
     { ...change, boxes: [{ left: 0 }] },
     { ...change, note: ' ' },
     'nonsense',
@@ -130,7 +126,7 @@ describe('a hand-over on the light table', () => {
         await send('PUT', path, change);
         const reviewed = await openMarksOf(address);
         // Another tab puts something else in its place.
-        await send('PUT', path, { ...change, kind: 'take-out', note: '' });
+        await send('PUT', path, { ...change, note: 'Brighter' });
         const handed = handOver(address, { dollars: 0.75, marks: reviewed });
         return [await statusOf(handed), await marksOf(address)];
       },
@@ -140,7 +136,7 @@ describe('a hand-over on the light table', () => {
     expect(
       fakeTools.runs.filter(({ command }) => command === 'start-agent'),
     ).toEqual([]);
-    expect(marks).toMatchObject([{ kind: 'take-out', handedOverAt: null }]);
+    expect(marks).toMatchObject([{ note: 'Brighter', handedOverAt: null }]);
     expect(await runOk('marks', 'lisbon')).toMatchObject({
       agreedDollars: 0,
       marks: [],

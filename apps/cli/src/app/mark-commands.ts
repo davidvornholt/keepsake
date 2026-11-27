@@ -52,13 +52,9 @@ const shown = Effect.fn('shown')(function* (
   known: Standings,
   toShow: ReadonlyArray<Mark>,
 ) {
-  return yield* Effect.forEach(toShow, ({ photo, other, ...mark }) =>
+  return yield* Effect.forEach(toShow, ({ photo, ...mark }) =>
     Effect.gen(function* () {
-      return {
-        ...mark,
-        ...(yield* aboutPhoto(open, known, photo)),
-        other: other === null ? null : yield* aboutPhoto(open, known, other),
-      };
+      return { ...mark, ...(yield* aboutPhoto(open, known, photo)) };
     }),
   );
 });

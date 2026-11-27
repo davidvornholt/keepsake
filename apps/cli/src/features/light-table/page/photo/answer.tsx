@@ -12,8 +12,8 @@ import type { Word } from './word.ts';
 // of it. Or the owner's own words on a mark that isn't handed over, in wax.
 
 const asked = (mark: Mark): string => {
-  const { said } = lookOf[mark.kind];
-  return mark.note === '' ? said : `${said}: ${mark.note}`;
+  const { said } = lookOf.change;
+  return `${said}: ${mark.note}`;
 };
 
 /** What an agent says, with its dot in front and a label above, if there is one. */
@@ -97,13 +97,13 @@ const Mine = ({
   readonly mark: Mark;
   readonly onEdit: () => void;
 }) => {
-  const look = lookOf[mark.kind];
+  const look = lookOf.change;
   const words = (
     <>
       <WaxMark
         className="mt-2 size-5 shrink-0 self-start"
         color={look.wax}
-        seed={seedTextOf(mark.photo, mark.kind)}
+        seed={seedTextOf(mark.photo, 'change')}
         shape={look.shape}
       />
       <span className="min-w-0 flex-1">
@@ -119,7 +119,7 @@ const Mine = ({
     </>
   );
   const shape = 'flex min-w-0 flex-1 items-center gap-3 text-left';
-  return mark.kind === 'change' ? (
+  return (
     <button
       className={`${shape} py-1.5 hover:bg-raised`}
       onClick={onEdit}
@@ -128,8 +128,6 @@ const Mine = ({
     >
       {words}
     </button>
-  ) : (
-    <p className={shape}>{words}</p>
   );
 };
 

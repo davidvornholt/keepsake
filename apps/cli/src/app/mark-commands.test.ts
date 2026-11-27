@@ -51,22 +51,18 @@ describe('keepsake marks', () => {
     await pickLisbon();
     await editLisbon();
     await runOk('publish', 'lisbon');
-    await mark('swap', { photo: 'A2', kind: 'swap', note: '', other: 'A1' });
+    await mark('warmer', { photo: 'A1', note: 'Warmer light' });
     const { link, marks } = await runOk('marks', 'lisbon');
     expect(link).toBeNull();
     expect(marks[0]).toMatchObject({
-      id: 'swap',
-      kind: 'swap',
-      photo: 'A2',
-      preview: shootFile('previews', 'A2.jpg'),
-      final: null,
-      asset: null,
-      other: {
-        photo: 'A1',
-        final: shootFile('edits', 'A1', 'A1-keepsake.jpg'),
-        asset: 'asset-1',
-      },
+      id: 'warmer',
+      photo: 'A1',
+      preview: shootFile('previews', 'A1.jpg'),
+      final: shootFile('edits', 'A1', 'A1-keepsake.jpg'),
+      asset: 'asset-1',
     });
+    expect(marks[0]).not.toHaveProperty('kind');
+    expect(marks[0]).not.toHaveProperty('other');
   });
 
   it('links to the photos while the page is served', async () => {

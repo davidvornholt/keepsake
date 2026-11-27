@@ -67,20 +67,19 @@ export const Below = ({
           <Words
             hasBefore={(photo.edit?.earlier.length ?? 0) > 0}
             onBefore={shown.stepBack}
-            onEdit={() => marking.onKind('change')}
+            onEdit={() => marking.onPencil('change')}
             onSeen={marking.seen}
             word={word}
           />
         )}
       </div>
       {composing.draft === null ? (
-        <MarkBar onKind={marking.onKind} photo={photo} />
+        <MarkBar onPencil={marking.onPencil} photo={photo} />
       ) : (
         <Composer
           canUndo={composing.canUndo}
           draft={composing.draft}
           isSaved={composing.isSaved}
-          isWish={composing.isWish}
           onCancel={composing.cancel}
           onDraft={composing.setDraft}
           onRemove={composing.remove}

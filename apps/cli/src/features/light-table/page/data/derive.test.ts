@@ -3,7 +3,6 @@ import { everything } from '../app/route.ts';
 import {
   answeredPhotos,
   attentionOf,
-  chosenAfter,
   countsOf,
   frontOf,
   indexOf,
@@ -18,6 +17,7 @@ import {
 } from './derive.ts';
 import {
   sampleBehind,
+  sampleChoice,
   sampleEdit,
   sampleMark,
   samplePhoto,
@@ -196,15 +196,17 @@ describe('countsOf', () => {
 
 describe('marks', () => {
   const marks = [
-    sampleMark('1', { photo: 'a', kind: 'change', ...answered }),
-    sampleMark('2', { photo: 'a', kind: 'take-out' }),
-    sampleMark('4', { photo: 'c', kind: 'put-in' }),
-    sampleMark('5', { photo: 'd', kind: 'put-in' }),
-    sampleMark('6', { photo: 'e', kind: 'take-out', ...handedOver }),
-    sampleMark('7', { photo: 'f', kind: 'change', note: 'Warmer' }),
-    sampleMark('8', { photo: 'b', kind: 'swap', other: 'a' }),
+    sampleMark('1', { photo: 'a', note: 'Less sky', ...answered }),
+    sampleMark('2', { photo: 'a', note: 'Brighter' }),
+    sampleMark('6', { photo: 'e', note: 'Warmer', ...handedOver }),
+    sampleMark('7', { photo: 'f', note: 'Warmer' }),
   ];
-  const index = indexOf(sampleShoot(photos, marks));
+  // b is to come in instead of a, which waits for other work.
+  const choices = [
+    sampleChoice('b', { action: 'swap', wants: 'in', because: null }),
+    sampleChoice('a', { action: 'swap' }),
+  ];
+  const index = indexOf(sampleShoot(photos, marks, choices));
 
   it('sorts the marks of a photo by how far they have got', () => {
     const marked = markedIn(index, 'a');
@@ -218,36 +220,34 @@ describe('marks', () => {
     ]);
   });
 
-  it('shows the marks of the photos behind on the one in front', () => {
+  it('shows what waits for the photos behind on the one in front', () => {
     const pile = pileAround(index, photoAt(0));
-    expect(marksOfPile(index, pile).map(({ mark }) => mark.id)).toEqual([
-      '1',
-      '2',
-      '8',
+    expect(marksOfPile(index, pile)).toEqual([
+      { photo: 'a', pencil: 'change', state: 'news' },
+      { photo: 'a', pencil: 'change', state: 'open' },
+      { photo: 'a', pencil: 'take-out', state: 'open' },
+      { photo: 'b', pencil: 'swap', state: 'open' },
     ]);
+  });
+
+  it('shows nothing for a choice that couldn’t be done', () => {
+    const failed = sampleChoice('a', { failed: 'Immich refused.' });
+    const shoot = sampleShoot(photos, [], [failed]);
+    expect(indexOf(shoot).waiting.size).toBe(0);
   });
 
   it('says what waits for whom', () => {
     const attention = attentionOf(marks);
     expect(attention.news.map(({ id }) => id)).toEqual(['1']);
-    expect(attention.wishes.map(({ id }) => id)).toEqual([
-      '2',
-      '4',
-      '5',
-      '7',
-      '8',
-    ]);
+    expect(attention.wishes.map(({ id }) => id)).toEqual(['2', '7']);
     expect(attention.waiting.map(({ id }) => id)).toEqual(['6']);
   });
 
-  it('counts the edits that cost money and the album afterwards', () => {
-    // c and b have no edit yet; d has one from before it was taken out; the
-    // wish for f is part of its first edit, which the order pays for.
+  it('counts the changes that cost money', () => {
+    // The wish for f is part of its first edit, which the order pays for.
     expect(
       marks.filter((mark) => needsEdit(index, mark)).map(({ id }) => id),
-    ).toEqual(['1', '4', '8']);
-    // Two put in, two taken out; a swap changes nothing about how many.
-    expect(chosenAfter(index, marks)).toBe(3);
+    ).toEqual(['1', '2', '6']);
   });
 
   it('lists the photos with an answer to look at', () => {

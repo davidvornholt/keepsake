@@ -20,6 +20,7 @@ import {
   statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
+import { publishingLayer } from './publishing.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -291,6 +292,7 @@ describe('who the light table answers', () => {
           keepsake: [],
         }).pipe(
           Effect.scoped,
+          Effect.provide(publishingLayer),
           Effect.provide(fakeToolsLayer),
           Effect.provide(BunServices.layer),
         ),

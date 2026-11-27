@@ -16,7 +16,7 @@ import {
   tagPhoto,
   uploadPhoto,
 } from '../../shared/immich.ts';
-import { withAlbum } from '../../shared/lock.ts';
+import { withAlbum, withChoice } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
 import {
@@ -315,8 +315,7 @@ export const tellOutdated = <E, R>(
     Effect.flatMap((outdated) => forgetOutdated(open, outdated)),
   );
 
-/** Uploads the picked photos, or those named, to an album in Immich. */
-export const publish = Effect.fn('publish')(function* (
+const publishNow = Effect.fn('publish')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   chosenAlbum: Option.Option<string>,
@@ -362,3 +361,10 @@ export const publish = Effect.fn('publish')(function* (
     outdated: publication.outdated ?? [],
   };
 });
+
+/** Uploads the picked photos, or those named, to an album in Immich. */
+export const publish = (
+  open: OpenShoot,
+  names: ReadonlyArray<string>,
+  chosenAlbum: Option.Option<string>,
+) => publishNow(open, names, chosenAlbum).pipe(withChoice(open.files));

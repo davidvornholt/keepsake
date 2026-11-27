@@ -28,8 +28,6 @@ type Props = {
   readonly draft: Draft;
   /** Whether a change was written down before, which can be taken back. */
   readonly isSaved: boolean;
-  /** Whether it is a wish for a photo that comes in, which has no boxes. */
-  readonly isWish: boolean;
   /** Whether something was done to the boxes that can be undone. */
   readonly canUndo: boolean;
   readonly onUndo: () => void;
@@ -42,7 +40,6 @@ type Props = {
 export const Composer = ({
   draft,
   isSaved,
-  isWish,
   canUndo,
   onUndo,
   onDraft,
@@ -53,9 +50,7 @@ export const Composer = ({
   const noteRef = useRef<HTMLTextAreaElement>(null);
   // Boxes show only where; an agent needs the words to know what.
   const hasNoNote = draft.note.trim() === '';
-  const words = isWish
-    ? { asked: 'What do you want of the edit?', saves: 'Mark the wish' }
-    : { asked: 'What should change?', saves: 'Mark the change' };
+  const words = { asked: 'What should change?', saves: 'Mark the change' };
 
   const save = useEffectEvent(() => {
     if (!hasNoNote) {
@@ -134,7 +129,7 @@ export const Composer = ({
       </div>
       <div className="flex flex-wrap items-center gap-x-4">
         <p className="mr-auto flex min-h-9 flex-wrap items-center gap-x-3 text-quiet text-sm">
-          {isWish ? 'It goes with the photo into the album.' : boxesSay(draft)}
+          {boxesSay(draft)}
         </p>
         {canUndo ? (
           <button
@@ -153,7 +148,7 @@ export const Composer = ({
             onClick={onRemove}
             type="button"
           >
-            {isWish ? 'Take back the wish' : 'Take back'}
+            Take back
           </button>
         ) : null}
         <button

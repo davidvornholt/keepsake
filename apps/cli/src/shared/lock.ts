@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { dirname } from 'node:path';
 import process from 'node:process';
-import { Context, Effect, Option } from 'effect';
+import { Context, type Duration, Effect, Option } from 'effect';
 import { ShootBusy, StoreFailed } from './errors/errors.ts';
 import type { ShootFiles } from './store.ts';
 
@@ -175,8 +175,15 @@ export const exclusively =
 const albumPause = '50 millis';
 const albumTries = 600;
 
+/**
+ * How long a command waits for the page to change the choice, which may
+ * take putting a photo or two into the album.
+ */
+const choicePause = '100 millis';
+const choiceTries = 3000;
+
 const waitingFor =
-  (path: string, triesLeft: number) =>
+  (path: string, pause: Duration.Input, triesLeft: number, what: string) =>
   <A, E, R>(
     work: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | StoreFailed | ShootBusy, R> =>
@@ -188,12 +195,12 @@ const waitingFor =
             triesLeft === 0
               ? Effect.fail(
                   new ShootBusy({
-                    message: `Another keepsake command${holderOf(path)} has been changing the album of this shoot for long. Try again later.`,
+                    message: `Another keepsake command${holderOf(path)} has been changing ${what} of this shoot for long. Try again later.`,
                   }),
                 )
               : Effect.andThen(
-                  Effect.sleep(albumPause),
-                  waitingFor(path, triesLeft - 1)(work),
+                  Effect.sleep(pause),
+                  waitingFor(path, pause, triesLeft - 1, what)(work),
                 ),
         }),
       ),
@@ -206,7 +213,20 @@ const waitingFor =
 export const withAlbum =
   (files: ShootFiles) =>
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    waitingFor(files.albumLock, albumTries)(work);
+    waitingFor(files.albumLock, albumPause, albumTries, 'the album')(work);
 
 /** The same, or none when such work is going on now. */
 export const withAlbumIfFree = (files: ShootFiles) => holding(files.albumLock);
+
+/**
+ * Runs work that changes which photos are chosen or in the album, after what
+ * the page does to them, and keeps the page from changing them meanwhile.
+ */
+export const withChoice =
+  (files: ShootFiles) =>
+  <A, E, R>(work: Effect.Effect<A, E, R>) =>
+    waitingFor(files.choiceLock, choicePause, choiceTries, 'the choice')(work);
+
+/** The same, or none when such work is going on now. */
+export const withChoiceIfFree = (files: ShootFiles) =>
+  holding(files.choiceLock);

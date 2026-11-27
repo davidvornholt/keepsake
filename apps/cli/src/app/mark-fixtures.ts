@@ -41,10 +41,8 @@ export const mark = async (
     JSON.stringify({
       id,
       photo: 'B',
-      kind: 'change',
       note: 'Remove the chair',
       boxes: [],
-      other: null,
       madeAt: '2026-04-01T10:00:00Z',
       answer: null,
       seenAt: null,

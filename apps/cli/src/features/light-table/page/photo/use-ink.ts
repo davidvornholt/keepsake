@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
-import type { Box, MarkKind, PhotoView } from '../../contract.ts';
-import { type Index, markedIn } from '../data/derive.ts';
+import type { Box, PhotoView } from '../../contract.ts';
+import { type Index, markedIn, pencilOf } from '../data/derive.ts';
 import { seedOf } from '../marks/glyphs.ts';
-import { lookOf, seedTextOf } from '../marks/kinds.ts';
+import { lookOf, type Pencil, seedTextOf } from '../marks/kinds.ts';
 import type { Draft } from './composer.tsx';
 import type { Ink, Stamp } from './ink.ts';
 
-// What is drawn on a photo that is looked at, from the marks it has and the
-// change that is being written.
+// What is drawn on a photo that is looked at, from the marks it has, what
+// waits to be done to it and the change that is being written.
 
 const longAgo = Number.NEGATIVE_INFINITY;
 
@@ -21,11 +21,11 @@ type Wanted = {
 
 type Seen = { readonly since: Map<string, number>; isFirst: boolean };
 
-const stampOf = (photo: string, kind: MarkKind, since: number): Stamp => {
-  const look = lookOf[kind];
+const stampOf = (photo: string, pencil: Pencil, since: number): Stamp => {
+  const look = lookOf[pencil];
   return {
     shape: look.shape,
-    seed: seedOf(seedTextOf(photo, kind)),
+    seed: seedOf(seedTextOf(photo, pencil)),
     wax: look.wax,
     since,
   };
@@ -47,6 +47,8 @@ export const useInk = ({
   // by hand, and what was there is simply there.
   const [seen] = useState<Seen>(() => ({ since: new Map(), isFirst: true }));
   const mark = markOf(index, photo.id);
+  const waits = index.waiting.get(photo.id);
+  const pencil = waits === undefined ? null : pencilOf(waits);
 
   return useMemo(() => {
     const sinceOf = (key: string): number => {
@@ -60,9 +62,12 @@ export const useInk = ({
     };
     const stamps: Array<Stamp> = [];
     if (mark !== null && draft === null) {
-      stamps.push(stampOf(photo.id, mark.kind, sinceOf(`mark:${mark.kind}`)));
+      stamps.push(stampOf(photo.id, 'change', sinceOf('mark:change')));
     }
-    const saved = (mark?.kind === 'change' ? mark.boxes : []).map((box) => ({
+    if (pencil !== null) {
+      stamps.push(stampOf(photo.id, pencil, sinceOf(`mark:${pencil}`)));
+    }
+    const saved = (mark?.boxes ?? []).map((box) => ({
       box,
       since: sinceOf(`box:${box.left}:${box.top}`),
     }));
@@ -74,5 +79,5 @@ export const useInk = ({
     });
     seen.isFirst = false;
     return { stamps, boxes, nextBox: boxSeed(boxes.length), printed };
-  }, [seen, mark, draft, printed, photo.id]);
+  }, [seen, mark, pencil, draft, printed, photo.id]);
 };

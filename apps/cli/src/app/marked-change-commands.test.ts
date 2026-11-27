@@ -26,10 +26,8 @@ const markB = () =>
     JSON.stringify({
       id: 'one',
       photo: 'B',
-      kind: 'change',
       note: chair,
       boxes: [marked],
-      other: null,
       madeAt: '2026-04-01T10:00:00Z',
       handedOverAt: '2026-04-01T11:00:00Z',
       answer: null,
@@ -264,10 +262,8 @@ describe('keepsake edit, with marks that overlap', () => {
       JSON.stringify({
         id: 'one',
         photo: 'B',
-        kind: 'change',
         note: chair,
         boxes: [marked, { ...marked, left: 0.2, right: 0.5 }],
-        other: null,
         madeAt: '2026-04-01T10:00:00Z',
         handedOverAt: '2026-04-01T11:00:00Z',
         answer: null,

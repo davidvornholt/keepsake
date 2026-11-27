@@ -52,7 +52,7 @@ const openMarks = (content: Content): ReadonlySet<string> =>
       .flatMap(({ marks }) =>
         marks
           .filter(({ state }) => state === 'open')
-          .map(({ mark }) => seedTextOf(mark.photo, mark.kind)),
+          .map(({ photo, pencil }) => seedTextOf(photo, pencil)),
       ),
   );
 

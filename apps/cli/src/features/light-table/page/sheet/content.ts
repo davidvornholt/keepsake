@@ -4,12 +4,11 @@ import {
   type Index,
   isChosen,
   isFavorite,
-  markedIn,
   marksOfPile,
   type Pile,
   type Section,
   sectionsOf,
-  shownMarks,
+  shownOn,
 } from '../data/derive.ts';
 import { clockOf, count, dayAndMonth, weekdayOf } from '../data/format.ts';
 import { chosenWords } from '../data/words.ts';
@@ -66,7 +65,7 @@ const frameOf = (
     score: photo.verdict?.score ?? null,
     crop: isFinished ? null : (photo.edit?.crop ?? null),
     isFavorite: isFavorite(photo),
-    marks: shownMarks(markedIn(index, photo.id)),
+    marks: shownOn(index, photo.id),
     isWorkedOn: workedOn.has(photo.id),
     order: stageOf(index, photo),
     pile: 1,

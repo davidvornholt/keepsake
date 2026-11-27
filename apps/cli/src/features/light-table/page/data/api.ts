@@ -5,6 +5,7 @@ import type {
   FolderLook,
   HandOver,
   Mark,
+  NewChoice,
   NewLabels,
   NewMark,
   NewShoot,
@@ -68,6 +69,22 @@ export const readShoot = async (shoot: string): Promise<ShootView> =>
 
 export const makeMark = async (shoot: string, mark: NewMark): Promise<Mark> =>
   (await send('PUT', pathOf(shoot, '/marks'), mark)).json();
+
+/** Puts a photo in or takes one out, which keepsake does at once if it can. */
+export const sendChoice = async (
+  shoot: string,
+  choice: NewChoice,
+): Promise<void> => {
+  await send('POST', pathOf(shoot, '/choices'), choice);
+};
+
+/** Forgets a choice that couldn't be done, once the owner has read why. */
+export const dismissChoice = async (
+  shoot: string,
+  action: string,
+): Promise<void> => {
+  await send('DELETE', pathOf(shoot, `/choices/${encodeURIComponent(action)}`));
+};
 
 export const takeBackMark = async (
   shoot: string,

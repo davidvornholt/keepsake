@@ -12,6 +12,7 @@ import {
 import { frontOf, type Standings, standings } from '../../shared/standing.ts';
 import { exists, type OpenShoot, readJson } from '../../shared/store.ts';
 import { agentOf } from './agent.ts';
+import { choicesOf } from './choices.ts';
 import type {
   Changed,
   PhotoView,
@@ -187,6 +188,7 @@ export const shootView = Effect.fn('shootView')(function* (
     photos,
     stacks: stacksOf(photos),
     marks: yield* readMarks(files),
+    choices: yield* choicesOf(files, known),
     activity: yield* readActivity(files),
     preparation: yield* readPreparation(files),
     agent: yield* agentOf(files, canStartAgent),

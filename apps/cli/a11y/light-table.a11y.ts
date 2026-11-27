@@ -7,7 +7,7 @@ import { frame, large, lay, open, pressed, scan, title } from './page.ts';
 // against one server.
 
 const secondFrame = /^Photo 4 of 43/u;
-const takenOutSaid = /To be taken out/u;
+const takenOutSaid = /Taken out by you/u;
 const stackOfFive =
   /^Photo 15 of 43.*In front of a stack of 5.*Space lays the stack out$/u;
 const laidOut =
@@ -83,10 +83,10 @@ test('opens a stack on the table and closes it', async ({ page }) => {
   await expect(frame(page)).toHaveAccessibleName(stackOfFive);
 });
 
-test('marks a frame on the table with the keyboard and takes it back', async ({
+test('takes a photo out on the table with the keyboard and puts it back', async ({
   page,
 }) => {
-  await lay(page, '/porto', 'Porto, June 2026');
+  await lay(page, '/sintra', 'Sintra, October 2026');
   await frame(page).focus();
   await page.keyboard.press('ArrowRight');
   await expect(frame(page)).toHaveAccessibleName(secondFrame);
@@ -95,6 +95,7 @@ test('marks a frame on the table with the keyboard and takes it back', async ({
   await page.keyboard.press('x');
   await expect(page.getByRole('status')).toContainText('Put in (P)');
   await scan(page);
+  // A chosen one is taken out at once.
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('x');
   await expect(frame(page)).toHaveAccessibleName(takenOutSaid);
@@ -112,8 +113,11 @@ test('hands marks over to an agent that is started for them', async ({
   page,
 }) => {
   await open(page, '/lisbon/photos/D111');
-  await page.keyboard.press('x');
-  await expect(pressed(page, 'Take out')).toBeVisible();
+  await page.keyboard.press('c');
+  const note = page.getByRole('textbox', { name: 'What should change?' });
+  await note.fill('Less sky.');
+  await note.press('Enter');
+  await expect(pressed(page, 'Change')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(large(page)).toBeHidden();
   await page.keyboard.press('h');
@@ -121,7 +125,7 @@ test('hands marks over to an agent that is started for them', async ({
   const handing = page.getByRole('region', { name: 'Hand over', exact: true });
   const takeBack = page
     .getByRole('region', { name: 'To hand over' })
-    .getByRole('button', { name: 'Take back: To be taken out, photo 24' });
+    .getByRole('button', { name: 'Take back: To be changed, photo 24' });
   await expect(takeBack).toBeVisible();
   await expect(handing).toContainText('An agent is started for it');
   await scan(page);

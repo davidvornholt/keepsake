@@ -8,7 +8,7 @@ import { ReviewVision } from '../../shared/review-vision.ts';
 import { dollarsForOneEdit, Spending } from '../../shared/spending.ts';
 import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
-import { verdicts } from '../../shared/verdicts.ts';
+import { pickOf, verdicts } from '../../shared/verdicts.ts';
 import { Vision } from '../../shared/vision.ts';
 import { anewFor, doneIn, doneWithAnew } from './anew.ts';
 import {
@@ -57,13 +57,7 @@ const jobs = Effect.fn('jobs')(function* (
           message: `${model} has not judged ${photo.id}. Run \`keepsake cull ${open.shoot.name}\` first.`,
         });
       }
-      const { moment, subject, further } = verdict;
-      const own = further.find((one) => one.photo === photo.id);
-      const { score, description } = own ?? verdict;
-      return {
-        photo,
-        pick: { photo: photo.id, moment, score, subject, description },
-      } satisfies ToEdit;
+      return { photo, pick: pickOf(verdict, photo.id) } satisfies ToEdit;
     }),
   );
 });

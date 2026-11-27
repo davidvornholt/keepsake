@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useMemo, useRef } from 'react';
 import { Attention } from '../bar/attention.tsx';
 import { Bar } from '../bar/bar.tsx';
-import { type Index, markedIn, pileAround } from '../data/derive.ts';
+import { type Index, markedIn, pencilOf, pileAround } from '../data/derive.ts';
 import { clockOf, dayAndMonth, dayOf } from '../data/format.ts';
 import type { ShootStore } from '../data/store.ts';
 import type { ShootState } from '../data/store-state.ts';
@@ -72,6 +72,7 @@ const labelOf = (
     return 'The photos on the table. The arrow keys go from one to the next.';
   }
   const { open } = markedIn(index, photo.id);
+  const waits = index.waiting.get(photo.id);
   const { front, photos } = pileAround(index, photo);
   const isFront = front.id === photo.id && photos.length > 1;
   const isLaidOut = opened === front.id;
@@ -83,7 +84,8 @@ const labelOf = (
       ? [`In front of a stack of ${photos.length} that show the same`]
       : []),
     ...(isLaidOut ? ['Its stack is laid out'] : []),
-    ...(open === null ? [] : [lookOf[open.kind].said]),
+    ...(open === null ? [] : [lookOf.change.said]),
+    ...(waits === undefined ? [] : [lookOf[pencilOf(waits)].said]),
     keysSaid(isFront, isLaidOut),
   ].join('. ');
 };

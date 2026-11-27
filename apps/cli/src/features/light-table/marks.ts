@@ -100,18 +100,14 @@ export const makeMark = Effect.fn('makeMark')(function* (
   open: OpenShoot,
   wanted: NewMark,
 ) {
-  const { photo, kind, note, boxes, other } = wanted;
-  const needsOther = kind === 'swap';
-  if (
-    !open.photos.has(photo) ||
-    (needsOther ? other === null || !open.photos.has(other) : other !== null)
-  ) {
+  const { photo, note, boxes } = wanted;
+  if (!open.photos.has(photo)) {
     return yield* new InvalidInput({
-      message: 'The mark is about photos the shoot doesn’t have.',
+      message: 'The mark is about a photo the shoot doesn’t have.',
     });
   }
   // An agent can't know what to change, also where boxes show the place.
-  if (kind === 'change' && note.trim() === '') {
+  if (note.trim() === '') {
     return yield* new InvalidInput({ message: 'Say what should change.' });
   }
   const all = yield* readMarks(open.files);
@@ -119,10 +115,8 @@ export const makeMark = Effect.fn('makeMark')(function* (
   const mark: Mark = {
     id: crypto.randomUUID().replaceAll('-', '').slice(0, idLength),
     photo,
-    kind,
     note: note.trim(),
     boxes,
-    other,
     madeAt: yield* now,
     handedOverAt: null,
     answer: null,

@@ -30,10 +30,8 @@ const oldMark = (id: string, handedOverAt: string, answer: object | null) =>
     JSON.stringify({
       id,
       photo: 'B',
-      kind: 'change',
       note: 'Remove the chair',
       boxes: [],
-      other: null,
       madeAt: '2026-04-01T10:00:00.000Z',
       handedOverAt,
       answer,

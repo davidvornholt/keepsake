@@ -114,10 +114,8 @@ const oldShoot = async (files: ShootFiles) => {
     JSON.stringify({
       id: 'one',
       photo: 'B',
-      kind: 'change',
       note: 'Remove the chair',
       boxes: [],
-      other: null,
       madeAt: '2026-04-01T10:00:00.000Z',
       handedOverAt: handedAt,
       answer: null,

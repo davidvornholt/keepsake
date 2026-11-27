@@ -5,6 +5,7 @@ import {
   replacedBy,
   tidyLabels,
   wantedOf,
+  withChoice,
   withLabels,
   withMark,
   withoutMark,
@@ -12,20 +13,19 @@ import {
   withSaved,
   withSeen,
 } from './changes.ts';
-import { sampleMark, samplePhoto, sampleShoot } from './sample.ts';
+import {
+  sampleChoice,
+  sampleMark,
+  samplePhoto,
+  sampleShoot,
+} from './sample.ts';
 
 const now = '2026-05-22T08:00:00.000Z';
 
 describe('draftOf', () => {
   it('is the mark as keepsake will save it', () => {
     const draft = draftOf(
-      {
-        photo: 'a',
-        kind: 'change',
-        note: '  Less sky. ',
-        boxes: [],
-        other: null,
-      },
+      { photo: 'a', note: '  Less sky. ', boxes: [] },
       'draft-1',
       now,
     );
@@ -35,11 +35,38 @@ describe('draftOf', () => {
     expect(draft.handedOverAt).toBeNull();
     expect(wantedOf(draft)).toEqual({
       photo: 'a',
-      kind: 'change',
       note: 'Less sky.',
       boxes: [],
-      other: null,
     });
+  });
+});
+
+describe('withChoice', () => {
+  const chosen = samplePhoto('a', { standing: { kind: 'picked' } });
+  const behind = samplePhoto('b', {
+    standing: { kind: 'similar', to: 'a', because: null },
+  });
+  const because = 'You chose b instead.';
+
+  it('waits until keepsake has done it, as one with what it replaces', () => {
+    const shoot = sampleShoot([chosen, behind]);
+    const wanted = { photo: 'b', wants: 'in', because, instead: 'a' } as const;
+    const { choices } = withChoice(shoot, wanted, now);
+    expect(choices).toMatchObject([
+      { photo: 'b', wants: 'in', because: null, failed: null },
+      { photo: 'a', wants: 'out', because, failed: null },
+    ]);
+    expect(new Set(choices.map(({ action }) => action)).size).toBe(1);
+  });
+
+  it('takes back what waited, with all that went with it', () => {
+    const waits = [
+      sampleChoice('b', { action: 'one', wants: 'in', because: null }),
+      sampleChoice('a', { action: 'one' }),
+    ];
+    const shoot = sampleShoot([chosen, behind], [], waits);
+    const back = { photo: 'b', wants: 'out', because, instead: null } as const;
+    expect(withChoice(shoot, back, now).choices).toEqual([]);
   });
 });
 
@@ -47,26 +74,21 @@ describe('withMark', () => {
   it('takes the place of the open mark on the same photo', () => {
     const keep = sampleMark('one', { photo: 'a' });
     const other = sampleMark('two', { photo: 'b' });
-    const takeOut = sampleMark('three', { photo: 'a', kind: 'take-out' });
-    expect(replacedBy([keep, other], takeOut)).toBe(keep);
-    expect(withMark([keep, other], takeOut)).toEqual([other, takeOut]);
+    const again = sampleMark('three', { photo: 'a', note: 'Less sky.' });
+    expect(replacedBy([keep, other], again)).toBe(keep);
+    expect(withMark([keep, other], again)).toEqual([other, again]);
   });
 
   it('leaves a mark that was handed over', () => {
-    const handed = sampleMark('two', {
-      photo: 'a',
-      kind: 'change',
-      handedOverAt: now,
-    });
-    const takeOut = sampleMark('three', { photo: 'a' });
-    expect(replacedBy([handed], takeOut)).toBeNull();
-    expect(withMark([handed], takeOut)).toEqual([handed, takeOut]);
+    const handed = sampleMark('two', { photo: 'a', handedOverAt: now });
+    const again = sampleMark('three', { photo: 'a' });
+    expect(replacedBy([handed], again)).toBeNull();
+    expect(withMark([handed], again)).toEqual([handed, again]);
   });
 
   it('counts an answer on the photo as seen', () => {
     const answered = sampleMark('one', {
       photo: 'a',
-      kind: 'change',
       handedOverAt: now,
       answer: { at: now, outcome: 'done', note: 'Done.' },
     });

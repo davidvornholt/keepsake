@@ -2,6 +2,7 @@ import type {
   Activity,
   Agent,
   Mark,
+  NewChoice,
   NewMark,
   Preparation,
   ShootView,
@@ -24,7 +25,7 @@ export type ShootState = {
   readonly hint: string | null;
   /** What Undo takes back or brings back, if anything. */
   readonly undoable: Undo | null;
-  /** The changes and wishes keepsake didn't get, by photo, until they are written again. */
+  /** The changes keepsake didn't get, by photo, until they are written again. */
   readonly unsaved: Readonly<Record<string, NewMark>>;
 };
 
@@ -35,6 +36,8 @@ export type Undo =
       readonly replaced: Mark | null;
     }
   | { readonly did: 'took-back'; readonly mark: Mark }
+  /** A photo put in or taken out, which `back` undoes. */
+  | { readonly did: 'chose'; readonly back: NewChoice }
   | {
       readonly did: 'favorite';
       readonly photo: string;

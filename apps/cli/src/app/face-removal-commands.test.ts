@@ -51,10 +51,8 @@ describe('keepsake edit, removing what is on a face', () => {
       JSON.stringify({
         id: 'one',
         photo: 'B',
-        kind: 'change',
         note: 'Remove the sticker and the chair',
         boxes: [marked],
-        other: null,
         madeAt: '2026-04-01T10:00:00Z',
         handedOverAt: '2026-04-01T11:00:00Z',
         answer: null,

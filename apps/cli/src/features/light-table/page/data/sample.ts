@@ -1,4 +1,5 @@
 import type {
+  Choice,
   Edit,
   Mark,
   PhotoView,
@@ -70,10 +71,8 @@ export const sampleBehind = (
 export const sampleMark = (id: string, change: Partial<Mark> = {}): Mark => ({
   id,
   photo: id,
-  kind: 'take-out',
   note: '',
   boxes: [],
-  other: null,
   madeAt: '2026-05-21T09:00:00.000Z',
   handedOverAt: null,
   answer: null,
@@ -81,9 +80,24 @@ export const sampleMark = (id: string, change: Partial<Mark> = {}): Mark => ({
   ...change,
 });
 
+/** A photo the owner took out, which waits to be done. */
+export const sampleChoice = (
+  photo: string,
+  change: Partial<Choice> = {},
+): Choice => ({
+  action: `for-${photo}`,
+  photo,
+  wants: 'out',
+  because: 'You didn’t want it in the album.',
+  madeAt: '2026-05-21T09:00:00.000Z',
+  failed: null,
+  ...change,
+});
+
 export const sampleShoot = (
   photos: ReadonlyArray<PhotoView>,
   marks: ReadonlyArray<Mark> = [],
+  choices: ReadonlyArray<Choice> = [],
 ): ShootView => ({
   name: 'lisbon',
   about: 'Lisbon, May 2026',
@@ -96,6 +110,7 @@ export const sampleShoot = (
     ([front, own]) => ({ front, photos: own.map((photo) => photo.id) }),
   ),
   marks,
+  choices,
   activity: null,
   preparation: null,
   agent: { waitsSince: null, canStart: true, started: null },

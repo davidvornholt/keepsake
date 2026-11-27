@@ -1,5 +1,6 @@
-import type { Mark, PhotoView, ShootView } from '../../contract.ts';
+import type { Choice, Mark, PhotoView, ShootView } from '../../contract.ts';
 import { type Filters, type Why, whys } from '../app/route.ts';
+import type { Pencil } from '../marks/kinds.ts';
 import { dayOf } from './format.ts';
 
 // Everything the page works out from a shoot, once for each time it changes.
@@ -44,6 +45,8 @@ export type Index = {
   readonly pileOf: ReadonlyMap<string, Pile>;
   readonly days: ReadonlyArray<Day>;
   readonly marked: ReadonlyMap<string, Marked>;
+  /** What the owner put in or took out that waits to be done, by photo. */
+  readonly waiting: ReadonlyMap<string, Waiting>;
   /** Every label in use, the most used first. */
   readonly labels: ReadonlyArray<{
     readonly label: string;
@@ -54,6 +57,36 @@ export type Index = {
   readonly chosen: number;
   /** Whether the shoot has an album, however few photos are in it. */
   readonly hasAlbum: boolean;
+};
+
+/** A photo the owner put in or took out, which waits to be done. */
+export type Waiting = {
+  readonly choice: Choice;
+  /** The photo it takes the place of, when it comes in for another. */
+  readonly instead: string | null;
+};
+
+const waitingOf = (choices: ReadonlyArray<Choice>): Map<string, Waiting> => {
+  const waits = choices.filter(({ failed }) => failed === null);
+  return new Map(
+    waits.map((choice) => {
+      const other = waits.find(
+        (one) =>
+          one.action === choice.action &&
+          one.photo !== choice.photo &&
+          choice.wants === 'in',
+      );
+      return [choice.photo, { choice, instead: other?.photo ?? null }];
+    }),
+  );
+};
+
+/** The pencil that shows what waits for a photo. */
+export const pencilOf = ({ choice, instead }: Waiting): Pencil => {
+  if (choice.wants === 'out') {
+    return 'take-out';
+  }
+  return instead === null ? 'put-in' : 'swap';
 };
 
 const unmarked: Marked = { open: null, waiting: [], news: [], past: [] };
@@ -153,6 +186,7 @@ export const indexOf = (shoot: ShootView): Index => {
     ),
     days: daysOf(piles),
     marked: markedOf(shoot.marks),
+    waiting: waitingOf(shoot.choices),
     labels: labelsOf(photos),
     inAlbum,
     chosen: photos.filter(isChosen).length,
@@ -269,27 +303,12 @@ export const attentionOf = (marks: ReadonlyArray<Mark>): Attention => ({
   ),
 });
 
-/** Whether acting on a mark means editing a photo, which costs money. */
-export const needsEdit = (
-  index: Index,
-  { kind, photo, note }: Mark,
-): boolean => {
-  const about = index.byId.get(photo);
-  if (kind === 'change') {
-    // A wish for a photo that isn't edited yet is part of its first edit.
-    return about?.standing.kind !== 'picked';
-  }
-  return (
-    (kind === 'put-in' || kind === 'swap') &&
-    (about?.edit === null || note !== '')
-  );
-};
-
-/** How many photos are chosen once these marks are acted on. */
-export const chosenAfter = (index: Index, marks: ReadonlyArray<Mark>): number =>
-  index.chosen +
-  marks.filter(({ kind }) => kind === 'put-in').length -
-  marks.filter(({ kind }) => kind === 'take-out').length;
+/**
+ * Whether acting on a change means editing a photo, which costs money. A wish
+ * for a photo that isn't edited yet is part of its first edit.
+ */
+export const needsEdit = (index: Index, { photo }: Mark): boolean =>
+  index.byId.get(photo)?.standing.kind !== 'picked';
 
 /** Whether a photo carries the favorite heart in Immich. */
 export const isFavorite = ({ standing }: PhotoView): boolean =>
@@ -302,31 +321,44 @@ export const frontOf = (
 ): PhotoView | null =>
   standing.kind === 'similar' ? (index.byId.get(standing.to) ?? null) : null;
 
-/** The mark a photo shows on the table, and how far it has got. */
+/** What a photo shows on the table, and how far it has got. */
 export type Shown = {
-  readonly mark: Mark;
+  readonly photo: string;
+  readonly pencil: Pencil;
   readonly state: 'open' | 'waiting' | 'news';
 };
+
+const changeOf = (mark: Mark, state: Shown['state']): Shown => ({
+  photo: mark.photo,
+  pencil: 'change',
+  state,
+});
 
 export const shownMarks = (marked: Marked): ReadonlyArray<Shown> => {
   const news = marked.news.at(-1);
   return [
-    ...(news === undefined ? [] : [{ mark: news, state: 'news' } as const]),
-    ...marked.waiting
-      .slice(-1)
-      .map((mark) => ({ mark, state: 'waiting' }) as const),
-    ...(marked.open === null
-      ? []
-      : [{ mark: marked.open, state: 'open' } as const]),
+    ...(news === undefined ? [] : [changeOf(news, 'news')]),
+    ...marked.waiting.slice(-1).map((mark) => changeOf(mark, 'waiting')),
+    ...(marked.open === null ? [] : [changeOf(marked.open, 'open')]),
   ];
 };
 
-/** The marks of every photo of a pile, as the photo in front shows them. */
+/** What waits for a photo: its marks, and what the owner chose for it. */
+export const shownOn = (index: Index, photo: string): ReadonlyArray<Shown> => {
+  const waits = index.waiting.get(photo);
+  return [
+    ...shownMarks(markedIn(index, photo)),
+    ...(waits === undefined
+      ? []
+      : [{ photo, pencil: pencilOf(waits), state: 'open' } as const]),
+  ];
+};
+
+/** What waits for every photo of a pile, as the photo in front shows it. */
 export const marksOfPile = (
   index: Index,
   { photos }: Pile,
-): ReadonlyArray<Shown> =>
-  photos.flatMap(({ id }) => shownMarks(markedIn(index, id)));
+): ReadonlyArray<Shown> => photos.flatMap(({ id }) => shownOn(index, id));
 
 /** The photos with an answer the owner hasn't looked at, in the order of the shoot. */
 export const answeredPhotos = (index: Index): ReadonlyArray<string> =>

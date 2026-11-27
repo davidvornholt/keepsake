@@ -3,12 +3,14 @@ import { Effect, type FileSystem, type Path, Semaphore } from 'effect';
 import type { ChildProcessSpawner } from 'effect/process';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { type Has, makeAnswers } from './answers.ts';
+import type { Publishing } from './choices.ts';
 import { eventsOf } from './events.ts';
 import { makeFolders } from './folders.ts';
 import { removeForgotten } from './new-shoot.ts';
 // biome-ignore lint/correctness/noUnresolvedImports: Bun turns an imported page into a bundle to serve
 import page from './page/index.html';
 import { makePreparations } from './preparation.ts';
+import { makeSettling } from './settling.ts';
 import { makeShoots } from './shoots.ts';
 
 const badRequest = 400;
@@ -38,7 +40,8 @@ type Serving = {
 type Needed =
   | FileSystem.FileSystem
   | Path.Path
-  | ChildProcessSpawner.ChildProcessSpawner;
+  | ChildProcessSpawner.ChildProcessSpawner
+  | Publishing;
 
 type Failure = { readonly _tag: string; readonly message: string };
 
@@ -76,12 +79,11 @@ const failure = ({ _tag, message }: Failure) =>
 const routesOf = Effect.fn('routesOf')(function* (
   has: Has,
   address: URL | undefined,
+  writing: Semaphore.Semaphore,
 ) {
   const { shoots } = has;
   const answers = makeAnswers(has);
   const run = Effect.runPromiseWith(yield* Effect.context<Needed>());
-  // One change at a time, since some read a file and write it again.
-  const writing = yield* Semaphore.make(1);
   const answer = (work: Effect.Effect<Response, Failure, Needed>) =>
     run(work.pipe(Effect.catch((error) => Effect.succeed(failure(error)))));
   const change = (work: Effect.Effect<Response, Failure, Needed>) =>
@@ -130,6 +132,16 @@ const routesOf = Effect.fn('routesOf')(function* (
     '/api/shoots/:shoot/marks/:mark/seen': {
       POST: ours<'/api/shoots/:shoot/marks/:mark/seen'>(({ params }) =>
         change(answers.seen(params.shoot, params.mark)),
+      ),
+    },
+    '/api/shoots/:shoot/choices': {
+      POST: ours<'/api/shoots/:shoot/choices'>((request) =>
+        change(answers.choose(request.params.shoot, request)),
+      ),
+    },
+    '/api/shoots/:shoot/choices/:action': {
+      DELETE: ours<'/api/shoots/:shoot/choices/:action'>(({ params }) =>
+        change(answers.dismiss(params.shoot, params.action)),
       ),
     },
     '/api/shoots/:shoot/hand-over': {
@@ -183,13 +195,26 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   const shoots = yield* makeShoots(agent !== undefined, workers);
   const preparations = yield* makePreparations(keepsake);
   const folders = yield* makeFolders(photos);
+  // One change at a time, since some read a file and write it again.
+  const writing = yield* Semaphore.make(1);
+  const settling = yield* makeSettling(writing);
   const routes = yield* routesOf(
-    { shoots, folders, preparations, workers, agent, launching: new Set() },
+    {
+      shoots,
+      folders,
+      preparations,
+      settling,
+      workers,
+      agent,
+      launching: new Set(),
+    },
     address,
+    writing,
   );
   yield* removeForgotten;
   yield* Effect.forkScoped(shoots.prepare);
   yield* preparations.resume;
+  yield* settling.resume;
   return yield* Effect.acquireRelease(
     Effect.try({
       try: () =>

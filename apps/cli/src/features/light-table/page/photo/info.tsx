@@ -140,13 +140,13 @@ const Edited = ({
 };
 
 const Said = ({ mark }: { readonly mark: Mark }) => {
-  const look = lookOf[mark.kind];
+  const look = lookOf.change;
   return (
     <li className="flex gap-2.5">
       <WaxMark
         className="mt-0.5 size-5"
         color={look.wax}
-        seed={seedTextOf(mark.photo, mark.kind)}
+        seed={seedTextOf(mark.photo, 'change')}
         shape={look.shape}
       />
       <div className="min-w-0">

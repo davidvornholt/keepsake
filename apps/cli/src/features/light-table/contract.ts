@@ -1,17 +1,18 @@
 import type { Box } from '../../shared/domain.ts';
 import type { Standing } from '../../shared/standing.ts';
-import type { Mark } from './schemas.ts';
+import type { Choice, Mark } from './schemas.ts';
 
 // What the page and the server send each other. Only types and constants, so
 // the page needs nothing of the rest of keepsake.
 
 export type { Box } from '../../shared/domain.ts';
 export type { Standing } from '../../shared/standing.ts';
-export type { MarkKind } from './kinds.ts';
 export type {
+  Choice,
   Favorite,
   HandOver,
   Mark,
+  NewChoice,
   NewLabels,
   NewMark,
   NewShoot,
@@ -167,6 +168,8 @@ export type ShootView = {
   /** Every photo is in one of them, if only by itself. In the order of their fronts. */
   readonly stacks: ReadonlyArray<Stack>;
   readonly marks: ReadonlyArray<Mark>;
+  /** Photos the owner put in or took out that aren't in or out yet. */
+  readonly choices: ReadonlyArray<Choice>;
   readonly activity: Activity | null;
   readonly preparation: Preparation | null;
   readonly agent: Agent;
