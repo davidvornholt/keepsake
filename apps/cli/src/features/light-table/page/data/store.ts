@@ -1,10 +1,4 @@
-import type {
-  Changed,
-  HandOver,
-  Mark,
-  NewChoice,
-  NewMark,
-} from '../../contract.ts';
+import type { Changed, HandOver, Mark, NewMark } from '../../contract.ts';
 import {
   dismissChoice,
   forgetShoot,
@@ -18,7 +12,6 @@ import {
   saveLabels,
   saveRating,
   seePhoto,
-  sendChoice,
   takeBackMark,
 } from './api.ts';
 import {
@@ -28,7 +21,6 @@ import {
   replacedBy,
   tidyLabels,
   wantedOf,
-  withChoice,
   withFavorite,
   withLabels,
   withMark,
@@ -38,8 +30,9 @@ import {
   withSaved,
   withSeen,
 } from './changes.ts';
+import { choosing } from './store-choices.ts';
 import { type Core, makeCore } from './store-core.ts';
-import type { Choosing, Undo } from './store-state.ts';
+import type { Undo } from './store-state.ts';
 
 // The shoot as the page knows it. A change shows at once and is sent to
 // keepsake; what keepsake then says replaces it.
@@ -72,83 +65,6 @@ const hearting = (core: Core) => async (photo: string, favorite: boolean) => {
     core.setShoot(withFavorite(shoot, photo, favorite));
   }
   await core.send(() => saveFavorite(core.name, { photo, favorite }));
-};
-
-/** Puts photos in and takes them out, and takes that back. */
-const choosing = (core: Core) => {
-  /** The choices being sent, until keepsake is read again. */
-  const sending = new Set<Promise<unknown>>();
-
-  /**
-   * Puts a photo in or takes one out without remembering it for Undo, and
-   * tells `noted` the action keepsake noted it under.
-   */
-  const send = async (wanted: NewChoice, noted: (action: string) => void) => {
-    const shoot = core.get().index?.shoot;
-    if (shoot !== undefined) {
-      core.setShoot(
-        withChoice(shoot, wanted, {
-          now: new Date().toISOString(),
-          isWorking: core.get().activity !== null,
-        }),
-      );
-    }
-    const done = core.send(async () =>
-      noted(await sendChoice(core.name, wanted)),
-    );
-    sending.add(done);
-    await done;
-    sending.delete(done);
-  };
-
-  /** The undos with the choice noted under `was` now noted under `is`. */
-  const renoted = (was: string, is: string) =>
-    core
-      .undos()
-      .map((undo) =>
-        undo.did === 'chose' && undo.action === was
-          ? { ...undo, action: is }
-          : undo,
-      );
-
-  return {
-    /**
-     * Puts a photo in or takes one out, at once or as soon as nothing else
-     * changes the album.
-     */
-    choose: async ({ wanted, back, restores }: Choosing) => {
-      const undo: Undo = { did: 'chose', back, restores, action: null };
-      core.setUndos([...core.undos(), undo]);
-      // Its action is known before keepsake is read again, which says
-      // whether it could be done.
-      await send(wanted, (action) => {
-        core.setUndos(
-          core.undos().map((one) => (one === undo ? { ...undo, action } : one)),
-        );
-      });
-    },
-    /**
-     * Takes back the choice that is undone last, once keepsake said whether
-     * it could do the choices sent, since one it couldn't do leaves nothing
-     * to take back.
-     */
-    undo: async (asked: Extract<Undo, { did: 'chose' }>) => {
-      await Promise.all(sending);
-      const undos = core.undos();
-      const last = undos.at(-1);
-      if (last?.did !== 'chose' || last.back !== asked.back) {
-        return;
-      }
-      core.setUndos(undos.slice(0, -1));
-      // What waited is chosen again under another action, which the choice
-      // that waited is now known by.
-      await send(last.back, (action) => {
-        if (last.restores !== null) {
-          core.setUndos(renoted(last.restores, action));
-        }
-      });
-    },
-  };
 };
 
 const marking = (core: Core) => {

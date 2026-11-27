@@ -35,6 +35,21 @@ const isGone = async (
   (error instanceof Problem && error.isMissing) ||
   (!isShown && (await isUnknown(name)));
 
+/**
+ * What settles once nothing is sent any more, and keepsake was read after
+ * that.
+ */
+const quietOnce = (isQuiet = false) => {
+  let settle: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  if (isQuiet) {
+    settle();
+  }
+  return { promise, settle };
+};
+
 export const makeCore = (name: string) => {
   const held = makeHeld();
   const { set, get } = held;
@@ -50,6 +65,7 @@ export const makeCore = (name: string) => {
   let isResting = false;
   /** Why the last change didn't reach keepsake, until that is dismissed. */
   let lost: string | null = null;
+  let quiet = quietOnce(true);
 
   /** Shows what keepsake has, and nothing that never reached it. */
   const fallBack = () => {
@@ -126,6 +142,8 @@ export const makeCore = (name: string) => {
       clearTimeout(again);
     },
     isBusy: () => inFlight > 0,
+    /** Waits until nothing is sent, and keepsake was read after that. */
+    whenQuiet: () => quiet.promise,
     dismissProblem: () => {
       lost = null;
       set({ problem: null });
@@ -135,6 +153,7 @@ export const makeCore = (name: string) => {
       work: () => Promise<Answer>,
     ): Promise<Answer | null> => {
       inFlight += 1;
+      quiet = inFlight === 1 ? quietOnce() : quiet;
       try {
         return await work();
       } catch (error) {
@@ -146,7 +165,7 @@ export const makeCore = (name: string) => {
       } finally {
         inFlight -= 1;
         if (inFlight === 0) {
-          await load();
+          await load().then(quiet.settle);
         }
       }
     },
