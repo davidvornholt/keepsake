@@ -2,6 +2,7 @@
 import { Effect, Schema } from 'effect';
 import { AnthropicStructuredOutput } from 'effect/ai';
 import { ToolFailed } from '../errors/errors.ts';
+import { claudeUsage } from './claude-usage.ts';
 import type { Program, ProgramQuestion } from './program-model.ts';
 import type { Effort } from './subscriptions.ts';
 
@@ -81,4 +82,5 @@ export const claude = (model: string, effort: Effort): Program<never> => ({
   codecTransformer: AnthropicStructuredOutput.toCodecAnthropic,
   request: request(model, effort),
   answer,
+  usage: claudeUsage,
 });
