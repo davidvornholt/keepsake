@@ -1,5 +1,6 @@
 import { Effect, Option } from 'effect';
 import { markWith } from '../features/light-table/marks.ts';
+import { readAlbum } from '../shared/album.ts';
 import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
 import { standings } from '../shared/standing.ts';
@@ -7,13 +8,15 @@ import { type OpenShoot, openShoot } from '../shared/store.ts';
 
 /**
  * A mark, while its photo is chosen or in the album. The owner may have
- * taken it out since they handed the mark over.
+ * taken it out since they handed the mark over, on the page or in Immich.
  */
 export const markOfChosen = Effect.fn('markOfChosen')(function* (
   open: OpenShoot,
   id: string,
 ) {
   const mark = yield* markWith(open.files, id);
+  // From Immich, where the owner may have taken it out, and never the cache.
+  yield* readAlbum(open);
   const known = yield* standings(open, yield* judgeOf(open, Option.none()));
   const kind = known.of.get(mark.photo)?.kind;
   if (kind !== 'album' && kind !== 'picked') {

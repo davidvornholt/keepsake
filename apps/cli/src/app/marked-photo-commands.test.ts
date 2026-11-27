@@ -9,7 +9,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
-import { firstAlbum } from './fake-tools.ts';
+import { fakeTools, firstAlbum } from './fake-tools.ts';
 import { mark } from './mark-fixtures.ts';
 
 // What an agent does for a mark whose photo the owner took out since they
@@ -32,12 +32,43 @@ const publishLisbon = async () => {
   await runOk('publish', 'lisbon');
 };
 
+/** What the owner does in Immich, which keepsake hasn't read yet. */
+const removeInImmich = (photo: string) => {
+  const [album] = fakeTools.albums;
+  if (album !== undefined) {
+    album.assets = album.assets.filter(
+      ({ fileName }) => !fileName.startsWith(`${photo}-`),
+    );
+  }
+};
+
 describe('keepsake edit --mark of a photo taken out', () => {
   it('edits nothing and asks no model', async () => {
     await pickLisbon();
     await editLisbon('B');
     await mark('one');
     await runOk('take-out', 'lisbon', 'B', ...because);
+    const questions = fakeModels.asked.length;
+    const edits = fakeModels.edits.length;
+    const failure = await failureOf(
+      'edit',
+      'lisbon',
+      '--mark',
+      'one',
+      '--budget',
+      '5',
+      '--review-model',
+      judge,
+    );
+    expect(failure.message).toContain('taken out meanwhile');
+    expect(fakeModels.asked).toHaveLength(questions);
+    expect(fakeModels.edits).toHaveLength(edits);
+  });
+
+  it('asks Immich whether the photo is still in the album', async () => {
+    await publishLisbon();
+    await mark('one');
+    removeInImmich('B');
     const questions = fakeModels.asked.length;
     const edits = fakeModels.edits.length;
     const failure = await failureOf(
@@ -77,6 +108,16 @@ describe('keepsake publish --mark', () => {
     expect(failure.message).toContain('taken out meanwhile');
     expect(inImmich()).toEqual(['A1', 'C']);
     expect(await standingOf('B')).toMatchObject({ kind: 'taken-out' });
+  });
+
+  it('keeps out a photo the owner took out in Immich', async () => {
+    await publishLisbon();
+    await mark('one');
+    await editLisbon('--mark', 'one', '--budget', '5');
+    removeInImmich('B');
+    const failure = await failureOf('publish', 'lisbon', '--mark', 'one');
+    expect(failure.message).toContain('taken out meanwhile');
+    expect(inImmich()).toEqual(['A1', 'C']);
   });
 
   it('leaves naming a photo to put it back in', async () => {
