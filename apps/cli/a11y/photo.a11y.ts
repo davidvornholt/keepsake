@@ -274,6 +274,34 @@ test('draws a box on a change, moves it with the keys and removes it', async ({
   await expect(box).toHaveCount(1);
 });
 
+test('adds a box to a change, places it and saves it with the keys alone', async ({
+  page,
+}) => {
+  await open(page, '/porto/photos/D31');
+  await page.keyboard.press('c');
+  const note = page.getByRole('textbox', { name: 'What should change?' });
+  await expect(note).toBeFocused();
+  await page.getByRole('button', { name: 'Add a box' }).focus();
+  await page.keyboard.press('Enter');
+  const box = page.getByRole('button', { name: boxName });
+  await expect(box).toBeFocused();
+  await expect(box).toHaveAttribute('aria-pressed', 'true');
+  await scan(page);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  // The next letter goes back to the words, and Enter saves them with the box.
+  await page.keyboard.type('Less sky.');
+  await expect(note).toHaveValue('Less sky.');
+  const saved = page.waitForRequest(
+    (request) => portoMarks.test(request.url()) && request.method() === 'PUT',
+  );
+  await page.keyboard.press('Enter');
+  const { boxes } = (await saved).postDataJSON();
+  expect(boxes).toHaveLength(1);
+  expect(boxes[0].left).toBeGreaterThan(0.375);
+  expect(boxes[0].bottom).toBeGreaterThan(0.625);
+});
+
 test('gives a photo of the album the heart of Immich', async ({ page }) => {
   await open(page, '/lisbon/photos/D63');
   await expect(marks(page)).toContainText(['Change', 'Take out', 'Favorite']);

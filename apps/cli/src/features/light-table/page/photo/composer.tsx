@@ -1,5 +1,11 @@
 import { Check } from 'lucide-react';
-import { type KeyboardEvent, useEffect, useEffectEvent, useRef } from 'react';
+import {
+  type KeyboardEvent,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from 'react';
 import type { Box } from '../../contract.ts';
 import { count } from '../data/format.ts';
 import { mainButton, quietButton } from '../ui/classes.ts';
@@ -18,7 +24,7 @@ const iconSize = 20;
 
 const boxesSay = ({ note, boxes }: Draft): string => {
   if (boxes.length === 0) {
-    return 'Drag on the photo to show where.';
+    return 'Drag on the photo to show where, or add a box.';
   }
   const said = `${count(boxes.length, 'box', 'boxes')}. Drag one to move it, its corners to change its size.`;
   return note.trim() === '' ? `${said} Say what should change there.` : said;
@@ -33,10 +39,29 @@ type Props = {
   /** Whether something was done to the boxes that can be undone. */
   readonly canUndo: boolean;
   readonly onUndo: () => void;
+  /** Adds a box in the middle of the photo, for the keyboard to place. */
+  readonly onAddBox: () => void;
   readonly onDraft: (draft: Draft) => void;
   readonly onSave: () => void;
   readonly onCancel: () => void;
   readonly onRemove: () => void;
+};
+
+/**
+ * Puts the keyboard on the number of a box once the box is there, which is
+ * what the arrow keys move and size it with.
+ */
+const useFocusOnBox = (boxCount: number) => {
+  const [placing, setPlacing] = useState<number | null>(null);
+  useEffect(() => {
+    if (placing !== null && boxCount > placing) {
+      document
+        .querySelector<HTMLElement>(`[data-box-tag="${placing}"]`)
+        ?.focus({ preventScroll: true });
+      setPlacing(null);
+    }
+  }, [placing, boxCount]);
+  return setPlacing;
 };
 
 export const Composer = ({
@@ -45,6 +70,7 @@ export const Composer = ({
   canDraw,
   canUndo,
   onUndo,
+  onAddBox,
   onDraft,
   onSave,
   onCancel,
@@ -56,6 +82,9 @@ export const Composer = ({
   const words = canDraw
     ? { asked: 'What should change?', saves: 'Mark the change' }
     : { asked: 'What do you want of the edit?', saves: 'Mark the wish' };
+
+  const boxCount = draft.boxes.length;
+  const focusOn = useFocusOnBox(boxCount);
 
   const save = useEffectEvent(() => {
     if (!hasNoNote) {
@@ -136,6 +165,18 @@ export const Composer = ({
         <p className="mr-auto flex min-h-9 flex-wrap items-center gap-x-3 text-quiet text-sm">
           {canDraw ? boxesSay(draft) : 'It is done with the photo’s edit.'}
         </p>
+        {canDraw ? (
+          <button
+            className={`${quietButton} min-h-9 text-sm`}
+            onClick={() => {
+              focusOn(boxCount);
+              onAddBox();
+            }}
+            type="button"
+          >
+            Add a box
+          </button>
+        ) : null}
         {canUndo ? (
           <button
             aria-keyshortcuts="Control+Z"

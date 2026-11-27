@@ -54,6 +54,8 @@ export type Around = {
 };
 
 const longAgo = Number.NEGATIVE_INFINITY;
+/** A quarter of the photo across and down, in its middle. */
+const middle: Box = { left: 0.375, top: 0.375, right: 0.625, bottom: 0.625 };
 const nearby = 3;
 /** How many photos of a pile are had ready small, around the one shown. */
 const pileNearby = 12;
@@ -144,6 +146,12 @@ export const useComposing = (photo: PhotoView) => {
     setDraft((now) =>
       now === null ? now : { ...now, boxes: change(now.boxes) },
     );
+  const addBox = (box: Box) => {
+    record();
+    setSelected(draft?.boxes.length ?? null);
+    // Placed by the owner's own hand, so it is there as it was placed.
+    withBoxes((boxes) => [...boxes, { box, since: longAgo }]);
+  };
   /** Closes the change, which lets go of what wasn't saved of it. */
   const end = () => {
     if (unsaved !== null) {
@@ -167,12 +175,9 @@ export const useComposing = (photo: PhotoView) => {
     record,
     begin: () => setDraft(fresh()),
     cancel: end,
-    addBox: (box: Box) => {
-      record();
-      setSelected(draft?.boxes.length ?? null);
-      // Drawn by the owner's own hand, so it is there as it was drawn.
-      withBoxes((boxes) => [...boxes, { box, since: longAgo }]);
-    },
+    addBox,
+    /** Adds a box in the middle of the photo, to be moved and sized from there. */
+    placeBox: () => addBox(middle),
     /** Moves or resizes a box. What it was is noted with `record` before. */
     setBox: (at: number, box: Box) =>
       withBoxes((boxes) =>
