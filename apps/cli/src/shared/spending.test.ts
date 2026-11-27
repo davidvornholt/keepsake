@@ -149,3 +149,47 @@ describe('a budget', () => {
     expect((await spent(path))[model].dollars).toBeCloseTo(most);
   });
 });
+
+describe('a budget, while another request holds part of it', () => {
+  const most = mostCostOf(model, nothingSent) ?? 0;
+  const budget = 1.5 * most;
+
+  /** Asks while a request holds its most, which then costs what it used. */
+  const askWhileHeld = (cost: typeof used | undefined) =>
+    run(
+      Effect.gen(function* () {
+        const spending = yield* Spending;
+        return yield* Effect.gen(function* () {
+          const go = yield* Deferred.make<void>();
+          const running = yield* spending
+            .paying(model, nothingSent, (paid) =>
+              Effect.andThen(Deferred.await(go), paid.settle(cost)),
+            )
+            .pipe(Effect.forkChild);
+          while ((yield* spending.left) > budget - most) {
+            yield* Effect.yieldNow;
+          }
+          const asking = yield* Effect.result(request(spending)).pipe(
+            Effect.forkChild,
+          );
+          yield* Effect.sleep('10 millis');
+          const isWaiting = asking.pollUnsafe() === undefined;
+          yield* Deferred.succeed(go, undefined);
+          yield* Fiber.join(running);
+          return { isWaiting, result: yield* Fiber.join(asking) };
+        }).pipe(spending.within(budget));
+      }),
+    );
+
+  it('waits for it, and asks when it cost less', async () => {
+    const asked = await askWhileHeld(used);
+    expect(asked.isWaiting).toBe(true);
+    expect(asked.result._tag).toBe('Success');
+  });
+
+  it('stops once it cost what the other needs', async () => {
+    const asked = await askWhileHeld(undefined);
+    expect(asked.isWaiting).toBe(true);
+    expect(asked.result._tag).toBe('Failure');
+  });
+});

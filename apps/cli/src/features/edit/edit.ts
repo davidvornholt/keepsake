@@ -6,6 +6,7 @@ import { photoNamed } from '../../shared/photo-names.ts';
 import { isPriced } from '../../shared/prices.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { ReviewVision } from '../../shared/review-vision.ts';
+import { makeSignal } from '../../shared/signal.ts';
 import { dollarsForOneEdit, Spending } from '../../shared/spending.ts';
 import { readRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readPicks } from '../../shared/store.ts';
@@ -74,23 +75,43 @@ type Outcome =
 
 /**
  * Starts photos while the budget lasts, counting those that are being edited
- * right now at what they usually cost. Each paid request is checked again.
+ * right now at what they usually cost. A photo that doesn't fit beside them
+ * waits until one is done, as they often cost less, and is stopped only when
+ * none runs. Each paid request is checked again.
  */
 const makeBudget = Effect.fn('makeBudget')(function* () {
   const spending = yield* Spending;
   const running = yield* Ref.make(0);
-  const isLeft = Effect.gen(function* () {
+  const changes = yield* makeSignal;
+  const start: Effect.Effect<boolean> = Effect.gen(function* () {
+    const ended = yield* changes.next;
     const left = yield* spending.left;
-    return (yield* Ref.get(running)) * dollarsForOneEdit < left;
+    const answer = yield* Ref.modify(
+      running,
+      (count): ['start' | 'stop' | 'wait', number] => {
+        if (count * dollarsForOneEdit < left) {
+          return ['start', count + 1];
+        }
+        return [count === 0 ? 'stop' : 'wait', count];
+      },
+    );
+    if (answer === 'wait') {
+      yield* ended;
+      return yield* start;
+    }
+    return answer === 'start';
   });
   return <A, E, R>(work: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
-      if (!(yield* isLeft)) {
+      if (!(yield* start)) {
         return Option.none<A>();
       }
-      yield* Ref.update(running, (count) => count + 1);
       const result = yield* work.pipe(
-        Effect.ensuring(Ref.update(running, (count) => count - 1)),
+        Effect.ensuring(
+          Ref.update(running, (count) => count - 1).pipe(
+            Effect.andThen(changes.changed),
+          ),
+        ),
       );
       return Option.some(result);
     });

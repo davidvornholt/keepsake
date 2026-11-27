@@ -92,6 +92,20 @@ describe('keepsake edit, with a budget', () => {
     expect(existsSync(shootFile('edits', 'B', 'B-keepsake.jpg'))).toBe(false);
   });
 
+  it('edits each photo that fits once the others cost what they did', async () => {
+    await pickLisbon();
+    fakeModels.chatUsage = { prompt_tokens: 100, completion_tokens: 100 };
+    fakeModels.editAnswer = () =>
+      Response.json({
+        data: [1, 2].map(() => ({ b64_json: btoa('a png') })),
+        usage: { input_tokens: 1500, output_tokens: 3200 },
+      });
+    // Covers one image request at its most, and three at what they cost.
+    const result = await editLisbon('--budget', '1.40');
+    expect(result).toMatchObject({ edited: 3, overBudget: [] });
+    expect(result.dollarsSpent).toBeLessThan(1.4);
+  });
+
   it('refuses a model whose price it doesn’t know', async () => {
     await pickLisbon();
     const questions = fakeModels.asked.length;
