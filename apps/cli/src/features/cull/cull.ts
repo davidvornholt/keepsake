@@ -8,7 +8,7 @@ import {
   type Moment,
   Verdict,
 } from '../../shared/domain.ts';
-import { ModelFailed } from '../../shared/errors/errors.ts';
+import { ModelFailed, StoreFailed } from '../../shared/errors/errors.ts';
 import { saveJudge } from '../../shared/judge.ts';
 import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
@@ -89,6 +89,8 @@ type Asking<S extends AnswerSchema> = {
   readonly schema: S;
   /** What the question shows, which tells it apart from the others. */
   readonly shown: unknown;
+  /** Whether an answer can be used, as one that can't is asked again. */
+  readonly isUsable?: (answer: S['Type']) => boolean;
 };
 
 /**
@@ -97,13 +99,14 @@ type Asking<S extends AnswerSchema> = {
  * as it comes, since it cost money.
  */
 const askKept = <S extends AnswerSchema, E, R>(
-  kept: string,
-  { name, schema, shown }: Asking<S>,
+  { open, kept }: { readonly open: OpenShoot; readonly kept: string },
+  { name, schema, shown, isUsable = () => true }: Asking<S>,
   pieces: Effect.Effect<ReadonlyArray<Piece>, E, R>,
 ) =>
   Effect.gen(function* () {
+    // Every question also says what the shoot is about.
     const key = createHash('sha256')
-      .update(JSON.stringify(shown))
+      .update(JSON.stringify({ about: open.shoot.about, shown }))
       .digest('hex');
     const file = `${kept}/${name}-${key}.json`;
     const before = yield* readJson(schema, file);
@@ -117,7 +120,9 @@ const askKept = <S extends AnswerSchema, E, R>(
       schema,
       pieces: yield* pieces,
     });
-    yield* writeJson(schema, file, answer);
+    if (isUsable(answer)) {
+      yield* writeJson(schema, file, answer);
+    }
     return answer;
   });
 
@@ -132,7 +137,7 @@ const shortlist = Effect.fn('shortlist')(function* (
     const rounds = yield* Effect.forEach(chunks(left, mostFrames), (group) =>
       Effect.gen(function* () {
         const answer = yield* askKept(
-          kept,
+          { open, kept },
           { name: 'shortlist', schema: Shortlist, shown: group },
           Effect.map(framesOf(open, group), (frames) => [
             introduction(open.shoot, group.length),
@@ -207,8 +212,14 @@ const judge = Effect.fn('judge')(function* (
   const vision = yield* Vision;
   const candidates = yield* shortlist(open, kept, moment.photos);
   const answer = yield* askKept(
-    kept,
-    { name: 'judgement', schema: Judgement, shown: candidates },
+    { open, kept },
+    {
+      name: 'judgement',
+      schema: Judgement,
+      shown: candidates,
+      isUsable: ({ ranking }) =>
+        ranking.some(({ frame }) => candidates[frame - 1] !== undefined),
+    },
     Effect.map(framesOf(open, candidates), (frames) => [
       introduction(open.shoot, candidates.length),
       ...frames,
@@ -246,7 +257,7 @@ const judge = Effect.fn('judge')(function* (
     return verdict;
   }
   const check = yield* askKept(
-    kept,
+    { open, kept },
     { name: 'check', schema: Check, shown: { contenders, answer } },
     Effect.map(contenderPieces(open, contenders), (pieces) => [
       introduction(open.shoot, ranked.length),
@@ -280,7 +291,14 @@ export const judgeMoments = Effect.fn('judgeMoments')(function* (
   const { model } = yield* Vision;
   const fs = yield* FileSystem.FileSystem;
   const forget = (kept: string) =>
-    fs.remove(kept, { recursive: true, force: true }).pipe(Effect.ignore);
+    fs
+      .remove(kept, { recursive: true, force: true })
+      .pipe(
+        Effect.mapError(
+          ({ message }) =>
+            new StoreFailed({ message: `Could not use ${kept}: ${message}` }),
+        ),
+      );
   const outcomes = yield* inSteps('cull', moments, concurrency, (moment) =>
     Effect.gen(function* () {
       const file = fileOf(model, moment);
@@ -294,7 +312,8 @@ export const judgeMoments = Effect.fn('judgeMoments')(function* (
       }
       const verdict = yield* judge(open, kept, moment);
       yield* writeJson(Verdict, file, verdict);
-      yield* forget(kept);
+      // Left behind, they would only take up room.
+      yield* Effect.ignore(forget(kept));
       return { verdict };
     }).pipe(
       // One moment a model can't answer for doesn't stop the others.

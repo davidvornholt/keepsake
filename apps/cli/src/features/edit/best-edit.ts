@@ -86,7 +86,6 @@ const attempt = Effect.fn('attempt')(function* (
   const versions = yield* Effect.forEach(numbers, (number) =>
     withOriginals(files, { crop: crop.box, originals }, number),
   );
-  // Kept, since it cost money, for when a later step stops the edit.
   const { good, notes } = yield* remembered(
     Review,
     files.review(which.number),

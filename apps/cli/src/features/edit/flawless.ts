@@ -70,7 +70,6 @@ const inspection = (
   Effect.gen(function* () {
     const about = { crop: prepared.crop.box, removed: prepared.removed, wish };
     const mended = files.versionMended(checked.number);
-    // Each answer is kept, since it cost money, for when a later one fails.
     const inspected = (version: string, round: number) =>
       remembered(
         Schema.Array(Fault),

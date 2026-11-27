@@ -5,6 +5,7 @@ import process from 'node:process';
 import {
   asked,
   failureOf,
+  photosFolder,
   runOk,
   scanLisbon,
   setUp,
@@ -146,33 +147,6 @@ describe('keepsake cull', () => {
     expect(count).toBe(4);
   });
 
-  it('asks nothing again that it was answered before a moment failed', async () => {
-    await scanLisbon();
-    likeBothFrames([]);
-    const { check } = fakeModels.answers;
-    fakeModels.answers.check = () =>
-      Response.json({ error: { message: 'limit' } }, { status: 400 });
-    expect((await runOk('cull', 'lisbon')).failed).toHaveLength(1);
-    fakeModels.answers.check = check;
-    expect((await runOk('cull', 'lisbon')).failed).toEqual([]);
-    expect(asked('judgement')).toHaveLength(3);
-    expect(asked('check')).toHaveLength(2);
-    const kept = ['cull-answers', 'verdicts', 'azure--gpt-6-astra', 'A1'];
-    expect(existsSync(shootFile(...kept))).toBe(false);
-  });
-
-  it('asks again what it was answered before a moment failed, when told to', async () => {
-    await scanLisbon();
-    likeBothFrames([]);
-    const { check } = fakeModels.answers;
-    fakeModels.answers.check = () =>
-      Response.json({ error: { message: 'limit' } }, { status: 400 });
-    await runOk('cull', 'lisbon');
-    fakeModels.answers.check = check;
-    await runOk('cull', 'lisbon', '--again');
-    expect(asked('judgement')).toHaveLength(6);
-  });
-
   it('adds up what the models cost', async () => {
     await scanLisbon();
     const result = await runOk('cull', 'lisbon');
@@ -199,6 +173,69 @@ describe('keepsake cull', () => {
     await writeFile(lockFile(), '999999999\n');
     await runOk('cull', 'lisbon');
     expect(existsSync(lockFile())).toBe(false);
+  });
+});
+
+describe('keepsake cull, after a moment failed', () => {
+  it('asks nothing again that it was answered', async () => {
+    await scanLisbon();
+    likeBothFrames([]);
+    const { check } = fakeModels.answers;
+    fakeModels.answers.check = () =>
+      Response.json({ error: { message: 'limit' } }, { status: 400 });
+    expect((await runOk('cull', 'lisbon')).failed).toHaveLength(1);
+    fakeModels.answers.check = check;
+    expect((await runOk('cull', 'lisbon')).failed).toEqual([]);
+    expect(asked('judgement')).toHaveLength(3);
+    expect(asked('check')).toHaveLength(2);
+    const kept = ['cull-answers', 'verdicts', 'azure--gpt-6-astra', 'A1'];
+    expect(existsSync(shootFile(...kept))).toBe(false);
+  });
+
+  it('asks again a judgement that chose no frame', async () => {
+    await scanLisbon();
+    likeBothFrames([]);
+    const { judgement } = fakeModels.answers;
+    fakeModels.answers.judgement = (question: { images: number }) =>
+      question.images === 2 ? { ...verdictAnswer, ranking: [] } : verdictAnswer;
+    expect((await runOk('cull', 'lisbon')).failed).toHaveLength(1);
+    fakeModels.answers.judgement = judgement;
+    expect((await runOk('cull', 'lisbon')).failed).toEqual([]);
+  });
+
+  it('asks again when the shoot is about something else', async () => {
+    await scanLisbon();
+    likeBothFrames([]);
+    const { check } = fakeModels.answers;
+    fakeModels.answers.check = () =>
+      Response.json({ error: { message: 'limit' } }, { status: 400 });
+    await runOk('cull', 'lisbon');
+    fakeModels.answers.check = check;
+    await runOk(
+      'scan',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--title',
+      'Lisbon',
+      '--about',
+      'Sintra, May 2026',
+    );
+    await runOk('cull', 'lisbon');
+    const judged = asked('judgement').map(({ texts }) => texts.join(' '));
+    expect(judged.at(-1)).toContain('Sintra');
+  });
+
+  it('asks again when told to', async () => {
+    await scanLisbon();
+    likeBothFrames([]);
+    const { check } = fakeModels.answers;
+    fakeModels.answers.check = () =>
+      Response.json({ error: { message: 'limit' } }, { status: 400 });
+    await runOk('cull', 'lisbon');
+    fakeModels.answers.check = check;
+    await runOk('cull', 'lisbon', '--again');
+    expect(asked('judgement')).toHaveLength(6);
   });
 });
 
