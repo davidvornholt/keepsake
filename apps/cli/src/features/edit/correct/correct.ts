@@ -2,6 +2,7 @@ import { Effect, Schema } from 'effect';
 import { wholePicture } from '../../../shared/boxes.ts';
 import type { Box } from '../../../shared/domain.ts';
 import { renderExactly, type Size, sizeOf } from '../../../shared/pictures.ts';
+import { isOnFace } from '../../../shared/removed.ts';
 import {
   atomically,
   exists,
@@ -12,7 +13,7 @@ import type { Job } from '../best-edit.ts';
 import { descriptionOf } from '../describe.ts';
 import { editableSize } from '../geometry.ts';
 import { ImageModel } from '../image-model.ts';
-import { isOnFace, keptOnFace } from '../keep-originals.ts';
+import { keptOnFace } from '../keep-originals.ts';
 import { peopleAndSigns, remembered } from '../prepare.ts';
 import { mostAttempts, versionsOf, withOriginals } from '../versions.ts';
 import { candidatesOf, type Taken, writeWith } from './candidates.ts';

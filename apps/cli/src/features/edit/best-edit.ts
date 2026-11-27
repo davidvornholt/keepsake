@@ -16,6 +16,7 @@ import { finish } from './finish.ts';
 import { flawless } from './flawless.ts';
 import { exactFrame } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
+import { carriedOut, removedFrom } from './keep-originals.ts';
 import {
   cameraQuality,
   type Prepared,
@@ -98,6 +99,7 @@ const attempt = Effect.fn('attempt')(function* (
       files,
       prepared,
       version,
+      wish,
     );
     if (problems.length === 0) {
       return { best: file, notes } satisfies Outcome;
@@ -151,7 +153,7 @@ export const captionOf = (
 export const writeEdit = Effect.fn('writeEdit')(function* (
   job: Job,
   {
-    prepared: { crop, size, description },
+    prepared: { crop, size, description, removed, originals },
     best,
     notes,
     attempts,
@@ -188,6 +190,14 @@ export const writeEdit = Effect.fn('writeEdit')(function* (
     crop,
     review: notes,
     attempts,
+    // Where the finished photo shows it, which can be a little moved.
+    removed:
+      best === null
+        ? []
+        : yield* removedFrom(
+            { original: files.input, edit: best },
+            { crop: crop.box, removals: carriedOut(originals, removed) },
+          ),
   };
   yield* writeJson(EditRecord, files.record, record);
   return record;

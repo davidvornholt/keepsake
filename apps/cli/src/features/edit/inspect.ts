@@ -5,7 +5,7 @@ import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 import { aboutBeyond } from './beyond.ts';
 import { inPhoto, partsOf } from './parts.ts';
-import { aboutRemoved } from './removals.ts';
+import { aboutRemoved, aboutWish } from './removals.ts';
 
 const wholeSide = 1024;
 
@@ -67,7 +67,12 @@ export const inspect = Effect.fn('inspect')(function* (
   {
     crop,
     removed,
-  }: { readonly crop: Box; readonly removed: ReadonlyArray<string> },
+    wish,
+  }: {
+    readonly crop: Box;
+    readonly removed: ReadonlyArray<string>;
+    readonly wish: string | null;
+  },
 ) {
   const vision = yield* Vision;
   const size = yield* sizeOf(files.version);
@@ -96,6 +101,7 @@ export const inspect = Effect.fn('inspect')(function* (
       yield* rendered(files.version, { longSide: wholeSide }),
       ...closeUps.flat(),
       ...aboutRemoved(removed),
+      ...aboutWish(wish),
       ...aboutBeyond(crop),
       question,
     ],

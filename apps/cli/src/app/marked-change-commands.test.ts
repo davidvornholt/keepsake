@@ -41,6 +41,7 @@ const finalFile = () => shootFile('edits', 'B', 'B-keepsake.jpg');
 const chairAt = (box: object) => {
   fakeModels.answers.places = {
     everywhere: false,
+    bringsBack: false,
     places: [{ part: 0, what: chair, isRemoval: true, box }],
   };
   fakeModels.answers.choices = {
@@ -225,7 +226,11 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await editLisbon('B');
     await Bun.write(finalFile(), 'the former edit');
     await markB();
-    fakeModels.answers.places = { everywhere: true, places: [] };
+    fakeModels.answers.places = {
+      everywhere: true,
+      bringsBack: false,
+      places: [],
+    };
     const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);

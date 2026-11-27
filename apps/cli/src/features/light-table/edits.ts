@@ -1,13 +1,13 @@
-import { Effect, FileSystem, Option, Schema } from 'effect';
+import { Effect, FileSystem, Option } from 'effect';
 import { Description } from '../../shared/describing.ts';
-import { EditRecord, Removal } from '../../shared/domain.ts';
+import { EditRecord } from '../../shared/domain.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
+import { removedBy } from '../../shared/removed.ts';
 import { exists, readJson } from '../../shared/store.ts';
 import { wishIn } from '../../shared/wishes.ts';
 import type { Edit } from './contract.ts';
 import { type Gallery, pictureOf } from './pictures.ts';
 
-const Removals = Schema.Array(Removal);
 const earlierName = /^(?<stamp>\d+)\.jpg$/u;
 
 const storeFailed = (error: { readonly message: string }) =>
@@ -64,7 +64,6 @@ export const editOf = Effect.fn('editOf')(function* (
     .pipe(Effect.mapError(storeFailed));
   const made = Option.match(mtime, { onNone: () => 0, onSome: Number });
   const description = yield* readJson(Description, files.description);
-  const removals = yield* readJson(Removals, files.removals);
   return {
     at: iso(made),
     isAi: version === 'ai',
@@ -79,9 +78,6 @@ export const editOf = Effect.fn('editOf')(function* (
     }),
     wish: yield* wishIn(files.wish),
     review,
-    removed:
-      version === 'ai'
-        ? Option.getOrElse(removals, (): typeof Removals.Type => [])
-        : [],
+    removed: yield* removedBy(record.value, files),
   } satisfies Edit;
 });
