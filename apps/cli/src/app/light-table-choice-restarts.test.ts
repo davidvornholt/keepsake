@@ -144,6 +144,34 @@ describe('a swap the page stopped in the middle of', () => {
   });
 });
 
+describe('a put-in the page stopped as Immich took the photo', () => {
+  it('publishes all of it before it lets the choice go', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    await stoppedAt(
+      { photo: 'A2', wants: 'in', because: null, instead: null },
+      ({ args }) =>
+        args[0] === 'upload' && args[1]?.endsWith('/A2/A2.jpg') === true,
+    );
+    // What reads the album next, as publishing one that is in it does,
+    // finds the photo in it.
+    await runOk('publish', 'lisbon', 'A1');
+    const halfWay = await standingOf('A2');
+    const left = await whileServing(settled);
+    const { photos } = await shootJson('publication.json');
+    const published = photos.find(
+      ({ photo }: { photo: string }) => photo === 'A2',
+    );
+    const ran = (...args: ReadonlyArray<string>) =>
+      fakeTools.runs.some((run) => args.every((arg) => run.args.includes(arg)));
+    expect(halfWay).toMatchObject({ kind: 'album' });
+    expect(left).toEqual([]);
+    expect(published?.cameraAsset).toBeString();
+    expect(ran('stacks', published?.asset, published?.cameraAsset)).toBe(true);
+    expect(ran('tags', 'add', published?.asset)).toBe(true);
+  });
+});
+
 describe('a choice the page stopped before it noted it', () => {
   it('chooses a photo that is in the album already', async () => {
     await publishLisbon();
