@@ -92,6 +92,12 @@ const usualChatUsage: ChatUsage = {
   completion_tokens: 1000,
 };
 
+/** What a question uses when the test wants questions to cost nothing. */
+export const freeChatUsage: ChatUsage = {
+  prompt_tokens: 0,
+  completion_tokens: 0,
+};
+
 /** Stands in for Azure, so no test reaches a real model. */
 export const fakeModels = {
   asked: [] as Array<Asked>,

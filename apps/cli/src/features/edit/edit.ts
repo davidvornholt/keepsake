@@ -1,6 +1,7 @@
-import { Effect, Option, Ref } from 'effect';
+import { Effect, type FileSystem, Option, type Path, Ref } from 'effect';
 import { during } from '../../shared/activity.ts';
-import { InvalidInput } from '../../shared/errors/errors.ts';
+import type { EditRecord } from '../../shared/domain.ts';
+import { InvalidInput, type StoreFailed } from '../../shared/errors/errors.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { isPriced } from '../../shared/prices.ts';
 import { inSteps } from '../../shared/progress.ts';
@@ -112,11 +113,54 @@ export const checkPrices = Effect.fn('checkPrices')(function* (
   }
 });
 
+/** What an edit came to, as `keepsake edit` prints it. */
+const summaryOf = (open: OpenShoot, outcomes: ReadonlyArray<Outcome>) => {
+  const done = outcomes.flatMap((outcome) =>
+    outcome.kind === 'done' ? [outcome] : [],
+  );
+  const records = done.map(({ record }) => record);
+  return {
+    shoot: open.shoot.name,
+    edited: records.filter(({ version }) => version === 'ai').length,
+    keptFromCamera: records
+      .filter(({ version }) => version === 'camera')
+      .map(({ photo, review }) => ({ photo, reason: review })),
+    notDone: done.flatMap(({ record: { photo }, notDone }) =>
+      notDone.map((what) => ({ photo, what })),
+    ),
+    overBudget: outcomes.flatMap((outcome) =>
+      outcome.kind === 'overBudget' ? [outcome.photo] : [],
+    ),
+    failed: outcomes.flatMap((outcome) =>
+      outcome.kind === 'failed'
+        ? [{ photo: outcome.photo, reason: outcome.reason }]
+        : [],
+    ),
+    files: records.map(({ photo }) => open.files.edit(photo).final),
+  };
+};
+export type EditSummary = ReturnType<typeof summaryOf>;
+
+/**
+ * Notes what an edit came to before it forgets how far it got, so one or the
+ * other is always known.
+ */
+export type Keep = (
+  summary: EditSummary,
+  /** How each photo that is done was edited. */
+  records: ReadonlyArray<EditRecord>,
+) => Effect.Effect<
+  void,
+  StoreFailed,
+  FileSystem.FileSystem | Path.Path | Spending
+>;
+
 /** Edits the picked photos until the budget is used up. */
 export const edit = Effect.fn('edit')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
   options: EditOptions & { readonly budget: number },
+  keep: Keep = () => Effect.void,
 ) {
   yield* checkPrices((yield* ImageModel).model);
   const todo = yield* jobs(open, names);
@@ -177,30 +221,15 @@ export const edit = Effect.fn('edit')(function* (
       ),
     ),
   ).pipe(spending.within(options.budget));
-  const done = outcomes.flatMap((outcome) =>
-    outcome.kind === 'done' ? [outcome] : [],
+  const summary = summaryOf(open, outcomes);
+  yield* keep(
+    summary,
+    outcomes.flatMap((outcome) =>
+      outcome.kind === 'done' ? [outcome.record] : [],
+    ),
   );
-  if (anew !== null && done.length === outcomes.length) {
+  if (anew !== null && outcomes.every(({ kind }) => kind === 'done')) {
     yield* doneWithAnew(open);
   }
-  const records = done.map(({ record }) => record);
-  return {
-    shoot: open.shoot.name,
-    edited: records.filter(({ version }) => version === 'ai').length,
-    keptFromCamera: records
-      .filter(({ version }) => version === 'camera')
-      .map(({ photo, review }) => ({ photo, reason: review })),
-    notDone: done.flatMap(({ record: { photo }, notDone }) =>
-      notDone.map((what) => ({ photo, what })),
-    ),
-    overBudget: outcomes.flatMap((outcome) =>
-      outcome.kind === 'overBudget' ? [outcome.photo] : [],
-    ),
-    failed: outcomes.flatMap((outcome) =>
-      outcome.kind === 'failed'
-        ? [{ photo: outcome.photo, reason: outcome.reason }]
-        : [],
-    ),
-    files: records.map(({ photo }) => open.files.edit(photo).final),
-  };
+  return summary;
 });

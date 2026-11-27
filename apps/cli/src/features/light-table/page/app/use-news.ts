@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CarryingOut } from '../../contract.ts';
 import { type Index, newPhotos } from '../data/derive.ts';
+import { newsShownOf } from '../photo/word.ts';
 
 // What is new as a pile to go through, oldest first: the photos with
 // something new when the owner starts, and those that get something meanwhile.
@@ -19,8 +20,8 @@ export const useNews = (
     onSeen,
   }: {
     readonly isOn: boolean;
-    /** Called with a photo the owner moved on from while it was new. */
-    readonly onSeen: (photo: string) => Promise<void>;
+    /** Called with what was shown as new of a photo the owner moved on from. */
+    readonly onSeen: (items: ReadonlyArray<string>) => Promise<void>;
   },
 ) => {
   const [pile, setPile] = useState<Pile | null>(null);
@@ -44,7 +45,7 @@ export const useNews = (
     isEmpty: isOn && pile !== null && pile.photos.length === 0,
     show: (photo: string) => {
       if (current !== null && newPhotos(index, carrying).includes(current)) {
-        onSeen(current).catch(() => undefined);
+        onSeen(newsShownOf(index, current, carrying)).catch(() => undefined);
       }
       setPile((now) => (now === null ? now : { ...now, current: photo }));
     },

@@ -1,7 +1,11 @@
 import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
-import { edit as editShoot } from '../features/edit/edit.ts';
+import {
+  type EditSummary,
+  edit as editShoot,
+  type Keep,
+} from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { stillOrdered } from '../features/light-table/carry-out.ts';
@@ -30,7 +34,7 @@ import {
   shootArgument,
   visionModel,
 } from './command-inputs.ts';
-import { operationOf, resultOf, saveResult } from './operations.ts';
+import { keepingEdit, operationOf, resultOf } from './operations.ts';
 import { emit, emitWithCost, withCost } from './output.ts';
 import { markOfChosen, whatToEdit } from './what-to-edit.ts';
 
@@ -176,6 +180,30 @@ export const pick = Command.make(
   ),
 );
 
+/**
+ * Edits under the shoot's lock, unless an edit given the same operation id
+ * ended meanwhile, such as one a server started before it stopped: then
+ * what that came to. What an edit with an id came to is noted before it
+ * forgets how far it got.
+ */
+const editOnce = <E, R>(
+  open: OpenShoot,
+  operation: { readonly id: string; readonly about: string } | null,
+  editing: (keep?: Keep) => Effect.Effect<EditSummary, E, R>,
+) =>
+  Effect.gen(function* () {
+    if (operation === null) {
+      return yield* withCost(yield* editing());
+    }
+    const ended = yield* resultOf(open.files, operation);
+    if (ended !== null) {
+      return ended;
+    }
+    const { keep, kept } = keepingEdit(open, operation);
+    const summary = yield* editing(keep);
+    return kept.value ?? (yield* withCost(summary));
+  });
+
 export const edit = Command.make(
   'edit',
   {
@@ -204,16 +232,22 @@ export const edit = Command.make(
     wish,
     mark,
     again: startOver,
-    operation,
+    operation: id,
     ...flags
   }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
-      const id = Option.isSome(operation)
-        ? yield* operationOf(operation.value)
+      const operation = Option.isSome(id)
+        ? {
+            id: yield* operationOf(id.value),
+            about: Option.isSome(mark)
+              ? `the mark ${mark.value}`
+              : `the photos ${photos.join(', ')}`,
+          }
         : null;
       const { files } = yield* openShoot(shoot);
-      const saved = id === null ? null : yield* resultOf(files, id);
+      const saved =
+        operation === null ? null : yield* resultOf(files, operation);
       if (saved !== null) {
         return yield* emit(saved);
       }
@@ -225,16 +259,17 @@ export const edit = Command.make(
         budget: flags.budget,
       });
       yield* workOn(shoot, (open) =>
-        editShoot(open, asked.photos, {
-          ...input,
-          again: startOver,
-          wish: asked.wish,
-          areas: asked.areas,
-        }).pipe(
-          Effect.flatMap(withCost),
-          // Noted before it is printed, under the shoot's lock.
-          Effect.tap((result) =>
-            id === null ? Effect.void : saveResult(open.files, id, result),
+        editOnce(open, operation, (keep) =>
+          editShoot(
+            open,
+            asked.photos,
+            {
+              ...input,
+              again: startOver,
+              wish: asked.wish,
+              areas: asked.areas,
+            },
+            keep,
           ),
         ),
       ).pipe(

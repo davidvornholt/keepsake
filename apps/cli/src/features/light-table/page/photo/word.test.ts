@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { Mark } from '../../contract.ts';
 import { indexOf } from '../data/derive.ts';
 import { sampleMark, samplePhoto, sampleShoot } from '../data/sample.ts';
-import { wordOf } from './word.ts';
+import { newsShownOf, wordOf } from './word.ts';
 
 const photo = samplePhoto('a');
 const handedAt = '2026-05-21T10:00:00.000Z';
@@ -61,6 +61,7 @@ describe('wordOf', () => {
     const added = { photo: 'a', at: handedAt, seenAt: null };
     expect(wordOf(indexOf({ ...shoot, added: [added] }), photo, calm)).toEqual({
       kind: 'added',
+      at: handedAt,
     });
     const seen = { ...added, seenAt: handedAt };
     expect(
@@ -82,5 +83,32 @@ describe('wordOf', () => {
 
   it('leaves an answer that was looked at alone', () => {
     expect(wordFor([{ ...answered, seenAt: handedAt }])).toBeNull();
+  });
+});
+
+describe('newsShownOf', () => {
+  it('names only what the photo shows as new, one thing at a time', () => {
+    const earlier: Mark = {
+      ...answered,
+      id: 'earlier',
+      answer: {
+        at: '2026-05-21T09:00:00.000Z',
+        outcome: 'done',
+        note: 'Done.',
+      },
+    };
+    const shoot = {
+      ...sampleShoot([photo], [earlier, answered]),
+      added: [{ photo: 'a', at: handedAt, seenAt: null }],
+    };
+    const idle = { since: null, stopped: null };
+    expect(newsShownOf(indexOf(shoot), 'a', idle)).toEqual([
+      `answer:answered:${handedAt}`,
+    ]);
+    const without = { ...shoot, marks: [] };
+    expect(newsShownOf(indexOf(without), 'a', idle)).toEqual([
+      `added:a:${handedAt}`,
+    ]);
+    expect(newsShownOf(indexOf(without), 'gone', idle)).toEqual([]);
   });
 });

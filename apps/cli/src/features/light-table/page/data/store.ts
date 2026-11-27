@@ -5,7 +5,6 @@ import type {
   NewChoice,
   NewMark,
 } from '../../contract.ts';
-import { keysAbout, newsItemsOf } from '../../news-of.ts';
 import {
   dismissChoice,
   forgetShoot,
@@ -217,23 +216,15 @@ const answering = (core: Core) => ({
     await core.send(() => dismissChoice(core.name, action));
   },
   /**
-   * Notes that the owner looked at what is new about a photo: only what the
-   * page shows of it now, so what comes later stays new.
+   * Notes that the owner looked at what is new: the items the page showed,
+   * by their keys, so what came later stays new.
    */
-  seen: async (photo: string) => {
+  seen: async (items: ReadonlyArray<string>) => {
+    const shoot = core.get().index?.shoot;
+    if (shoot === undefined || items.length === 0) {
+      return;
+    }
     const now = new Date().toISOString();
-    const { index, carrying } = core.get();
-    if (index === null) {
-      return;
-    }
-    const { shoot } = index;
-    const items = keysAbout(
-      newsItemsOf(shoot.marks, shoot.added, carrying),
-      photo,
-    );
-    if (items.length === 0) {
-      return;
-    }
     const keys = new Set(items);
     core.setShoot(withSeen(shoot, keys, now));
     core.set({ carrying: carryingSeen(core.get().carrying, keys, now) });

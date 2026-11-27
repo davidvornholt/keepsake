@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { keysAbout, newsItemsOf } from '../../news-of.ts';
+import { newsItemsOf } from '../../news-of.ts';
 import {
   draftOf,
   isDraft,
@@ -137,7 +137,9 @@ describe('what keepsake answers', () => {
     };
     const keysOf = (photo: string) =>
       new Set(
-        keysAbout(newsItemsOf(shoot.marks, shoot.added, shoot.carrying), photo),
+        newsItemsOf(shoot.marks, shoot.added, shoot.carrying).flatMap((item) =>
+          item.photo === photo ? [item.key] : [],
+        ),
       );
     const seen = withSeen(shoot, keysOf('a'), later);
     expect(seen.marks.map(({ seenAt }) => seenAt)).toEqual([later, null]);

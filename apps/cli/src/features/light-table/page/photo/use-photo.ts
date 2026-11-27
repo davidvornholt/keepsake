@@ -18,6 +18,7 @@ import type { Entry } from './control.ts';
 import { wasAskedToCompose } from './intent.ts';
 import type { FrameOnTable } from './stage.tsx';
 import { usePrepared } from './use-picture.ts';
+import { newsShownOf } from './word.ts';
 
 // What the owner does with a photo that is looked at: which picture of it
 // is shown, the change being written, the marks, and the keys for it all.
@@ -257,7 +258,9 @@ export const useMarking = (
 
   const lookedAt = () => {
     if (newPhotos(index, state.carrying).includes(photo.id)) {
-      store.seen(photo.id).catch(() => undefined);
+      store
+        .seen(newsShownOf(index, photo.id, state.carrying))
+        .catch(() => undefined);
     }
   };
 

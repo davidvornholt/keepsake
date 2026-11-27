@@ -5,7 +5,7 @@ import { fake } from './command-fixtures.ts';
 import { fakeToolsLayer } from './fake-tools.ts';
 import { publishingLayer } from './publishing.ts';
 
-type Options = Partial<Omit<Parameters<typeof serveLightTable>[0], 'port'>>;
+type Options = Partial<Parameters<typeof serveLightTable>[0]>;
 
 /** Serves the page while `visit` runs. */
 export const whileServing = <A>(
@@ -18,8 +18,8 @@ export const whileServing = <A>(
         address: undefined,
         photos: [],
         keepsake: ['keepsake'],
-        ...options,
         port: 0,
+        ...options,
       });
       return yield* Effect.promise(() =>
         visit(`http://127.0.0.1:${server.port}`),

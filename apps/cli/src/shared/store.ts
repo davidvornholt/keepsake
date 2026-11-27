@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, PickList, Shoot } from './domain.ts';
 import { editFiles, editFolderName } from './edit-files.ts';
@@ -97,11 +98,26 @@ export const readBytes = (path: string) =>
     return yield* fs.readFile(path).pipe(Effect.mapError(storeFailed(path)));
   });
 
+/** The SHA-256 of a file, which tells one version of it from another. */
+export const digestOf = (file: string) =>
+  Effect.map(readBytes(file), (bytes) =>
+    createHash('sha256').update(bytes).digest('hex'),
+  );
+
 /** Where every shoot has its folder. */
 export const shootsDirectory = Effect.gen(function* () {
   const path = yield* Path.Path;
   const data = yield* xdgDirectory('XDG_DATA_HOME', '.local/share');
   return path.join(data, 'keepsake', 'shoots');
+});
+
+/**
+ * The lock the page's server holds while it runs. No shoot's name starts
+ * with a dot, so it is no shoot's lock.
+ */
+export const serverLock = Effect.gen(function* () {
+  const path = yield* Path.Path;
+  return path.join(yield* shootsDirectory, '..', 'locks', '.serve');
 });
 
 /** Where the edit of a photo of the shoot keeps everything. */

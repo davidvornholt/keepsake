@@ -32,7 +32,6 @@ export const emit = (value: unknown): Effect.Effect<void> =>
 
 const cents = 100;
 
-/** Prints the result of a command that uses models, with what it cost. */
 /** The result of a command that uses models, with what it cost. */
 export const withCost = <A extends object>(value: A) =>
   Effect.gen(function* () {

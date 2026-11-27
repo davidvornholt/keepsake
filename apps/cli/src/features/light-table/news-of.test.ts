@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { CarryingOut, Mark } from './contract.ts';
-import { decisionOf, keysAbout, newsItemsOf, newsOf } from './news-of.ts';
+import { decisionOf, newsItemsOf, newsOf } from './news-of.ts';
 
 const at = '2026-05-02T10:00:00.000Z';
 const later = '2026-05-02T11:00:00.000Z';
@@ -40,10 +40,6 @@ describe('what is new', () => {
     expect(items.map(({ key }) => key)).toEqual([
       'stop:stop1',
       'added:b:2026-05-02T10:00:00.000Z',
-      'answer:m1:2026-05-02T11:00:00.000Z',
-    ]);
-    expect(keysAbout(items, 'a')).toEqual([
-      'stop:stop1',
       'answer:m1:2026-05-02T11:00:00.000Z',
     ]);
     expect(newsOf([answered('m1', 'a', later)], [], stop(['a']))).toEqual([

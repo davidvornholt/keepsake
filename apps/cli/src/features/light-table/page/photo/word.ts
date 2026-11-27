@@ -11,7 +11,7 @@ export type Word =
       readonly carrying: Extract<CarryingState, { is: 'stopped' }>;
     }
   /** An order put it into the album, and the owner hasn't looked at it. */
-  | { readonly kind: 'added' }
+  | { readonly kind: 'added'; readonly at: string }
   | { readonly kind: 'working' }
   | { readonly kind: 'waiting'; readonly mark: Mark }
   /** The owner's own words on a mark that isn't handed over. */
@@ -40,12 +40,11 @@ export const wordOf = (
   if (state.is === 'stopped' && state.stopped.photos.includes(photo.id)) {
     return { kind: 'stopped', carrying: state };
   }
-  if (
-    index.shoot.added.some(
-      (added) => added.photo === photo.id && added.seenAt === null,
-    )
-  ) {
-    return { kind: 'added' };
+  const added = index.shoot.added.find(
+    (one) => one.photo === photo.id && one.seenAt === null,
+  );
+  if (added !== undefined) {
+    return { kind: 'added', at: added.at };
   }
   if (isWorkedOn) {
     return { kind: 'working' };
@@ -58,4 +57,42 @@ export const wordOf = (
   return open === null || open.note === '' || isComposing
     ? null
     : { kind: 'mine', mark: open };
+};
+
+/** The keys of what is new in a word, as the server knows them. */
+const keysIn = (word: Word | null, photo: string): ReadonlyArray<string> => {
+  switch (word?.kind) {
+    case 'answer':
+      return word.mark.answer === null
+        ? []
+        : [`answer:${word.mark.id}:${word.mark.answer.at}`];
+    case 'stopped':
+      return [`stop:${word.carrying.stopped.id}`];
+    case 'added':
+      return [`added:${photo}:${word.at}`];
+    default:
+      return [];
+  }
+};
+
+/**
+ * What the page shows as new about a photo, by the keys the owner sees it
+ * by. Only that, so what came after it was shown stays new.
+ */
+export const newsShownOf = (
+  index: Index,
+  photo: string,
+  carrying: CarryingOut,
+): ReadonlyArray<string> => {
+  const view = index.byId.get(photo);
+  return view === undefined
+    ? []
+    : keysIn(
+        wordOf(index, view, {
+          isWorkedOn: false,
+          isComposing: false,
+          carrying,
+        }),
+        photo,
+      );
 };

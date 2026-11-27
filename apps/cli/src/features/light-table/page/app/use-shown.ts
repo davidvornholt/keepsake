@@ -41,7 +41,7 @@ export const useShown = (
     onSeen,
   }: {
     readonly carrying: CarryingOut;
-    readonly onSeen: (photo: string) => Promise<void>;
+    readonly onSeen: (items: ReadonlyArray<string>) => Promise<void>;
   },
 ) => {
   const { filters } = route;

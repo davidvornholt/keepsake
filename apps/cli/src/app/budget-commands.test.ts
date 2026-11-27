@@ -237,7 +237,7 @@ describe('what an edit spends', () => {
 describe('keepsake edit, with a wish and a budget', () => {
   const finalFile = () => shootFile('edits', 'B', 'B-keepsake.jpg');
 
-  it('makes no attempt that the budget doesn’t cover', async () => {
+  it('makes no attempt that the budget doesn’t cover, and goes on with it when there is more', async () => {
     await pickLisbon();
     await editLisbon('B');
     await Bun.write(finalFile(), 'the former edit');
@@ -263,12 +263,19 @@ describe('keepsake edit, with a wish and a budget', () => {
     );
     expect(fakeModels.edits).toHaveLength(2);
     expect(asked('choices')).toHaveLength(1);
-    expect(result.notDone).toEqual([
-      {
-        photo: 'B',
-        what: expect.stringContaining('is left of the budget'),
-      },
-    ]);
+    // It isn't done, so it isn't answered as if it were.
+    expect(result).toMatchObject({ overBudget: ['B'], notDone: [] });
     expect(readFileSync(finalFile(), 'utf8')).toBe('the former edit');
+    // With more money, only the place that is left is tried again.
+    const more = await editLisbon('B', '--wish', 'No chair', ...threeVersions);
+    expect(fakeModels.edits).toHaveLength(3);
+    expect(fakeModels.edits[2]?.prompt).toContain(
+      'An earlier attempt failed: A leg of it is left.',
+    );
+    expect(asked('choices')).toHaveLength(2);
+    expect(more.overBudget).toEqual([]);
+    expect(more.notDone).toEqual([
+      { photo: 'B', what: 'Remove the chair. A leg of it is left.' },
+    ]);
   });
 });

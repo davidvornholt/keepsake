@@ -63,13 +63,6 @@ export const newsItemsOf = (
   ].toSorted(byTime);
 };
 
-/** The keys of what is new about a photo, which the owner sees by looking at it. */
-export const keysAbout = (
-  items: ReadonlyArray<NewsItem>,
-  photo: string,
-): ReadonlyArray<string> =>
-  items.flatMap((item) => (item.photo === photo ? [item.key] : []));
-
 /** The photos with something new, each once at its oldest, oldest first. */
 export const newsOf = (
   marks: ReadonlyArray<Mark>,

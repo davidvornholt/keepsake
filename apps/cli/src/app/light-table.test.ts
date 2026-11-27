@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { readdir, readlink } from 'node:fs/promises';
-import { BunServices } from '@effect/platform-bun';
-import { Effect } from 'effect';
-import { serveLightTable } from '../features/light-table/server.ts';
+import { mkdir, readdir, readlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import process from 'node:process';
 import { asTheRunner } from '../shared/lock.ts';
 import {
   editLisbon,
+  fake,
   pickLisbon,
   runOk,
   setUp,
   shootFile,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools, fakeToolsLayer } from './fake-tools.ts';
+import { fakeTools } from './fake-tools.ts';
 import {
   change,
   send,
@@ -22,7 +22,6 @@ import {
 } from './light-table-fixtures.ts';
 import { whileHeld } from './lock-fixtures.ts';
 import { handedOver } from './mark-fixtures.ts';
-import { publishingLayer } from './publishing.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -305,22 +304,35 @@ describe('who the light table answers', () => {
   });
 
   it('says that something else uses its port', async () => {
-    const serving = whileServing((address) =>
-      Effect.runPromise(
-        serveLightTable({
-          port: Number(new URL(address).port),
-          address: undefined,
-          photos: [],
-          keepsake: [],
-        }).pipe(
-          Effect.scoped,
-          Effect.provide(publishingLayer),
-          Effect.provide(fakeToolsLayer),
-          Effect.provide(BunServices.layer),
-        ),
-      ),
+    const other = Bun.serve({ port: 0, fetch: () => new Response() });
+    try {
+      const serving = whileServing(() => Promise.resolve(), {
+        port: other.port ?? 0,
+      });
+      await expect(serving).rejects.toThrow('Leave out --port');
+    } finally {
+      await other.stop(true);
+    }
+  });
+
+  it('doesn’t start while another server runs on the machine', async () => {
+    const second = whileServing(() => whileServing(() => Promise.resolve()));
+    await expect(second).rejects.toThrow(
+      `Another keepsake serve (process ${process.pid}) is running`,
     );
-    await expect(serving).rejects.toThrow('Leave out --port');
+    // Once that one has ended, the next one starts.
+    expect(
+      await whileServing(async (address) => (await fetch(address)).status),
+    ).toBe(200);
+  });
+
+  it('takes over the lock of a server that died', async () => {
+    const lock = join(fake.home, 'data', 'keepsake', 'locks', '.serve');
+    await mkdir(dirname(lock), { recursive: true });
+    await writeFile(lock, '4194303\n');
+    expect(
+      await whileServing(async (address) => (await fetch(address)).status),
+    ).toBe(200);
   });
 });
 

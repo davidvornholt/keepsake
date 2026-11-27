@@ -54,6 +54,12 @@ export class ShootBusy extends Schema.TaggedError<ShootBusy>()('ShootBusy', {
   message: Schema.String,
 }) {}
 
+// Another `keepsake serve` runs on this machine, and one is all there may be.
+export class ServerRunning extends Schema.TaggedError<ServerRunning>()(
+  'ServerRunning',
+  { message: Schema.String },
+) {}
+
 // A paid request could cost more than is left of the budget, or costs what
 // keepsake doesn't know, so it isn't sent.
 export class OverBudget extends Schema.TaggedError<OverBudget>()('OverBudget', {

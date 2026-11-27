@@ -7,8 +7,16 @@ import {
   setDefaultTimeout,
   spyOn,
 } from 'bun:test';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { choose, inImmich, publishLisbon } from './choice-fixtures.ts';
-import { setUp, shootJson, tearDown } from './command-fixtures.ts';
+import {
+  editLisbon,
+  runOk,
+  setUp,
+  shootFile,
+  shootJson,
+  tearDown,
+} from './command-fixtures.ts';
 import {
   eventually,
   handOver,
@@ -121,5 +129,36 @@ describe('an order that is handed over', () => {
     });
     expect(after).toEqual({ since: null, stopped: null });
     expect(inImmich()).toContain('A2');
+  });
+
+  it('puts nothing into the album for an order that is through', async () => {
+    await publishLisbon();
+    await whileServing((address) =>
+      choose(address, { photo: 'A2', wants: 'in' }),
+    );
+    await editLisbon('A2');
+    const order = (id: string, fulfilledAt: string | null) =>
+      writeFile(
+        shootFile('hand-overs', `${id}.json`),
+        JSON.stringify({
+          id,
+          at: '2026-05-01T10:00:00.000Z',
+          dollars: 5,
+          spentBefore: 0,
+          marks: [],
+          album: ['A2'],
+          fulfilledAt,
+        }),
+      );
+    await mkdir(shootFile('hand-overs'), { recursive: true });
+    await order('through', '2026-05-01T11:00:00.000Z');
+    await order('open', null);
+    expect(
+      await runOk('publish', 'lisbon', '--order', 'through'),
+    ).toMatchObject({ published: 0, photos: [] });
+    expect(inImmich()).not.toContain('A2');
+    expect(await runOk('publish', 'lisbon', '--order', 'open')).toMatchObject({
+      photos: ['A2'],
+    });
   });
 });

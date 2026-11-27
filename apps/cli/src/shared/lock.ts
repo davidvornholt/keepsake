@@ -14,7 +14,7 @@ import {
 import { dirname } from 'node:path';
 import process from 'node:process';
 import { Context, type Duration, Effect, Option } from 'effect';
-import { ShootBusy, StoreFailed } from './errors/errors.ts';
+import { ServerRunning, ShootBusy, StoreFailed } from './errors/errors.ts';
 import type { ShootFiles } from './store.ts';
 
 // The kernel holds the locks, with flock(2), so a lock can't be taken from a
@@ -190,6 +190,33 @@ export const holdWhileRunning = (path: string) => tryToHold(path) !== null;
  * or gives none when another server does it now.
  */
 export const asTheRunner = (files: ShootFiles) => holding(files.runnerLock);
+
+/**
+ * Holds the page's server lock for as long as the scope is open, so only one
+ * server on the machine carries out what is handed over and changes what is
+ * noted about it. A server that died let it go when it ended, so the next
+ * one takes it over.
+ */
+export const asTheOnlyServer = (path: string) =>
+  Effect.acquireRelease(
+    Effect.try({
+      try: () => tryToHold(path),
+      catch: (error) =>
+        new StoreFailed({ message: `Could not use ${path}: ${error}` }),
+    }).pipe(
+      Effect.flatMap((fd) =>
+        fd === null
+          ? Effect.fail(
+              new ServerRunning({
+                message: `Another keepsake serve${holderOf(path)} is running on this machine. Use its page, or stop it first.`,
+              }),
+            )
+          : Effect.succeed(fd),
+      ),
+    ),
+    (fd) =>
+      Effect.ignore(Effect.try({ try: () => letGo(path, fd), catch: String })),
+  );
 
 const busy = (path: string) =>
   new ShootBusy({

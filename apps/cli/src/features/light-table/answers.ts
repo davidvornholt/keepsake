@@ -135,10 +135,9 @@ const handOverAnswer = Effect.fn('handOverAnswer')(function* (
 ) {
   const open = yield* openShoot(name);
   const wanted = yield* sent(HandOver, request);
-  // First, so the page never shows it handed over and nothing at work on it.
-  // The runner waits for this change to be through before it looks.
-  yield* runner.start(name);
   const handed = yield* handOver(open.files, yield* standingsOf(open), wanted);
+  // Once it is noted, so the runner finds it, before the page hears of it.
+  yield* runner.start(name);
   return Response.json(handed);
 });
 

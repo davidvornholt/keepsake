@@ -2,6 +2,8 @@ import process from 'node:process';
 import { Effect, type FileSystem, type Path, Semaphore } from 'effect';
 import type { ChildProcessSpawner } from 'effect/process';
 import { InvalidInput } from '../../shared/errors/errors.ts';
+import { asTheOnlyServer } from '../../shared/lock.ts';
+import { serverLock } from '../../shared/store.ts';
 import { type Has, makeAnswers } from './answers.ts';
 import { eventsOf } from './events.ts';
 import { makeFolders } from './folders.ts';
@@ -196,6 +198,8 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   photos,
   keepsake,
 }: Serving) {
+  // Before anything is resumed, so a second server changes nothing.
+  yield* asTheOnlyServer(yield* serverLock);
   const workers = yield* Semaphore.make(atOnce);
   // One change at a time, since some read a file and write it again.
   const writing = yield* Semaphore.make(1);

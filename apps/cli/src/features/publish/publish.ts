@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { Effect, FileSystem, Option } from 'effect';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
 import {
@@ -30,9 +29,9 @@ import { inSteps } from '../../shared/progress.ts';
 import { albumsOf } from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
+  digestOf,
   exists,
   type OpenShoot,
-  readBytes,
   readJson,
   readPicks,
   writeJson,
@@ -57,11 +56,6 @@ type Job = {
   readonly digest: string;
   readonly before: Published | undefined;
 };
-
-const digestOf = (file: string) =>
-  Effect.map(readBytes(file), (bytes) =>
-    createHash('sha256').update(bytes).digest('hex'),
-  );
 
 /** The photos named, or those that were picked and not taken out since. */
 const photosToSend = Effect.fn('photosToSend')(function* (

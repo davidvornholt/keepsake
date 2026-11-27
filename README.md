@@ -55,7 +55,7 @@ keepsake run ~/photos/lisbon --title "Lisbon" --about "Lisbon, Portugal, May 202
 
 `--title`, which a new shoot needs, names the album in Immich, and `--about` tells the models where and when the photos were taken. It can take hours. When it stops, run it again and it goes on where it stopped. With `--unedited` it stops before the edits. Editing costs about $0.75 per photo, and a change to a finished one about $0.45. Culling costs nothing extra on a subscription, and about $2.50 per 100 photos with `azure/gpt-6-astra`. `--budget` limits what the edits cost, to $25 unless you give another.
 
-`keepsake serve` serves the page on this machine, and only to it. To reach it from others, let a reverse proxy with TLS in a private network pass it on, and tell keepsake with `--address` where it is reached then; it has no login of its own. Run it as a service with a fixed `--port`, so it is always there.
+`keepsake serve` serves the page on this machine, and only to it. To reach it from others, let a reverse proxy with TLS in a private network pass it on, and tell keepsake with `--address` where it is reached then; it has no login of its own. Run it as a service with a fixed `--port`, so it is always there. Only one runs on a machine: a second one refuses to start while the first runs.
 
 - `--photos <folder>` names a folder whose folders the page offers for new albums. It can be given several times.
 

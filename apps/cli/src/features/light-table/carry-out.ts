@@ -319,7 +319,8 @@ export const stillOrdered = Effect.fn('stillOrdered')(function* (
   const order = (yield* readHandOvers(open.files)).find(
     ({ id }) => id === handOver,
   );
-  if (order === undefined) {
+  // An order that is through puts nothing more into the album.
+  if (order === undefined || !isOrder(order)) {
     return [];
   }
   return yield* Effect.filter(
