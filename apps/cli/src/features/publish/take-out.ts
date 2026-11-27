@@ -4,13 +4,18 @@ import {
   type Album,
   type AlbumPhoto,
   PickList,
+  Publication,
   Removed,
 } from '../../shared/domain.ts';
 import { InvalidInput, ToolFailed } from '../../shared/errors/errors.ts';
 import { albumAssets, removeFromAlbum } from '../../shared/immich.ts';
 import { withAlbum, withChoice } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
-import { readPublication } from '../../shared/publication.ts';
+import {
+  readPublication,
+  uploadsOfOthers,
+  withUploads,
+} from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 
@@ -41,10 +46,17 @@ const versionsIn = Effect.fn('versionsIn')(function* (
 ) {
   const versions = new Map<string, ReadonlyArray<string>>();
   if (album === null) {
-    return { versions, current: [] as ReadonlyArray<AlbumPhoto> };
+    return {
+      versions,
+      current: [] as ReadonlyArray<AlbumPhoto>,
+      elses: new Set<string>(),
+    };
   }
   const there = new Set((yield* albumAssets(album.id)).map(({ id }) => id));
   const published = (yield* readPublication(open))?.photos ?? [];
+  const elses = new Set(
+    published.flatMap(({ asset, wasThere }) => (wasThere ? [asset] : [])),
+  );
   const current = [...album.photos, ...published];
   const known = [
     ...album.photos.map(({ photo, asset }) => ({ photo, assets: [asset] })),
@@ -60,7 +72,7 @@ const versionsIn = Effect.fn('versionsIn')(function* (
       [...all].filter((asset) => there.has(asset)),
     );
   }
-  return { versions, current };
+  return { versions, current, elses };
 });
 
 /**
@@ -89,6 +101,39 @@ const sameAsStaying = (
       );
 };
 
+/**
+ * Forgets the uploads of photos taken out that stay in the album as another's,
+ * so this shoot no longer calls them its own there. Their earlier uploads
+ * stay noted as replaced.
+ */
+const letGoOf = Effect.fn('letGoOf')(function* (
+  open: OpenShoot,
+  photos: ReadonlyArray<string>,
+) {
+  const published = yield* readPublication(open);
+  if (published === null || photos.length === 0) {
+    return;
+  }
+  const isKept = ({ photo }: { readonly photo: string }) =>
+    !photos.includes(photo);
+  const leaving = published.photos.filter((one) => !isKept(one));
+  const kept = withUploads(
+    { ...published, photos: published.photos.filter(isKept) },
+    published.albumId,
+    ({ sending, found }) => ({
+      sending: sending?.filter(isKept),
+      found: found?.filter(isKept),
+    }),
+  );
+  yield* writeJson(Publication, open.files.publication, {
+    ...kept,
+    outdated: [
+      ...(published.outdated ?? []),
+      ...leaving.flatMap(({ replaced }) => replaced ?? []),
+    ],
+  });
+});
+
 const takeOutNow = Effect.fn('takeOut')(function* (
   open: OpenShoot,
   names: ReadonlyArray<string>,
@@ -99,7 +144,7 @@ const takeOutNow = Effect.fn('takeOut')(function* (
   const all = yield* readAllRemoved(open, album?.id);
   const before = all.filter(isOutOf(album?.id));
   const picked = yield* pickedOf(open);
-  const { versions, current } = yield* versionsIn(open, album);
+  const { versions, current, elses } = yield* versionsIn(open, album);
   const photos = yield* Effect.forEach(names, (one) => photoNamed(open, one));
   const leaving = new Set(photos.map(({ id }) => id));
   yield* sameAsStaying(album, current, leaving);
@@ -124,7 +169,12 @@ const takeOutNow = Effect.fn('takeOut')(function* (
         )
       : Effect.succeed({ id, asset: there?.asset, assets, at: earlier?.at });
   });
-  const assets = found.flatMap((one) => one.assets);
+  // An upload another shoot's photo is too stays in the album for that one,
+  // as does one that was in the album before keepsake sent the same file.
+  const others = yield* uploadsOfOthers(open);
+  const isOthers = (asset: string) =>
+    elses.has(asset) || (album !== null && others.inAlbum(album.id, asset));
+  const assets = found.flatMap((one) => one.assets).filter((a) => !isOthers(a));
   const refused =
     album !== null && assets.length > 0
       ? yield* removeFromAlbum(album.id, assets)
@@ -139,6 +189,12 @@ const takeOutNow = Effect.fn('takeOut')(function* (
     ...all.filter(({ photo }) => !ids.has(photo)),
     ...out.map(({ id, at }) => ({ photo: id, at: at ?? now, because })),
   ]);
+  yield* letGoOf(
+    open,
+    found.flatMap((one) =>
+      ids.has(one.id) && one.assets.some(isOthers) ? [one.id] : [],
+    ),
+  );
   const after = yield* readAlbum(open);
   if (refused.length > 0) {
     return yield* notTakenOut(

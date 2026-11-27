@@ -1,4 +1,5 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
+import { reconcileUploads } from './album-uploads.ts';
 import { Album, AlbumPhoto, Removed } from './domain.ts';
 import {
   type Asset,
@@ -8,7 +9,7 @@ import {
   immichServer,
 } from './immich.ts';
 import { withAlbum } from './lock.ts';
-import { type AlbumRecord, readPublication } from './publication.ts';
+import { type AlbumRecord, readPublication, uploadsOf } from './publication.ts';
 import { isOutOf, readAllRemoved } from './standing.ts';
 import { type OpenShoot, readJson, writeJson } from './store.ts';
 
@@ -41,7 +42,8 @@ const photosOfAssets = (
  * Which photo of the shoot each asset of the album is. Only the uploads the
  * shoot's record names count, since the album may hold other shoots' photos
  * and the owner's, whose file names can be those of this shoot's photos. An
- * upload still on its way counts for a photo that has no other in the album.
+ * upload found by its bytes, or still on its way, counts for a photo that has
+ * no other in the album.
  */
 const photosIn = (record: AlbumRecord, assets: ReadonlyArray<Asset>) => {
   const inAlbum = new Map<string, AlbumPhoto>();
@@ -60,7 +62,8 @@ const photosIn = (record: AlbumRecord, assets: ReadonlyArray<Asset>) => {
     }
   };
   add(record.photos, true);
-  add(record.sending ?? [], false);
+  add(record.found ?? [], false);
+  add(uploadsOf({ ...record, photos: [], found: [] }), false);
   return [...inAlbum.values()];
 };
 
@@ -72,17 +75,16 @@ const noteRemoved = Effect.fn('noteRemoved')(function* (
   open: OpenShoot,
   record: AlbumRecord,
   album: Album,
-  before: Album | null,
 ) {
   // `publish` gives the removals from before keepsake kept album ids their
   // album before it reads another one, so the rest are about this one.
   const all = yield* readAllRemoved(open, album.id);
   const counts = isOutOf(album.id);
   const there = new Set(album.photos.map(({ photo }) => photo));
+  // Only what the record knows for certain: an upload on its way may have
+  // been taken back, and a name alone may be another shoot's photo.
   const known = new Set(
-    [...record.photos, ...(before?.id === album.id ? before.photos : [])].map(
-      ({ photo }) => photo,
-    ),
+    [...record.photos, ...(record.found ?? [])].map(({ photo }) => photo),
   );
   const gone = [...known].filter(
     (photo) =>
@@ -116,7 +118,14 @@ const refreshNow = Effect.fn('refreshAlbum')(function* (
   }
   // Asked first, so little happens between reading the album and saving it.
   const server = yield* immichServer;
-  const photos = photosIn(record, yield* albumAssets(found.id));
+  const assets = yield* albumAssets(found.id);
+  const before = Option.getOrNull(yield* readJson(Album, open.files.album));
+  const known = yield* reconcileUploads(open, record, {
+    albumId: found.id,
+    assets,
+    before,
+  });
+  const photos = photosIn(known, assets);
   const album: Album = {
     id: found.id,
     name: found.name,
@@ -124,8 +133,7 @@ const refreshNow = Effect.fn('refreshAlbum')(function* (
     readAt: DateTime.formatIso(yield* DateTime.now),
     photos,
   };
-  const before = Option.getOrNull(yield* readJson(Album, open.files.album));
-  yield* noteRemoved(open, record, album, before);
+  yield* noteRemoved(open, known, album);
   if (isCurrent && (before === null || !isSame(before, album))) {
     yield* writeJson(Album, open.files.album, album);
   }

@@ -11,6 +11,7 @@ import {
   editLisbon,
   failureOf,
   pickLisbon,
+  runOk,
   setUp,
   shootFile,
   tearDown,
@@ -52,6 +53,17 @@ describe('a photo Immich took only part of', () => {
     });
     failCameraUploadOf('A1');
     await failureOf('publish', 'lisbon', '--album', 'Holidays');
+    expect(assetsOf('album-own')).toContain(own);
+    fakeTools.pause = undefined;
+    fakeTools.late = undefined;
+    const again = await runOk('publish', 'lisbon');
+    expect(again).toMatchObject({ album: { id: 'album-own' }, published: 3 });
+    const because = ['--because', 'It is blurred.'];
+    await runOk('take-out', 'lisbon', 'A1', ...because);
+    expect(assetsOf('album-own')).toContain(own);
+    await Bun.write(finalOf('A1'), 'another A1');
+    const edited = await runOk('publish', 'lisbon', 'A1');
+    expect(edited).toMatchObject({ published: 1, outdated: [] });
     expect(assetsOf('album-own')).toContain(own);
   });
 

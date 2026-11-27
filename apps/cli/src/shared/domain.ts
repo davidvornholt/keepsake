@@ -259,18 +259,36 @@ export const PublishedPhoto = Schema.Struct({
   digest: Schema.String,
   /** Earlier uploads of the photo, which may wait in the album for the trash. */
   replaced: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * Whether the upload was in the album before keepsake sent the file, as
+   * Immich has the same file once, so keepsake never takes it out or trashes it.
+   */
+  wasThere: Schema.optionalKey(Schema.Boolean),
 });
 export type PublishedPhoto = typeof PublishedPhoto.Type;
 
 /**
- * An upload in the album whose photo isn't noted under `photos` yet, because
- * the rest of it is still on its way or a publish stopped half-way.
+ * An upload of a photo that a publish is sending, noted before it is sent
+ * with the SHA-256 of its file, and with its asset once Immich answered and if
+ * the publish put it into the album. It is noted under `photos` once all of
+ * the photo is sent.
  */
 export const SendingPhoto = Schema.Struct({
   photo: Schema.String,
-  asset: Schema.String,
+  digest: Schema.String,
+  asset: Schema.optionalKey(Schema.String),
 });
 export type SendingPhoto = typeof SendingPhoto.Type;
+
+/**
+ * An upload in the album that a publish from before keepsake noted every
+ * upload put there, found to be the photo's by the checksum of its file.
+ */
+export const FoundPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+});
+export type FoundPhoto = typeof FoundPhoto.Type;
 
 /** What keepsake published to an album it published to before the last. */
 export const EarlierAlbum = Schema.Struct({
@@ -283,6 +301,7 @@ export const EarlierAlbum = Schema.Struct({
   owned: Schema.optionalKey(Schema.Boolean),
   photos: Schema.Array(PublishedPhoto),
   sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
+  found: Schema.optionalKey(Schema.Array(FoundPhoto)),
 });
 export type EarlierAlbum = typeof EarlierAlbum.Type;
 
@@ -296,6 +315,7 @@ export const Publication = Schema.Struct({
   /** What was published to this album, and to no other. */
   photos: Schema.Array(PublishedPhoto),
   sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
+  found: Schema.optionalKey(Schema.Array(FoundPhoto)),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
   outdated: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The other albums keepsake published to, by their id. */

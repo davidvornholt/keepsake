@@ -253,8 +253,8 @@ export type FolderList = {
 
 /**
  * GET /api/albums: the albums in Immich, so the page can say which one the
- * photos of a new album join, as its first publish joins the one album that
- * has its title.
+ * photos of a new album join, as its first publish joins the owner's one
+ * album that has its title, told apart without case or spaces at the ends.
  */
 export type AlbumList = {
   readonly albums: ReadonlyArray<{
@@ -262,6 +262,11 @@ export type AlbumList = {
     /** The days of its first and last photo, null while it has none. */
     readonly first: string | null;
     readonly last: string | null;
+    /**
+     * Who shared it with the owner, null when it is the owner's own. A new
+     * album never joins one that someone else shared.
+     */
+    readonly sharedBy: string | null;
   }>;
 };
 

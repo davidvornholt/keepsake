@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, PickList, Shoot } from './domain.ts';
 import { editFiles, editFolderName } from './edit-files.ts';
@@ -191,6 +192,15 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
      */
     photoLock: (photo: string) =>
       path.join(locks, `${name}.photo-${editFolderName(photo)}`),
+    /**
+     * Held while the album of a name is looked for and made, by any shoot.
+     * Shoot names have no dot, so it is no shoot's lock.
+     */
+    albumNameLock: (key: string) =>
+      path.join(
+        locks,
+        `album.${createHash('sha256').update(key).digest('hex')}`,
+      ),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** The agent that waits for marks, and the one the page started last. */

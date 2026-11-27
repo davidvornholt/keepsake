@@ -100,6 +100,32 @@ describe('keepsake publish, to a new album', () => {
     expect(fakeTools.albums[0]?.assets).toHaveLength(3);
   });
 
+  it('joins an album of the title written otherwise', async () => {
+    fakeTools.albums.push({ id: 'last-year', name: ' lisbon ', assets: [] });
+    const result = await publishLisbon();
+    expect(result).toMatchObject({ album: { id: 'last-year' }, published: 3 });
+    expect(fakeTools.albums).toHaveLength(1);
+  });
+
+  it('joins a shared album of the title only when it is named', async () => {
+    const shared = {
+      id: 'friends',
+      name: 'Lisbon',
+      owner: 'Friend',
+      assets: [],
+    };
+    fakeTools.albums.push(shared);
+    const result = await publishLisbon();
+    expect(result).toMatchObject({ album: { name: 'Lisbon' }, published: 3 });
+    expect(result.album.id).not.toBe('friends');
+    expect(shared.assets).toEqual([]);
+    const named = await failureOf('publish', 'lisbon', '--album', 'Lisbon');
+    expect(named.message).toContain('2 albums called Lisbon');
+    fakeTools.albums = [shared];
+    const joined = await runOk('publish', 'lisbon', '--album', 'lisbon');
+    expect(joined).toMatchObject({ album: { id: 'friends' }, published: 3 });
+  });
+
   it('makes a new album when only another name is like the title', async () => {
     fakeTools.albums.push({ id: 'other', name: 'Lisbon 2025', assets: [] });
     const result = await publishLisbon();
@@ -145,6 +171,16 @@ describe('keepsake publish, to a new album', () => {
     expect(failure.message).toContain('2 albums called Porto');
     expect(failure.message).toContain('give another name with --album');
     expect(fakeTools.uploads).toEqual([]);
+  });
+
+  it('publishes to no album named when it published to one of them', async () => {
+    await publishLisbon();
+    fakeTools.albums.push({ id: 'last-year', name: 'Lisbon', assets: [] });
+    const failure = await failureOf('publish', 'lisbon', '--album', 'Lisbon');
+    expect(failure.message).toContain('2 albums called Lisbon');
+    await editAgain('B');
+    const again = await runOk('publish', 'lisbon');
+    expect(again).toMatchObject({ album: { id: 'album-1' }, published: 1 });
   });
 
   it('finds the album it made when it stopped before the first upload', async () => {

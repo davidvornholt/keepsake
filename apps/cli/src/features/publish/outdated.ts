@@ -1,7 +1,11 @@
 import { Effect } from 'effect';
 import { Publication } from '../../shared/domain.ts';
 import { withChoice } from '../../shared/lock.ts';
-import { assetsInUse, readPublication } from '../../shared/publication.ts';
+import {
+  assetsInUse,
+  readPublication,
+  uploadsOfOthers,
+} from '../../shared/publication.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
 
 /**
@@ -34,7 +38,7 @@ const forgetOutdated = Effect.fn('forgetOutdated')(function* (
 
 /**
  * Of these replaced uploads, those still noted and in no album keepsake knows
- * of, as a publish since may have brought one back.
+ * of, as a publish since may have brought one back, and no other shoot's.
  */
 const stillOutdated = Effect.fn('stillOutdated')(function* (
   open: OpenShoot,
@@ -42,7 +46,11 @@ const stillOutdated = Effect.fn('stillOutdated')(function* (
 ) {
   const publication = yield* readPublication(open);
   const noted = new Set(publication === null ? [] : outdatedOf(publication));
-  return candidates.filter((asset) => noted.has(asset));
+  // One that another shoot's photo is stays, and is told once it isn't.
+  const others = yield* uploadsOfOthers(open);
+  return candidates.filter(
+    (asset) => noted.has(asset) && !others.anywhere(asset),
+  );
 });
 
 /**

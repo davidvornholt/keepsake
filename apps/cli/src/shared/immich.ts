@@ -42,12 +42,21 @@ export type NamedAlbum = typeof Named.Type;
 /** Every album, the owner's own and those shared with them. */
 export const listAlbums = photos(NamedList, ['albums', 'list']);
 
+/**
+ * An album's name as the owner tells names apart: not by case, nor by spaces
+ * at the ends. The page compares them the same way.
+ */
+export const albumNameKey = (name: string) => name.trim().toLowerCase();
+
+export const isSameName = (one: string, other: string) =>
+  albumNameKey(one) === albumNameKey(other);
+
 /** The albums of these with this name. */
 export const albumsNamed = (
   albums: ReadonlyArray<NamedAlbum>,
   name: string,
 ): ReadonlyArray<NamedAlbum> =>
-  albums.filter((candidate) => candidate.name === name);
+  albums.filter((candidate) => isSameName(candidate.name, name));
 
 /** When an album's photos were taken, to tell albums of one name apart. */
 const takenWhen = ({ firstTakenOn, lastTakenOn }: NamedAlbum) => {
@@ -227,6 +236,10 @@ export const removeFromAlbum = Effect.fn('removeFromAlbum')(function* (
   // Immich's reason for a photo that wasn't in the album.
   return unchanged.filter(({ reason }) => reason !== 'not_found');
 });
+
+/** Saves the file Immich keeps of an upload into a directory. */
+export const downloadOriginal = (asset: string, directory: string) =>
+  photos(Schema.Unknown, ['download', asset, '--to', directory]);
 
 /** Gives a photo the favorite mark, or takes it away. */
 export const markFavorite = (asset: string, isFavorite: boolean) =>

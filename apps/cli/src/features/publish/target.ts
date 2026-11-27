@@ -1,18 +1,57 @@
 import { Effect, Option, Schema } from 'effect';
 import { type Publication, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
-import { type NamedAlbum, uniqueNamed } from '../../shared/immich.ts';
+import {
+  isOwnAlbum,
+  type NamedAlbum,
+  signedInUser,
+  uniqueNamed,
+} from '../../shared/immich.ts';
 import { withAlbum } from '../../shared/lock.ts';
-import { albumsOf, readPublication } from '../../shared/publication.ts';
+import { readPublication } from '../../shared/publication.ts';
 import { readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
+
+/**
+ * Which albums of a name a publish may take: on a shoot's first publish only
+ * the account's own, since one shared by someone else is theirs to fill, and
+ * with --album any the owner named.
+ */
+export type Lookup = {
+  readonly isOwnOnly: boolean;
+  /** What to do instead, when several albums have the name. */
+  readonly otherwise: string;
+};
 
 /** The album to publish to, which has no id until it is created. */
 export type Target =
   | NamedAlbum
-  | { readonly id: undefined; readonly name: string };
+  | {
+      readonly id: undefined;
+      readonly name: string;
+      /** How to look again before it is made, unless it is made anyway. */
+      readonly lookup: Lookup | null;
+    };
 
-const fresh = (name: string): Target => ({ id: undefined, name });
+const fresh = (name: string, lookup: Lookup | null = null): Target => ({
+  id: undefined,
+  name,
+  lookup,
+});
+
+/** The one album of this name a publish may take, if there is one. */
+export const albumOfName = Effect.fn('albumOfName')(function* (
+  albums: ReadonlyArray<NamedAlbum>,
+  name: string,
+  { isOwnOnly, otherwise }: Lookup,
+) {
+  const user = isOwnOnly ? yield* signedInUser : null;
+  // Where photos can't tell whose an album is, it is taken as the owner's.
+  const allowed = isOwnOnly
+    ? albums.filter((album) => isOwnAlbum(album, user) !== false)
+    : albums;
+  return yield* uniqueNamed(allowed, name, otherwise);
+});
 
 /**
  * An album that is gone from the account's list was deleted, or its owner
@@ -72,11 +111,13 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
 /**
  * The album keepsake published to before, unless another is named. Albums are
  * found by their id, so one renamed in Immich stays the album. A shoot's first
- * album is the one that has its title, so shoots of one place share an album,
- * and a new one only when no album has that name. When the album is gone,
- * keepsake makes a new one rather than take another album that has its name
- * now, which may be shared with others, but only if the album was the
- * account's own.
+ * album is the account's own one that has its title, so shoots of one place
+ * share an album, and a new one only when none has that name. An album named
+ * with --album is looked up by its name among all, also when keepsake
+ * published to one of that name before, so it never takes one of two. When
+ * the album is gone, keepsake makes a new one rather than take another album
+ * that has its name now, which may be shared with others, but only if the
+ * album was the account's own.
  */
 export const targetOf = Effect.fn('targetOf')(function* (
   open: OpenShoot,
@@ -84,23 +125,23 @@ export const targetOf = Effect.fn('targetOf')(function* (
   chosen: Option.Option<string>,
   albums: ReadonlyArray<NamedAlbum>,
 ) {
-  const withId = (id: string | undefined) =>
-    albums.find((album) => album.id === id);
   if (Option.isSome(chosen)) {
-    const name = chosen.value;
-    const known = albumsOf(before)
-      .map(({ albumId }) => withId(albumId))
-      .find((album) => album?.name === name);
-    return known ?? (yield* uniqueNamed(albums, name)) ?? fresh(name);
+    const lookup = {
+      isOwnOnly: false,
+      otherwise: 'or give another name with --album',
+    };
+    const name = chosen.value.trim();
+    return (yield* albumOfName(albums, name, lookup)) ?? fresh(name, lookup);
   }
   if (before === null) {
     const { name, source, title } = open.shoot;
-    const found = yield* uniqueNamed(
-      albums,
-      title,
-      `publish to another with --album, or give the shoot another title with \`keepsake scan "${source}" --name ${name} --title "<title>"\``,
-    );
-    return found ?? fresh(title);
+    const lookup = {
+      isOwnOnly: true,
+      otherwise: `publish to another with --album, or give the shoot another title with \`keepsake scan "${source}" --name ${name} --title "<title>"\``,
+    };
+    return (yield* albumOfName(albums, title, lookup)) ?? fresh(title, lookup);
   }
-  return withId(before.albumId) ?? (yield* gone(before));
+  return (
+    albums.find((album) => album.id === before.albumId) ?? (yield* gone(before))
+  );
 });
