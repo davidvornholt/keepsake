@@ -303,6 +303,47 @@ describe('who the light table answers', () => {
     expect(await Bun.file(shootFile('marks')).exists()).toBe(false);
   });
 
+  it('can’t be shown inside another website’s page', async () => {
+    const policies = await whileServing((address) =>
+      Promise.all(
+        ['/', '/lisbon/photos/B'].map((path) =>
+          fetch(`${address}${path}`).then((response) =>
+            response.headers.get('content-security-policy'),
+          ),
+        ),
+      ),
+    );
+    expect(policies).toEqual(new Array(2).fill("frame-ancestors 'none'"));
+  });
+
+  it('serves the page also where requests go through a proxy', async () => {
+    // Also where the machine names a proxy or hosts that bypass it.
+    const names = ['HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy'];
+    const before = names.map((name) => process.env[name]);
+    for (const name of names) {
+      delete process.env[name];
+    }
+    process.env.HTTP_PROXY = 'http://127.0.0.1:9';
+    try {
+      const response = await whileServing((address) =>
+        fetch(`${address}/lisbon/photos/B`, { proxy: false }),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-security-policy')).toBe(
+        "frame-ancestors 'none'",
+      );
+    } finally {
+      for (const [index, name] of names.entries()) {
+        const value = before[index];
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
   it('says that something else uses its port', async () => {
     const other = Bun.serve({ port: 0, fetch: () => new Response() });
     try {
