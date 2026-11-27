@@ -317,6 +317,12 @@ describe('who the light table answers', () => {
   });
 
   it('serves the page also where requests go through a proxy', async () => {
+    // Also where the machine names a proxy or hosts that bypass it.
+    const names = ['HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy'];
+    const before = names.map((name) => process.env[name]);
+    for (const name of names) {
+      delete process.env[name];
+    }
     process.env.HTTP_PROXY = 'http://127.0.0.1:9';
     try {
       const response = await whileServing((address) =>
@@ -327,7 +333,14 @@ describe('who the light table answers', () => {
         "frame-ancestors 'none'",
       );
     } finally {
-      delete process.env.HTTP_PROXY;
+      for (const [index, name] of names.entries()) {
+        const value = before[index];
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
     }
   });
 
