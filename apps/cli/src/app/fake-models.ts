@@ -105,7 +105,7 @@ export const fakeModels = {
   /** Answers instead of the usual ones, by the name of the answer. */
   answers: {} as Partial<Record<AnswerName, Answer>>,
   /** Answers the image model's requests. */
-  editAnswer: undefined as (() => Response) | undefined,
+  editAnswer: undefined as (() => Response | Promise<Response>) | undefined,
   /** What a question uses, or nothing when the answer doesn't say. */
   chatUsage: usualChatUsage as ChatUsage | undefined,
   key: 'test-api-key',

@@ -14,7 +14,12 @@ import {
   type StoreFailed,
   TryLater,
 } from '../../shared/errors/errors.ts';
-import { accessTo, modelName, openAiUrl } from '../../shared/models.ts';
+import {
+  accessTo,
+  mayBePaidFor,
+  modelName,
+  openAiUrl,
+} from '../../shared/models.ts';
 import type { Size } from '../../shared/pictures.ts';
 import { bytesOf, type Usage } from '../../shared/prices.ts';
 import { type Paid, Spending } from '../../shared/spending.ts';
@@ -189,9 +194,17 @@ export class ImageModel extends Context.Service<
           const once = (paid: Paid) =>
             Effect.uninterruptibleMask((restore) =>
               restore(client.execute(request(wanted))).pipe(
-                Effect.mapError(
-                  (error) =>
-                    new TryLater({ message: `${model}: ${error.message}` }),
+                // One that ends without an answer may have been paid for, so
+                // it is counted at the most before it is asked for again.
+                Effect.onInterrupt(() => Effect.ignore(paid.answered)),
+                Effect.catch((error) =>
+                  (mayBePaidFor(error) ? paid.answered : Effect.void).pipe(
+                    Effect.andThen(
+                      Effect.fail(
+                        new TryLater({ message: `${model}: ${error.message}` }),
+                      ),
+                    ),
+                  ),
                 ),
                 // It is counted once its answer begins, so that it stays
                 // counted when reading the answer is interrupted.

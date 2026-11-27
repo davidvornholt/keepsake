@@ -114,8 +114,9 @@ export type Paid = {
   /** The most it can cost, in dollars. */
   readonly most: number;
   /**
-   * Counts it at the most, now that its answer is coming, so it stays
-   * counted when the answer is lost.
+   * Counts it at the most, now that it may have been paid for: its answer
+   * is coming, or it ended without one. So it stays counted when the answer
+   * is lost.
    */
   readonly answered: Effect.Effect<void, StoreFailed>;
   /**
