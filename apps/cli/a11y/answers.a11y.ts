@@ -53,8 +53,10 @@ test('goes through what is new, oldest first', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Waits for you' }),
   ).toBeVisible();
+});
 
-  // On the start page it is still new, and the walk opens it as a whole.
+test('opens what waits for the owner from the start page', async ({ page }) => {
+  // Still new after the photo was seen, and the walk opens it as a whole.
   await shelf(page);
   await expect(page.getByRole('link', { name: 'Porto' })).toContainText(
     '1 new thing to look at',
