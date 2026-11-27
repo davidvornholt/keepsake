@@ -11,7 +11,7 @@ import {
   type OverBudget,
   type StoreFailed,
 } from './errors/errors.ts';
-import { AnswerBegins, modelName, visionLayer } from './models.ts';
+import { AnswerBegins, AnswerLost, modelName, visionLayer } from './models.ts';
 import { bytesOf, type RequestSize, type Usage } from './prices.ts';
 import { type Paid, Spending } from './spending.ts';
 
@@ -76,7 +76,8 @@ const sizeOf = ({ role, pieces }: Question<AnswerSchema>): RequestSize => ({
 type Seen = { began: boolean; answered: boolean; usage?: Response.Usage };
 
 /**
- * Watches a request: counts it at its most once its answer begins, and sees
+ * Watches a request: counts it at its most once its answer begins or when it
+ * may have been paid for without an answer, and sees
  * the answer before its shape is checked, so an answer of the wrong shape is
  * counted as what it used. A write that fails when the answer begins is
  * tried again, and reported, when the request settles or the step ends.
@@ -91,6 +92,7 @@ const watching =
           seen.began = true;
         }).pipe(Effect.andThen(paid.answered), Effect.ignore),
       ),
+      Effect.provideService(AnswerLost, Effect.ignore(paid.answered)),
       Effect.provideService(
         Telemetry.CurrentSpanTransformer,
         ({ response: pieces }) => {

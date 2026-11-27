@@ -1,7 +1,7 @@
 import { AnthropicClient, AnthropicLanguageModel } from '@effect/ai-anthropic';
 import { OpenAiClient, OpenAiLanguageModel } from '@effect/ai-openai-compat';
 import { Context, Effect, Layer, Redacted } from 'effect';
-import { FetchHttpClient, HttpClient } from 'effect/http';
+import { FetchHttpClient, HttpClient, type HttpClientError } from 'effect/http';
 import {
   type Access,
   type Provider,
@@ -112,15 +112,69 @@ export const AnswerBegins = Context.Reference<Effect.Effect<void>>(
   { defaultValue: () => Effect.void },
 );
 
+/**
+ * Runs when a request that may have been paid for ends without an answer:
+ * its connection broke off, or keepsake stopped while it waited.
+ */
+export const AnswerLost = Context.Reference<Effect.Effect<void>>(
+  '@keepsake/cli/shared/AnswerLost',
+  { defaultValue: () => Effect.void },
+);
+
+/**
+ * What fetch says when a request couldn't reach the provider at all: the
+ * name or the host wasn't found, nothing listened, or the provider's
+ * certificate was refused before anything was sent. Not `EPROTO`, which Bun
+ * also reports for a broken TLS record after the request was sent.
+ */
+const unreached = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'CERT_HAS_EXPIRED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+]);
+
+/**
+ * Whether a request that failed without an answer may have been paid for:
+ * the provider may have got it before the connection broke off, and charges
+ * it all the same.
+ */
+export const mayBePaidFor = ({
+  reason,
+}: HttpClientError.HttpClientError): boolean => {
+  if (reason._tag !== 'TransportError' || reason.cause === undefined) {
+    return false;
+  }
+  const { cause } = reason;
+  const code =
+    typeof cause === 'object' && cause !== null && 'code' in cause
+      ? cause.code
+      : undefined;
+  return !(typeof code === 'string' && unreached.has(code));
+};
+
 const okStatus = 200;
 
 const tellingWhenAnswered = (client: HttpClient.HttpClient) =>
-  HttpClient.tap(client, (response) =>
-    Effect.gen(function* () {
-      if (response.status === okStatus) {
-        yield* yield* AnswerBegins;
-      }
-    }),
+  HttpClient.transform(client, (answer) =>
+    answer.pipe(
+      Effect.tap((response) =>
+        response.status === okStatus
+          ? Effect.flatten(AnswerBegins)
+          : Effect.void,
+      ),
+      Effect.tapError((error) =>
+        mayBePaidFor(error) ? Effect.flatten(AnswerLost) : Effect.void,
+      ),
+      Effect.onInterrupt(() => Effect.flatten(AnswerLost)),
+    ),
   );
 
 /** Where a provider's API that understands OpenAI's requests is. */
@@ -147,7 +201,12 @@ const apiLayer = (provider: Provider, model: string) =>
       const apiKey = Redacted.make(access.apiKey);
       if (provider === 'anthropic') {
         return AnthropicLanguageModel.layer({ model }).pipe(
-          Layer.provide(AnthropicClient.layer({ apiKey })),
+          Layer.provide(
+            AnthropicClient.layer({
+              apiKey,
+              transformClient: tellingWhenAnswered,
+            }),
+          ),
         );
       }
       // A paid model may answer only as much as the budget counted on.

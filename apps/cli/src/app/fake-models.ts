@@ -105,7 +105,9 @@ export const fakeModels = {
   /** Answers instead of the usual ones, by the name of the answer. */
   answers: {} as Partial<Record<AnswerName, Answer>>,
   /** Answers the image model's requests. */
-  editAnswer: undefined as (() => Response) | undefined,
+  editAnswer: undefined as (() => Response | Promise<Response>) | undefined,
+  /** Answers the requests to Anthropic's API, which has no usual answer. */
+  anthropicAnswer: undefined as (() => Promise<Response>) | undefined,
   /** What a question uses, or nothing when the answer doesn't say. */
   chatUsage: usualChatUsage as ChatUsage | undefined,
   key: 'test-api-key',
@@ -116,6 +118,7 @@ export const resetModels = () => {
   fakeModels.edits = [];
   fakeModels.answers = {};
   fakeModels.editAnswer = undefined;
+  fakeModels.anthropicAnswer = undefined;
   fakeModels.chatUsage = usualChatUsage;
 };
 
@@ -203,6 +206,12 @@ const notFound = 404;
 
 const answerTo = (request: Request): Promise<Response> | Response => {
   const { pathname } = new URL(request.url);
+  // Anthropic's API takes its key in a header of its own.
+  if (pathname.endsWith('/messages') && fakeModels.anthropicAnswer) {
+    return request.headers.get('x-api-key') === fakeModels.key
+      ? fakeModels.anthropicAnswer()
+      : Response.json({ error: {} }, { status: unauthorized });
+  }
   if (request.headers.get('authorization') !== `Bearer ${fakeModels.key}`) {
     return Response.json({ error: {} }, { status: unauthorized });
   }
