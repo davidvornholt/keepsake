@@ -20,7 +20,6 @@ import type {
   Picture,
   ShootList,
   ShootView,
-  Stack,
 } from './contract.ts';
 import { editOf } from './edits.ts';
 import { orderOf, roughlyUnsettled } from './hand-over.ts';
@@ -32,6 +31,7 @@ import { type Gallery, type Kind, pictureOf } from './pictures.ts';
 import { readPreparation } from './preparation.ts';
 import { revisionOf } from './revision.ts';
 import { spread } from './spread.ts';
+import { stacksOf } from './stacks.ts';
 
 const cents = 100;
 const inCents = (dollars: number) => Math.round(dollars * cents) / cents;
@@ -124,6 +124,7 @@ const photoViews = Effect.fn('photoViews')(function* (
           id,
           takenAt: takenThere(open.shoot, photo),
           stack: frontOf(known, id),
+          moment,
           camera: photo.camera,
           lens: photo.lens,
           focalLength: photo.focalLength,
@@ -141,17 +142,6 @@ const photoViews = Effect.fn('photoViews')(function* (
     { concurrency: manyAtOnce },
   );
 });
-
-/** The photos that show the same, in the order of those in front. */
-const stacksOf = (photos: ReadonlyArray<PhotoView>): ReadonlyArray<Stack> => {
-  const behind = Map.groupBy(photos, ({ stack }) => stack);
-  return photos.flatMap(({ id }) => {
-    const all = behind.get(id);
-    return all === undefined
-      ? []
-      : [{ front: id, photos: all.map((photo) => photo.id) }];
-  });
-};
 
 /** Everything the page shows of a shoot. */
 export const shootView = Effect.fn('shootView')(function* (

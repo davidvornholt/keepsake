@@ -8,6 +8,7 @@ import type {
   ShootView,
   Standing,
 } from '../../contract.ts';
+import { stacksOf } from '../../stacks.ts';
 
 // What a change does to a shoot, worked out here so that the page shows it
 // before keepsake has answered. Keepsake's answer replaces it afterwards.
@@ -62,79 +63,87 @@ const standingAfter = (
 };
 
 /**
- * The stacks once a photo that comes in stands in front: of a stack of its
- * own, or of the one in front that it takes the place of, which then lies
- * by itself.
+ * The photos of a moment as keepsake lays them once its chosen ones changed:
+ * each chosen photo and each taken out by itself, and every other one behind
+ * the chosen one taken closest to it, the earlier where two are as close.
+ * With none chosen, keepsake lays the others behind the moment's best photo,
+ * which only it knows, so they stay where they are, usually behind that one.
  */
-const stacksAfter = (
-  shoot: ShootView,
-  photo: string,
-  instead: string | null,
-): ShootView['stacks'] => {
-  const stack = shoot.stacks.find(({ photos }) => photos.includes(photo));
-  if (stack === undefined || stack.front === photo) {
-    return shoot.stacks;
-  }
-  const moving =
-    instead === stack.front
-      ? stack.photos.filter((one) => one !== instead)
-      : [photo];
-  const order = new Map(shoot.photos.map(({ id }, place) => [id, place]));
-  const placeOf = ({ front }: { readonly front: string }) =>
-    order.get(front) ?? 0;
-  return [
-    ...shoot.stacks.filter((one) => one !== stack),
-    {
-      front: stack.front,
-      photos: stack.photos.filter((one) => !moving.includes(one)),
-    },
-    { front: photo, photos: moving },
-  ].toSorted((left, right) => placeOf(left) - placeOf(right));
+const restacked = (
+  moment: ReadonlyArray<PhotoView>,
+): ReadonlyArray<PhotoView> => {
+  const fronts = moment.filter(isIn);
+  const place = new Map(moment.map(({ id }, at) => [id, at]));
+  return moment.map((photo, at) => {
+    if (isIn(photo) || photo.standing.kind === 'taken-out') {
+      return { ...photo, stack: photo.id };
+    }
+    const away = ({ id }: PhotoView) => Math.abs((place.get(id) ?? at) - at);
+    const [closest] = fronts.toSorted(
+      (left, right) => away(left) - away(right),
+    );
+    const to = closest?.id;
+    if (to === undefined || photo.stack === to) {
+      return photo;
+    }
+    // Keepsake keeps a reason only about the photo in front of it.
+    return {
+      ...photo,
+      stack: to,
+      standing: { kind: 'similar', to, because: null },
+    };
+  });
 };
 
-/**
- * The shoot as keepsake will have it once it has done these parts of a
- * choice: the photos in or out, the one that comes in in front of its
- * stack, and what was written for a change of a photo that goes out
- * forgotten.
- */
+/** The photos, with those of the moments where the chosen changed laid anew. */
+const laidOut = (
+  photos: ReadonlyArray<PhotoView>,
+  moments: ReadonlySet<string>,
+): ReadonlyArray<PhotoView> => {
+  const laid = new Map(
+    [...Map.groupBy(photos, ({ moment }) => moment)].flatMap(([moment, own]) =>
+      (moments.has(moment) ? restacked(own) : own).map(
+        (photo) => [photo.id, photo] as const,
+      ),
+    ),
+  );
+  return photos.map((photo) => laid.get(photo.id) ?? photo);
+};
+
 const withDone = (
   shoot: ShootView,
   parts: ReadonlyArray<Part>,
-  instead: string | null,
   now: string,
 ): ShootView => {
-  const comesIn = parts.find(({ wants }) => wants === 'in')?.photo ?? null;
-  const stacks =
-    comesIn === null ? shoot.stacks : stacksAfter(shoot, comesIn, instead);
-  const stackOf = new Map(
-    stacks.flatMap(({ front, photos }) => photos.map((one) => [one, front])),
+  const partOf = new Map(parts.map((part) => [part.photo, part]));
+  const photos = laidOut(
+    shoot.photos.map((photo) => {
+      const part = partOf.get(photo.id);
+      return part === undefined
+        ? photo
+        : { ...photo, standing: standingAfter(shoot, photo, part, now) };
+    }),
+    new Set(
+      shoot.photos.flatMap(({ id, moment }) =>
+        partOf.has(id) ? [moment] : [],
+      ),
+    ),
   );
-  const leaving = new Set(
-    parts.filter(({ wants }) => wants === 'out').map(({ photo }) => photo),
-  );
+  const isPicked = (id: string) =>
+    photos.some((photo) => photo.id === id && photo.standing.kind === 'picked');
   return {
     ...shoot,
-    stacks,
-    photos: shoot.photos.map((photo) => {
-      const part = parts.find((one) => one.photo === photo.id);
-      const stack = stackOf.get(photo.id) ?? photo.stack;
-      const standing =
-        part === undefined
-          ? photo.standing
-          : standingAfter(shoot, photo, part, now);
-      return {
-        ...photo,
-        stack,
-        standing:
-          standing.kind === 'similar' && stack !== photo.id
-            ? { ...standing, to: stack }
-            : standing,
-      };
-    }),
+    photos,
+    stacks: stacksOf(photos),
     marks: shoot.marks.filter(
-      (mark) => !(leaving.has(mark.photo) && mark.handedOverAt === null),
+      (mark) =>
+        !(
+          partOf.get(mark.photo)?.wants === 'out' && mark.handedOverAt === null
+        ),
     ),
+    // Keepsake counts an order as done once none of its photos waits.
+    ordered:
+      shoot.ordered?.photos.some(isPicked) === false ? null : shoot.ordered,
   };
 };
 
@@ -169,7 +178,7 @@ export const withChoice = (
   );
   const others = shoot.choices.filter((one) => !replaced.has(one.action));
   if (!isWorking) {
-    return withDone({ ...shoot, choices: others }, parts, instead, now);
+    return withDone({ ...shoot, choices: others }, parts, now);
   }
   const isInNow = (one: string) =>
     isIn(shoot.photos.find(({ id }) => id === one));
