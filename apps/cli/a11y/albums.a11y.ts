@@ -12,6 +12,8 @@ const editAll = /^Edit 10 photos, about \$7\.50$/u;
 const coimbra = /Coimbra/u;
 const tavira = /Tavira/u;
 const stopped = /has stopped$/u;
+const englishName =
+  /its common English name where it has one, such as Vienna for Wien/u;
 const newAlbum = /^New album From/u;
 const newAlbumWithKey = /^New album N$/u;
 
@@ -22,24 +24,22 @@ test('shows every album on a shelf, with what waits at each', async ({
   await expect(title(page)).toHaveText('Keepsake');
   await expect(page.getByText(albumCount)).toBeVisible();
   const album = (name: string) => page.getByRole('link', { name });
-  await expect(album('Lisbon, May 2026')).toContainText('8 in the album');
-  await expect(album('Lisbon, May 2026')).toContainText('3 marks to hand over');
-  await expect(album('Sagres, September')).toContainText(
-    '10 chosen, ready for your look',
-  );
-  await expect(album('Braga, July')).toContainText('Nothing chosen yet');
-  await expect(album('Aveiro, September')).toContainText('Stopped');
-  await expect(album('Óbidos, October')).toContainText('Being edited');
+  await expect(album('Lisbon')).toContainText('8 in the album');
+  await expect(album('Lisbon')).toContainText('3 marks to hand over');
+  await expect(album('Sagres')).toContainText('10 chosen, ready for your look');
+  await expect(album('Braga')).toContainText('Nothing chosen yet');
+  await expect(album('Aveiro')).toContainText('Stopped');
+  await expect(album('Óbidos')).toContainText('Being edited');
   await scan(page);
 
   // The arrow keys go from album to album, and Enter opens one.
-  await album('Braga, July').focus();
+  await album('Braga').focus();
   await page.keyboard.press('ArrowRight');
-  await expect(album('Faro, July')).toBeFocused();
+  await expect(album('Faro')).toBeFocused();
   await scan(page);
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Enter');
-  await expect(title(page)).toHaveText('Braga, July 2026');
+  await expect(title(page)).toHaveText('Braga');
   await page.getByRole('link', { name: 'All albums' }).click();
   await expect(title(page)).toHaveText('Keepsake');
 });
@@ -48,7 +48,7 @@ test('fits the shelf and a new album on a phone', {
   tag: mobileDeviceTag,
 }, async ({ page }) => {
   await shelf(page);
-  await expect(page.getByRole('link', { name: 'Braga, July' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Braga' })).toBeVisible();
   await scan(page);
   await page.getByRole('link', { name: newAlbum }).click();
   await expect(title(page)).toHaveText('New album');
@@ -81,9 +81,11 @@ test('finds the folder a new album is made of', async ({ page }) => {
   await page.getByRole('searchbox', { name: 'Search folders' }).fill('tav');
   await expect(folders.getByRole('link')).toHaveCount(1);
   await folders.getByRole('link', { name: tavira }).click();
-  await expect(
-    page.getByRole('textbox', { name: 'What is it about?' }),
-  ).toBeFocused();
+  const named = page.getByRole('textbox', {
+    name: 'What is the album called?',
+  });
+  await expect(named).toBeFocused();
+  await expect(named).toHaveAccessibleDescription(englishName);
   await expect(page.getByText('09:00 on 18 October')).toBeVisible();
   await scan(page);
 });
@@ -91,11 +93,14 @@ test('finds the folder a new album is made of', async ({ page }) => {
 test('makes a new album of a folder, and throws it away', async ({ page }) => {
   await page.goto('/?new');
   await page.getByRole('link', { name: coimbra }).click();
+  await expect(
+    page.getByRole('textbox', { name: 'What is the album called?' }),
+  ).toHaveValue('Coimbra');
   await page
-    .getByRole('textbox', { name: 'What is it about?' })
-    .fill('Coimbra, October 2026');
+    .getByRole('textbox', { name: 'Where and when?' })
+    .fill('Coimbra, Portugal, October 2026');
   await page.getByRole('button', { name: 'Make the album' }).click();
-  await expect(title(page)).toHaveText('Coimbra, October 2026');
+  await expect(title(page)).toHaveText('Coimbra');
   const making = page.getByRole('region', { name: 'Getting the album ready' });
   await expect(making).toBeVisible();
   await scan(page);
@@ -110,7 +115,7 @@ test('makes a new album of a folder, and throws it away', async ({ page }) => {
 
   await making.getByRole('button', { name: 'Throw away' }).click();
   const asked = page.getByRole('dialog');
-  await expect(asked).toContainText('Throw away “Coimbra, October 2026”?');
+  await expect(asked).toContainText('Throw away “Coimbra”?');
   await scan(page);
   await asked.getByRole('button', { name: 'Throw away' }).click();
   await expect(title(page)).toHaveText('Keepsake');
@@ -118,7 +123,7 @@ test('makes a new album of a folder, and throws it away', async ({ page }) => {
 });
 
 test('says how far a new album is', async ({ page }) => {
-  await lay(page, '/aveiro', 'Aveiro, September 2026');
+  await lay(page, '/aveiro', 'Aveiro');
   const ready = page.getByRole('region', { name: 'Getting the album ready' });
   await expect(ready.getByRole('heading', { name: stopped })).toBeVisible();
   await expect(ready.getByRole('alert')).toHaveText(
@@ -131,7 +136,7 @@ test('says how far a new album is', async ({ page }) => {
 });
 
 test('says how far an album is that an agent works on', async ({ page }) => {
-  await lay(page, '/obidos', 'Óbidos, October 2026');
+  await lay(page, '/obidos', 'Óbidos');
   const edited = page.getByRole('region', {
     name: 'The album is being edited',
   });
@@ -154,7 +159,7 @@ test('says how far an album is that an agent works on', async ({ page }) => {
 test('goes over what was chosen for an album', {
   tag: mobileDeviceTag,
 }, async ({ page }) => {
-  await lay(page, '/faro', 'Faro, July 2026');
+  await lay(page, '/faro', 'Faro');
   const choice = page.getByRole('region', { name: 'The choice' });
   await expect(
     choice.getByRole('heading', {
@@ -172,7 +177,7 @@ test('goes over what was chosen for an album', {
 });
 
 test('orders an album, which an agent is started for', async ({ page }) => {
-  await lay(page, '/sagres', 'Sagres, September 2026');
+  await lay(page, '/sagres', 'Sagres');
   await page.getByRole('button', { name: 'Order the album' }).click();
   await page
     .getByRole('region', { name: 'Order the album' })

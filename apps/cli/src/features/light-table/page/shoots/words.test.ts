@@ -4,6 +4,7 @@ import { isBusy, printOf, sentenceOf, waitsOf } from './words.ts';
 
 const shoot = (change: Partial<ShootSummary> = {}): ShootSummary => ({
   name: 'harbor',
+  title: 'The harbor',
   about: 'The harbor, May 2026',
   from: '2026-05-01T07:12:04+01:00',
   to: '2026-05-04T19:40:36+01:00',
@@ -37,8 +38,8 @@ describe('what is printed under an album', () => {
   });
 
   it('puts it all in one sentence', () => {
-    expect(sentenceOf(shoot({ about: null, newAnswers: 1 }))).toBe(
-      'harbor, 1 May to 4 May 2026, 43 photos, 8 in the album, 1 new answer',
+    expect(sentenceOf(shoot({ newAnswers: 1 }))).toBe(
+      'The harbor, 1 May to 4 May 2026, 43 photos, 8 in the album, 1 new answer',
     );
   });
 });

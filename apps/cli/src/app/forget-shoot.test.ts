@@ -103,7 +103,7 @@ describe('forgetting a shoot', () => {
     await scanLisbon();
     const porto = join(fake.home, 'porto');
     await putPhotos(porto);
-    await runOk('scan', porto, '--name', 'porto');
+    await runOk('scan', porto, '--name', 'porto', '--title', 'Porto');
     const cache = (shoot: string) =>
       join(fake.home, 'cache', 'keepsake', shoot);
     const making = Promise.withResolvers<void>();

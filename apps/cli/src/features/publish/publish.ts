@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto';
-import { Effect, type Option } from 'effect';
+import { Effect, FileSystem, Option } from 'effect';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
-import { Publication, type PublishedPhoto } from '../../shared/domain.ts';
-import { StepMissing } from '../../shared/errors/errors.ts';
+import {
+  Album,
+  Publication,
+  type PublishedPhoto,
+} from '../../shared/domain.ts';
+import { StepMissing, StoreFailed } from '../../shared/errors/errors.ts';
 import {
   albumAssets,
   createAlbum,
@@ -29,6 +33,7 @@ import {
   exists,
   type OpenShoot,
   readBytes,
+  readJson,
   readPicks,
   writeJson,
 } from '../../shared/store.ts';
@@ -315,6 +320,26 @@ export const tellOutdated = <E, R>(
     Effect.flatMap((outdated) => forgetOutdated(open, outdated)),
   );
 
+/**
+ * Notes the album before anything is uploaded, so that a publish that stopped
+ * after it made the album finds the album by its id when run again, rather
+ * than make another one. What keepsake read of another album is forgotten, so
+ * nothing calls that album's photos published or marks them as favorites
+ * until this one is read.
+ */
+const switchTo = (open: OpenShoot, publication: Publication) =>
+  Effect.gen(function* () {
+    // Forgotten first, so a failed removal leaves the old album current.
+    const read = Option.getOrNull(yield* readJson(Album, open.files.album));
+    if (read !== null && read.id !== publication.albumId) {
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs
+        .remove(open.files.album, { force: true })
+        .pipe(Effect.mapError(({ message }) => new StoreFailed({ message })));
+    }
+    yield* writeJson(Publication, open.files.publication, publication);
+  }).pipe(withAlbum(open.files));
+
 /** Uploads the picked photos, or those named, to an album in Immich. */
 export const publish = Effect.fn('publish')(function* (
   open: OpenShoot,
@@ -334,10 +359,11 @@ export const publish = Effect.fn('publish')(function* (
       earlier?.digest !== digest || !inAlbum.has(photo),
   );
   const album = yield* destinationOf(target);
-  yield* ensureTag(tag);
   // Replaced uploads stay noted until a command has named them, also after
   // one that fails half-way, so none is left in the album untold.
   let publication = publicationFor(before, album, albums);
+  yield* switchTo(open, publication);
+  yield* ensureTag(tag);
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {

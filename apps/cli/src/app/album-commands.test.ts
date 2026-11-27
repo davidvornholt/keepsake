@@ -43,7 +43,7 @@ describe('keepsake publish, with an album that changed in Immich', () => {
   it('notes what the album has', async () => {
     await publishLisbon();
     expect(await shootJson('album.json')).toMatchObject({
-      name: 'Lisbon, May 2026',
+      name: 'Lisbon',
       server: 'https://photos.example.com',
       photos: [
         { photo: 'A1', asset: 'asset-1', favorite: false },
@@ -103,7 +103,14 @@ describe('keepsake publish, with an album that changed in Immich', () => {
       { file: 'two/B.ARW', second: 600 },
     ];
     await putPhotos();
-    await runOk('scan', photosFolder(), '--name', 'lisbon');
+    await runOk(
+      'scan',
+      photosFolder(),
+      '--name',
+      'lisbon',
+      '--title',
+      'Lisbon',
+    );
     await Bun.write(shootFile('judge.json'), JSON.stringify({ model: judge }));
     await runOk('cull', 'lisbon');
     await runOk('pick', 'lisbon');
@@ -147,7 +154,7 @@ describe('keepsake take-out', () => {
       'Nothing happens in it.',
     );
     expect(result).toMatchObject({
-      album: { name: 'Lisbon, May 2026' },
+      album: { name: 'Lisbon' },
       takenOut: [
         { photo: 'B', asset: 'asset-3' },
         { photo: 'C', asset: 'asset-5' },

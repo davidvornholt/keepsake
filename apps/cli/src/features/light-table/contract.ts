@@ -142,7 +142,9 @@ export type Question = {
 /** GET /api/shoots/<shoot> */
 export type ShootView = {
   readonly name: string;
-  /** "Lisbon, May 2026" */
+  /** The album's name: "Lisbon". */
+  readonly title: string;
+  /** Where and when, for the models: "Lisbon, May 2026" */
   readonly about: string | null;
   /** Changes whenever anything below does. */
   readonly revision: string;
@@ -191,6 +193,7 @@ export type ShootView = {
 export type ShootList = {
   readonly shoots: ReadonlyArray<{
     readonly name: string;
+    readonly title: string;
     readonly about: string | null;
     /** When the first and the last photo were taken; null until there are any. */
     readonly from: string | null;

@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Option } from 'effect';
 import { Command } from 'effect/cli';
 import { cull as cullShoot, judgedTooFew } from '../features/cull/cull.ts';
 import { checkPrices, edit as editShoot } from '../features/edit/edit.ts';
@@ -18,7 +18,6 @@ import { fail, flag, visionModel } from './command-inputs.ts';
 import { emitWithCost } from './output.ts';
 import { folderArgument, scanFlags } from './shoot-commands.ts';
 import {
-  albumFlag,
   editFlags,
   editInput,
   imageModelOf,
@@ -56,8 +55,10 @@ export const run = Command.make(
       'Stop before the edits, which cost money, for the owner to look over the choice first',
     ),
     ...editFlags,
-    publish: flag('publish', 'Also upload the finished photos to Immich'),
-    album: albumFlag,
+    publish: flag(
+      'publish',
+      'Also upload the finished photos to Immich, to the album published to before, or else to a new album named after --title',
+    ),
   },
   (flags) =>
     Effect.gen(function* () {
@@ -94,7 +95,9 @@ export const run = Command.make(
               }),
             ).pipe(Effect.provide(ImageModel.layer(imageModel)));
         const published = flags.publish
-          ? yield* workOn(shoot, (open) => publishShoot(open, [], flags.album))
+          ? yield* workOn(shoot, (open) =>
+              publishShoot(open, [], Option.none()),
+            )
           : null;
         const explained = yield* workOn(shoot, (open) =>
           askReviewer(explainShoot(open, false)),

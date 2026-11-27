@@ -190,7 +190,7 @@ export const lookAtFolder = Effect.fn('lookAtFolder')(function* (
     folder,
     chosen.map((file) => path.relative(folder, file)),
   );
-  const shoot: Shoot = { name: '', source: folder, about: null };
+  const shoot: Shoot = { name: '', source: folder, title: '', about: null };
   const samples = yield* Effect.forEach(
     photos,
     (photo) =>

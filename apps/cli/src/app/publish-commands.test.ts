@@ -21,7 +21,7 @@ describe('keepsake publish', () => {
     await editLisbon();
     const result = await runOk('publish', 'lisbon');
     expect(result).toMatchObject({
-      album: { name: 'Lisbon, May 2026' },
+      album: { name: 'Lisbon' },
       published: 3,
       alreadyThere: 0,
       outdated: [],
@@ -83,20 +83,60 @@ const publishLisbon = async () => {
   return await runOk('publish', 'lisbon');
 };
 
-describe('keepsake publish, to the album it published to', () => {
-  it('publishes to no album when two have its name', async () => {
+describe('keepsake publish, to a new album', () => {
+  /** Someone's album of an earlier trip, which has the shoot's title. */
+  const lastYear = () => {
+    fakeTools.albums.push({ id: 'last-year', name: 'Lisbon', assets: [] });
+  };
+
+  it('makes a new album under the title, even when one has that name', async () => {
+    lastYear();
+    const result = await publishLisbon();
+    expect(result).toMatchObject({
+      album: { id: 'album-2', name: 'Lisbon' },
+      published: 3,
+    });
+    expect(fakeTools.albums.find(({ id }) => id === 'last-year')).toMatchObject(
+      { assets: [] },
+    );
+  });
+
+  it('joins an album of that name only when it is named', async () => {
+    lastYear();
+    await pickLisbon();
+    await editLisbon();
+    const result = await runOk('publish', 'lisbon', '--album', 'Lisbon');
+    expect(result).toMatchObject({ album: { id: 'last-year' }, published: 3 });
+    expect(fakeTools.albums).toHaveLength(1);
+  });
+
+  it('publishes to no album named when two have that name', async () => {
     fakeTools.albums = ['album-1', 'album-2'].map((id) => ({
       id,
-      name: 'Lisbon, May 2026',
+      name: 'Porto',
       assets: [],
     }));
     await pickLisbon();
     await editLisbon();
-    const failure = await failureOf('publish', 'lisbon');
-    expect(failure.message).toContain('2 albums called Lisbon, May 2026');
+    const failure = await failureOf('publish', 'lisbon', '--album', 'Porto');
+    expect(failure.message).toContain('2 albums called Porto');
     expect(fakeTools.uploads).toEqual([]);
   });
 
+  it('finds the album it made when it stopped before the first upload', async () => {
+    await pickLisbon();
+    await editLisbon();
+    fakeTools.broken.add('A1-keepsake.jpg');
+    await failureOf('publish', 'lisbon');
+    expect(fakeTools.albums).toMatchObject([{ id: 'album-1', assets: [] }]);
+    fakeTools.broken.clear();
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({ album: { id: 'album-1' }, published: 3 });
+    expect(fakeTools.albums).toHaveLength(1);
+  });
+});
+
+describe('keepsake publish, to the album it published to', () => {
   it('stays with an album that was renamed in Immich', async () => {
     await publishLisbon();
     const [album] = fakeTools.albums;

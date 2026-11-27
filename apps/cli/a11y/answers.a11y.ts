@@ -24,7 +24,7 @@ test('compares an answer with what was there before', async ({ page }) => {
 });
 
 test('goes through the answers of an agent', async ({ page }) => {
-  await lay(page, '/porto', 'Porto, June 2026');
+  await lay(page, '/porto', 'Porto');
   await page.getByRole('button', { name: '2 answers' }).click();
   await expect(page.getByText('Answer 1 of 2')).toBeVisible();
   await expect(large(page).getByText('Done').first()).toBeVisible();
@@ -89,5 +89,5 @@ test('rates the moments that were asked about', async ({ page }) => {
   await expect(title(page)).toHaveText('All 3 are rated.');
   await scan(page);
   await page.keyboard.press('Enter');
-  await expect(title(page)).toHaveText('Porto, June 2026');
+  await expect(title(page)).toHaveText('Porto');
 });

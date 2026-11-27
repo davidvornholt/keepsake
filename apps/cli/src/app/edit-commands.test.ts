@@ -120,6 +120,8 @@ describe('keepsake edit, in another time zone', () => {
     const failure = await failureOf(
       'scan',
       photosFolder(),
+      '--title',
+      'Lisbon',
       '--time-zone',
       'Lisbon',
     );

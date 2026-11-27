@@ -18,8 +18,9 @@ import {
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
+import { send, statusOf, whileServing } from './light-table-fixtures.ts';
 
-const first = 'Lisbon, May 2026';
+const first = 'Lisbon';
 
 const publishLisbon = async (...args: ReadonlyArray<string>) => {
   await pickLisbon();
@@ -223,6 +224,35 @@ describe('keepsake publish, after the album changed in Immich', () => {
     const result = await runOk('publish', 'lisbon', '--album', 'Second');
     expect(result).toMatchObject({ album: { id: 'album-2' }, published: 2 });
     expect(assetsOf('album-2')).toEqual(['asset-1', 'asset-3']);
+  });
+});
+
+describe('keepsake publish, to another album, stopped half-way', () => {
+  it('forgets what it read of the album before', async () => {
+    await publishLisbon();
+    fakeTools.broken.add('A1-keepsake.jpg');
+    await failureOf('publish', 'lisbon', '--album', 'Second');
+    expect(assetsOf('album-2')).toEqual([]);
+    expect((await runOk('show', 'lisbon', 'A1')).standing).toEqual({
+      kind: 'picked',
+    });
+    const favored = await whileServing((address) =>
+      statusOf(
+        send('PUT', `${address}/api/shoots/lisbon/favorites`, {
+          photo: 'A1',
+          favorite: true,
+        }),
+      ),
+    );
+    expect(favored).toBe(400);
+    expect(albumWithId('album-1')?.assets).not.toContainEqual(
+      expect.objectContaining({ favorite: true }),
+    );
+    fakeTools.broken.clear();
+    const result = await runOk('publish', 'lisbon');
+    expect(result).toMatchObject({ album: { id: 'album-2' }, published: 3 });
+    const { elsewhere } = await shootJson('publication.json');
+    expect(elsewhere).toMatchObject([{ albumId: 'album-1' }]);
   });
 });
 
