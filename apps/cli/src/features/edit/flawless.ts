@@ -70,9 +70,14 @@ const inspection = (
   Effect.gen(function* () {
     const about = { crop: prepared.crop.box, removed: prepared.removed, wish };
     const mended = files.versionMended(checked.number);
-    const inspected = (version: string) =>
-      inspect({ original: files.input, version }, about);
-    const found = yield* inspected(checked.version);
+    // Each answer is kept, since it cost money, for when a later one fails.
+    const inspected = (version: string, round: number) =>
+      remembered(
+        Schema.Array(Fault),
+        files.inspection(checked.number, round),
+        inspect({ original: files.input, version }, about),
+      );
+    const found = yield* inspected(checked.version, 0);
     const faults: Array<Fault> = [];
     let left: ReadonlyArray<Fault> | null = null;
     for (let round = 0; round < mostRounds; round += 1) {
@@ -84,7 +89,7 @@ const inspection = (
       }
       faults.push(...mendable);
       yield* mend(files, prepared, checked, faults);
-      left = yield* inspected(mended);
+      left = yield* inspected(mended, round + 1);
     }
     return { found, left };
   });

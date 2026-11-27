@@ -194,6 +194,22 @@ describe('keepsake edit, looking closely', () => {
   });
 });
 
+describe('keepsake edit, after it stopped while looking closely', () => {
+  it('asks nothing again that it was answered', async () => {
+    await pickLisbon();
+    fakeModels.answers.faults = () =>
+      asked('faults').length === 1
+        ? { faults: [fault()] }
+        : Response.json({ error: { message: 'limit' } }, { status: 400 });
+    expect((await editLisbon('B')).failed).toHaveLength(1);
+    fakeModels.answers.faults = { faults: [] };
+    expect((await editLisbon('B')).edited).toBe(1);
+    expect(asked('assessment')).toHaveLength(1);
+    // The one that failed is asked again, and only that one.
+    expect(asked('faults')).toHaveLength(3);
+  });
+});
+
 describe('keepsake edit, looking closely at what is left', () => {
   it('keeps the camera’s own picture when what is left of a removal shows', async () => {
     await pickLisbon();

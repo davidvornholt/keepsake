@@ -117,11 +117,12 @@ const looks = Effect.fn('looks')(function* (
   ] satisfies Array<Piece>;
 });
 
-export type Review = {
+export const Review = Schema.Struct({
   /** The versions without a fault, counted from 0, the best one first. */
-  readonly good: ReadonlyArray<number>;
-  readonly notes: string;
-};
+  good: Schema.Array(Schema.Int),
+  notes: Schema.String,
+});
+export type Review = typeof Review.Type;
 
 /** Finds the versions of an edit that may take the place of the original. */
 export const review = Effect.fn('review')(function* (

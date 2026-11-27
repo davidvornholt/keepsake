@@ -1,4 +1,5 @@
-import { Effect, Option } from 'effect';
+import { createHash } from 'node:crypto';
+import { Effect, FileSystem, Option, Path } from 'effect';
 import { developed } from '../../shared/develop.ts';
 import {
   type Box,
@@ -13,7 +14,7 @@ import { rendered } from '../../shared/pictures.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { verdictOn } from '../../shared/verdicts.ts';
-import { type Piece, Vision } from '../../shared/vision.ts';
+import { type AnswerSchema, type Piece, Vision } from '../../shared/vision.ts';
 import { chunks } from './chunks.ts';
 import { closeUpOf } from './close-up.ts';
 import {
@@ -39,6 +40,7 @@ const closeUpQuality = 90;
 /** Close-ups decide only between frames that are good enough to keep. */
 const checkedFrom = 5;
 const concurrency = 18;
+const jsonEnd = /\.json$/u;
 
 const lowestScore = 1;
 const highestScore = 10;
@@ -69,26 +71,75 @@ const framesOf = Effect.fn('framesOf')(function* (
   );
 });
 
+/**
+ * Where the answers about a moment are kept until its verdict is, apart from
+ * the verdicts, so that a new answer doesn't make the page read them again.
+ */
+const keptFor = Effect.fn('keptFor')(function* (
+  open: OpenShoot,
+  verdict: string,
+) {
+  const path = yield* Path.Path;
+  const name = path.relative(open.files.root, verdict).replace(jsonEnd, '');
+  return path.join(open.files.root, 'cull-answers', name);
+});
+
+type Asking<S extends AnswerSchema> = {
+  readonly name: string;
+  readonly schema: S;
+  /** What the question shows, which tells it apart from the others. */
+  readonly shown: unknown;
+};
+
+/**
+ * Asks about photos of a moment, unless the model answered the same in a
+ * cull that stopped before the moment's verdict. Each answer is kept as soon
+ * as it comes, since it cost money.
+ */
+const askKept = <S extends AnswerSchema, E, R>(
+  kept: string,
+  { name, schema, shown }: Asking<S>,
+  pieces: Effect.Effect<ReadonlyArray<Piece>, E, R>,
+) =>
+  Effect.gen(function* () {
+    const key = createHash('sha256')
+      .update(JSON.stringify(shown))
+      .digest('hex');
+    const file = `${kept}/${name}-${key}.json`;
+    const before = yield* readJson(schema, file);
+    if (Option.isSome(before)) {
+      return before.value;
+    }
+    const vision = yield* Vision;
+    const answer = yield* vision.ask({
+      role,
+      name,
+      schema,
+      pieces: yield* pieces,
+    });
+    yield* writeJson(schema, file, answer);
+    return answer;
+  });
+
 /** Narrows a long burst down until what is left fits into one question. */
 const shortlist = Effect.fn('shortlist')(function* (
   open: OpenShoot,
+  kept: string,
   photos: ReadonlyArray<string>,
 ) {
-  const vision = yield* Vision;
   let left = photos;
   while (left.length > mostFrames) {
     const rounds = yield* Effect.forEach(chunks(left, mostFrames), (group) =>
       Effect.gen(function* () {
-        const answer = yield* vision.ask({
-          role,
-          name: 'shortlist',
-          schema: Shortlist,
-          pieces: [
+        const answer = yield* askKept(
+          kept,
+          { name: 'shortlist', schema: Shortlist, shown: group },
+          Effect.map(framesOf(open, group), (frames) => [
             introduction(open.shoot, group.length),
-            ...(yield* framesOf(open, group)),
+            ...frames,
             shortlistQuestion,
-          ],
-        });
+          ]),
+        );
         const best = chosen(group, answer.best).slice(0, shortlistSize);
         return best.length === 0 ? group.slice(0, shortlistSize) : best;
       }),
@@ -148,19 +199,22 @@ const furtherOf = (
   });
 
 /** What the model thinks of one moment. */
-const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
+const judge = Effect.fn('judge')(function* (
+  open: OpenShoot,
+  kept: string,
+  moment: Moment,
+) {
   const vision = yield* Vision;
-  const candidates = yield* shortlist(open, moment.photos);
-  const answer = yield* vision.ask({
-    role,
-    name: 'judgement',
-    schema: Judgement,
-    pieces: [
+  const candidates = yield* shortlist(open, kept, moment.photos);
+  const answer = yield* askKept(
+    kept,
+    { name: 'judgement', schema: Judgement, shown: candidates },
+    Effect.map(framesOf(open, candidates), (frames) => [
       introduction(open.shoot, candidates.length),
-      ...(yield* framesOf(open, candidates)),
+      ...frames,
       judgementQuestion,
-    ],
-  });
+    ]),
+  );
   const contenders = answer.ranking
     .flatMap(({ frame, focus }): Array<Contender> => {
       const photo = candidates[frame - 1];
@@ -191,16 +245,15 @@ const judge = Effect.fn('judge')(function* (open: OpenShoot, moment: Moment) {
   if (ranked.length === 1 || answer.score < checkedFrom) {
     return verdict;
   }
-  const check = yield* vision.ask({
-    role,
-    name: 'check',
-    schema: Check,
-    pieces: [
+  const check = yield* askKept(
+    kept,
+    { name: 'check', schema: Check, shown: { contenders, answer } },
+    Effect.map(contenderPieces(open, contenders), (pieces) => [
       introduction(open.shoot, ranked.length),
-      ...(yield* contenderPieces(open, contenders)),
+      ...pieces,
       checkQuestion(answer),
-    ],
-  });
+    ]),
+  );
   // A frame the second answer leaves out keeps its place at the end.
   const best = [...new Set([...chosen(ranked, check.ranking), ...ranked])];
   return {
@@ -225,6 +278,9 @@ export const judgeMoments = Effect.fn('judgeMoments')(function* (
     open.files.verdict(model, moment.id),
 ) {
   const { model } = yield* Vision;
+  const fs = yield* FileSystem.FileSystem;
+  const forget = (kept: string) =>
+    fs.remove(kept, { recursive: true, force: true }).pipe(Effect.ignore);
   const outcomes = yield* inSteps('cull', moments, concurrency, (moment) =>
     Effect.gen(function* () {
       const file = fileOf(model, moment);
@@ -232,8 +288,13 @@ export const judgeMoments = Effect.fn('judgeMoments')(function* (
       if (Option.isSome(before) && !again) {
         return { verdict: before.value };
       }
-      const verdict = yield* judge(open, moment);
+      const kept = yield* keptFor(open, file);
+      if (again) {
+        yield* forget(kept);
+      }
+      const verdict = yield* judge(open, kept, moment);
       yield* writeJson(Verdict, file, verdict);
+      yield* forget(kept);
       return { verdict };
     }).pipe(
       // One moment a model can't answer for doesn't stop the others.

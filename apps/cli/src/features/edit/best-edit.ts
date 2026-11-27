@@ -22,10 +22,11 @@ import {
   cameraQuality,
   type Prepared,
   prepared as preparedOf,
+  remembered,
   type ToPrepare,
 } from './prepare.ts';
 import { editPrompt } from './prompt.ts';
-import { review } from './review.ts';
+import { Review, review } from './review.ts';
 import { mostAttempts, versionsOf, withOriginals } from './versions.ts';
 
 /** A picked photo with everything needed to edit it. */
@@ -85,13 +86,18 @@ const attempt = Effect.fn('attempt')(function* (
   const versions = yield* Effect.forEach(numbers, (number) =>
     withOriginals(files, { crop: crop.box, originals }, number),
   );
-  const { good, notes } = yield* review(
-    description,
-    { crop: crop.box, subject: crop.subject, removed, wish, ...originals },
-    {
-      original: files.input,
-      versions: versions.map(({ version }) => version),
-    },
+  // Kept, since it cost money, for when a later step stops the edit.
+  const { good, notes } = yield* remembered(
+    Review,
+    files.review(which.number),
+    review(
+      description,
+      { crop: crop.box, subject: crop.subject, removed, wish, ...originals },
+      {
+        original: files.input,
+        versions: versions.map(({ version }) => version),
+      },
+    ),
   );
   const wrong: Array<string> = [];
   let acceptable: Outcome | null = null;
