@@ -2,8 +2,10 @@
 import { Effect, FileSystem, Path, Schema } from 'effect';
 import { OpenAiStructuredOutput } from 'effect/ai';
 import { ToolFailed } from '../errors/errors.ts';
+import { xdgDirectory } from '../xdg.ts';
 import type { Program, ProgramQuestion } from './program-model.ts';
 import type { Effort } from './subscriptions.ts';
+import type { ProgramUsage, UsageCall } from './usage-records.ts';
 
 const isMessage = Schema.is(
   Schema.Struct({
@@ -19,7 +21,10 @@ const isCompleted = Schema.is(
     type: Schema.Literal('turn.completed'),
     usage: Schema.Struct({
       input_tokens: Schema.Int,
+      cached_input_tokens: Schema.optionalKey(Schema.Int),
+      cache_write_input_tokens: Schema.optionalKey(Schema.Int),
       output_tokens: Schema.Int,
+      reasoning_output_tokens: Schema.optionalKey(Schema.Int),
     }),
   }),
 );
@@ -127,6 +132,46 @@ const answer = Effect.fn('codex.answer')(function* (
   };
 });
 
+/** The lines Codex would write into a session for the turn. */
+const usageLines =
+  (model: string) =>
+  (events: ReadonlyArray<unknown>, { session, id, at }: UsageCall) => {
+    const completed = events.findLast(isCompleted);
+    if (completed === undefined) {
+      return [];
+    }
+    const { usage } = completed;
+    return [
+      // Only a file's first one counts, but each call has its own, so that
+      // calls written at once can't leave the file without one.
+      { timestamp: at, type: 'session_meta', payload: { id: session } },
+      { timestamp: at, type: 'turn_context', payload: { model } },
+      {
+        timestamp: at,
+        type: 'token_usage_record',
+        payload: {
+          response_id: id,
+          usage: {
+            input_tokens: usage.input_tokens,
+            cached_input_tokens: usage.cached_input_tokens ?? 0,
+            cache_write_input_tokens: usage.cache_write_input_tokens ?? 0,
+            output_tokens: usage.output_tokens,
+            reasoning_output_tokens: usage.reasoning_output_tokens ?? 0,
+            total_tokens: usage.input_tokens + usage.output_tokens,
+          },
+        },
+      },
+    ];
+  };
+
+const usage = (model: string): ProgramUsage => ({
+  folder: Effect.gen(function* () {
+    const path = yield* Path.Path;
+    return path.join(yield* xdgDirectory('CODEX_HOME', '.codex'), 'sessions');
+  }),
+  lines: usageLines(model),
+});
+
 /** Asks Codex, which uses the ChatGPT subscription it is signed in to. */
 export const codex = (
   model: string,
@@ -136,4 +181,5 @@ export const codex = (
   codecTransformer: OpenAiStructuredOutput.toCodecOpenAI,
   request: request(model, effort),
   answer,
+  usage: usage(model),
 });

@@ -35,7 +35,7 @@ Publishing needs the [photos](https://github.com/davidvornholt/photos) command, 
 
 ## Sign in
 
-GPT-6.2 Sol chooses and crops the photos through [Codex](https://developers.openai.com/codex). Claude Opus 5.5 describes the chosen ones, marks the people and signs in them and reviews the edits through [Claude Code](https://code.claude.com). Both run on the subscription their program is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo.
+GPT-6.2 Sol chooses and crops the photos through [Codex](https://developers.openai.com/codex). Claude Opus 5.5 describes the chosen ones, marks the people and signs in them and reviews the edits through [Claude Code](https://code.claude.com). Both run on the subscription their program is signed in to, with no tools and without saving the session. That counts towards the limits of the subscription instead of costing money per photo. In place of the sessions, keepsake records only the model, tokens and time of each call, in `~/.claude/projects/keepsake` and `~/.codex/sessions/keepsake`, so that usage views that read the sessions, such as T3 Code's, count those calls.
 
 Edits use your own API key. With Azure, deploy `gpt-image-2.5-sunburst` under that name, then:
 

@@ -1,8 +1,8 @@
 import { Config, Effect, Option, Path } from 'effect';
 
 /**
- * An XDG base directory such as `XDG_CONFIG_HOME`, or its default under the
- * home directory when the variable is unset.
+ * The directory an environment variable such as `XDG_CONFIG_HOME` names, or
+ * its default under the home directory when the variable is unset.
  */
 export const xdgDirectory = (variable: string, fallback: string) =>
   Effect.gen(function* () {

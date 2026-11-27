@@ -17,8 +17,15 @@ import { fakeTools, fakeToolsLayer, resetTools } from './fake-tools.ts';
 
 export const endpoint = 'https://example.openai.azure.com';
 
-/** A home directory for one test, and the key piped in. */
-export const fake = { home: '', stdin: '' };
+/**
+ * A home directory for one test, the key piped in, and more environment
+ * variables.
+ */
+export const fake = {
+  home: '',
+  stdin: '',
+  env: {} as Record<string, string>,
+};
 
 type Spy = ReturnType<typeof import('bun:test').spyOn>;
 const spies: Array<Spy> = [];
@@ -83,6 +90,9 @@ const command = (args: ReadonlyArray<string>) =>
             `HOME=${fake.home}`,
             `XDG_CONFIG_HOME=${join(fake.home, 'config')}`,
             `XDG_DATA_HOME=${join(fake.home, 'data')}`,
+            ...Object.entries(fake.env).map(
+              ([name, value]) => `${name}=${value}`,
+            ),
           ].join('\n'),
         ),
       ),
@@ -181,6 +191,7 @@ export const setUp = async (spyOn: typeof import('bun:test').spyOn) => {
   resetModels();
   resetTools();
   fake.stdin = '';
+  fake.env = {};
   fake.home = await mkdtemp(join(tmpdir(), 'keepsake-cli-'));
   await mkdir(photosFolder());
   await Bun.write(

@@ -14,6 +14,7 @@ import {
   type Subscription,
   withoutApiKeys,
 } from './subscriptions.ts';
+import { type ProgramUsage, usageRecorder } from './usage-records.ts';
 
 /** One question for a program, in the words it needs. */
 export type ProgramQuestion = {
@@ -46,6 +47,7 @@ export type Program<R> = {
   readonly answer: (
     events: ReadonlyArray<unknown>,
   ) => Effect.Effect<ProgramAnswer, ToolFailed>;
+  readonly usage: ProgramUsage;
 };
 
 const Line = Schema.fromJsonString(Schema.Unknown);
@@ -96,6 +98,7 @@ export const programModelLayer = <R>(program: Program<R>) =>
     Effect.gen(function* () {
       const { subscription, codecTransformer } = program;
       yield* requireSubscription(subscription);
+      const recordUsage = yield* usageRecorder(program.usage);
       const services = yield* Effect.context<
         R | FileSystem.FileSystem | ChildProcessSpawner.ChildProcessSpawner
       >();
@@ -132,6 +135,8 @@ export const programModelLayer = <R>(program: Program<R>) =>
             { input, cwd: directory, env: withoutApiKeys },
           );
           const events = yield* eventsIn(new TextDecoder().decode(stdout));
+          // A failed answer may have used tokens too.
+          yield* recordUsage(events);
           if (events.length === 0) {
             return yield* new ToolFailed({
               message: `exit code ${exitCode}. ${stderr}`,
