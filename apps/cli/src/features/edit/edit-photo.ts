@@ -24,7 +24,7 @@ import {
   markedRemovals,
   type Place,
 } from './correct/places.ts';
-import { descriptionOf } from './describe.ts';
+import { shownIn } from './describe.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
@@ -170,12 +170,7 @@ const changePlaces = Effect.fn('changePlaces')(function* (
   const shown = isAsDescribed
     ? (description ?? job.description)
     : yield* askReviewer(
-        descriptionOf(
-          job.open.shoot,
-          { input: file, description: files.shown },
-          wholePicture,
-          [],
-        ),
+        shownIn(job.open.shoot, files, { file, frame: wholePicture }, []),
       );
   const caption = captionOf(job, shown, true);
   yield* atomically(files.final, (draft) =>

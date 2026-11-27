@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Effect, Option } from 'effect';
 import { Description, whatToDescribe } from '../../shared/describing.ts';
 import type { Box, Shoot } from '../../shared/domain.ts';
@@ -49,3 +50,24 @@ export const descriptionOf = Effect.fn('descriptionOf')(function* (
   yield* writeJson(Description, files.description, answer);
   return answer.description;
 });
+
+/**
+ * Says what a finished picture shows, apart from what is removed from it. Each
+ * picture is described once for what it leaves out.
+ */
+export const shownIn = (
+  shoot: Shoot,
+  files: Pick<EditFiles, 'shown'>,
+  picture: { readonly file: string; readonly frame: Box },
+  removed: ReadonlyArray<string>,
+) => {
+  const key = createHash('sha256')
+    .update(JSON.stringify({ ...picture, removed }))
+    .digest('hex');
+  return descriptionOf(
+    shoot,
+    { input: picture.file, description: files.shown(key) },
+    picture.frame,
+    removed,
+  );
+};

@@ -13,7 +13,6 @@ const chair = 'the grey chair';
 const withChair = 'A heron takes off beside a grey chair.';
 const withoutChair = 'A heron takes off.';
 
-/** Describes the photo with the chair, unless it is to be left out. */
 const describing = ({ texts }: Asked) => ({
   description: texts.some((text) => text.includes(chair))
     ? withoutChair
@@ -55,6 +54,43 @@ describe('the caption of a finished photo', () => {
     };
     expect((await editLisbon('B')).keptFromCamera).toHaveLength(1);
     expect(caption()).toBe(withChair);
+  });
+
+  it('names what was to be removed and stays on a face', async () => {
+    await pickLisbon();
+    fakeModels.answers.people = {
+      people: [
+        {
+          face: { left: 0.15, top: 0.32, right: 0.3, bottom: 0.5 },
+          outline: [
+            { x: 0.12, y: 0.31 },
+            { x: 0.31, y: 0.31 },
+            { x: 0.31, y: 0.69 },
+            { x: 0.12, y: 0.69 },
+          ],
+        },
+      ],
+    };
+    const sticker = 'the sticker on her cheek';
+    fakeModels.answers.removals = {
+      remove: [
+        {
+          what: sticker,
+          box: { left: 0.2, top: 0.4, right: 0.25, bottom: 0.45 },
+        },
+        {
+          what: chair,
+          box: { left: 0.32, top: 0.55, right: 0.38, bottom: 0.68 },
+        },
+      ],
+    };
+    fakeModels.answers.description = ({ texts }: Asked) => ({
+      description: `It shows ${[sticker, chair]
+        .filter((what) => !texts.some((text) => text.includes(what)))
+        .join(' and ')}.`,
+    });
+    expect((await editLisbon('B')).edited).toBe(1);
+    expect(caption()).toBe(`It shows ${sticker}.`);
   });
 
   it('says what a change to places of a finished photo made', async () => {
