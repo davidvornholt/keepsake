@@ -6,7 +6,8 @@ import {
   tidyBox,
   wholePicture,
 } from '../../../shared/boxes.ts';
-import { Box } from '../../../shared/domain.ts';
+import { Box, type Removal } from '../../../shared/domain.ts';
+import { sentence } from '../../../shared/sentence.ts';
 import { Vision } from '../../../shared/vision.ts';
 import { inParts, inPhoto } from '../parts.ts';
 
@@ -45,6 +46,10 @@ const Found = Schema.Struct({
     description:
       'The numbers of what the edit took out that they want back, from 1',
   }),
+  replaces: Schema.Array(Schema.Int).annotate({
+    description:
+      'The numbers of what they asked for before that the new wish takes back or asks otherwise, from 1',
+  }),
 });
 
 /** How much is shown around what the user marked, in fractions of it. */
@@ -67,6 +72,9 @@ const aboutMarked = (marked: number): string =>
     ? ''
     : ` They marked where: ${marked === 1 ? 'the last part shows what is' : `the last ${marked} parts show what is`} in their ${marked === 1 ? 'mark' : 'marks'}, with a little around it. They mean what is there, even where their words alone could mean something else, and drew the marks roughly.`;
 
+const numbered = (things: ReadonlyArray<string>): string =>
+  things.map((thing, index) => `${index + 1}. ${thing}`).join('\n');
+
 /**
  * What the edit took out, which only an edit of the camera's picture can bring
  * back as it was.
@@ -77,17 +85,34 @@ const aboutTakenOut = (removed: ReadonlyArray<string>): string =>
     : `
 
 The edit took the following out of the photo, so it no longer shows them:
-${removed.map((what, index) => `${index + 1}. ${what}`).join('\n')}
+${numbered(removed)}
 List under back the numbers of what they want back, and give no place for it.`;
 
-const question = (
-  wish: string,
-  marked: number,
-  removed: ReadonlyArray<string>,
-) =>
-  `Whoever took this photo wants this to be changed: “${wish}”${aboutMarked(marked)}
+/** What was asked before, which the new wish may take back. */
+const aboutEarlier = (earlier: ReadonlyArray<string>): string =>
+  earlier.length === 0
+    ? ' Answer with an empty list under replaces.'
+    : `
 
-When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.${aboutTakenOut(removed)}`;
+They asked for this before:
+${numbered(earlier)}
+List under replaces the numbers of what the new wish takes back or asks otherwise, since the new one counts, and nothing that it only adds to.`;
+
+/** What a change is asked for. */
+type Asked = {
+  readonly wish: string;
+  /** What the user marked, in fractions of the photo. */
+  readonly areas: ReadonlyArray<Box>;
+  /** What the edit took out. */
+  readonly removed: ReadonlyArray<Removal>;
+  /** What the user asked for before, the latest last. */
+  readonly earlier: ReadonlyArray<string>;
+};
+
+const question = ({ wish, areas, removed, earlier }: Asked) =>
+  `Whoever took this photo wants this to be changed: “${wish}”${aboutMarked(areas.length)}
+
+When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.${aboutTakenOut(removed.map(({ what }) => what))}${aboutEarlier(earlier)}`;
 
 /** A place in a photo and what has to be done there. */
 export const Place = Schema.Struct({
@@ -108,7 +133,12 @@ export const Change = Schema.Struct({
   back: Schema.Array(Schema.String).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed([])),
   ),
+  /** What was asked for before and the change takes back, the same way. */
+  replaced: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed([])),
+  ),
 });
+type Change = typeof Change.Type;
 
 const areClose = (left: Box, right: Box): boolean =>
   left.left - close < right.right &&
@@ -184,33 +214,29 @@ export const markedAreas = (areas: ReadonlyArray<Box>): ReadonlyArray<Box> =>
  * What has to change, kept to the marks if there are any, also when it was
  * found before marks were kept to.
  */
-export const inMarked = (
-  change: typeof Change.Type,
-  areas: ReadonlyArray<Box>,
-): typeof Change.Type =>
+export const inMarked = (change: Change, areas: ReadonlyArray<Box>): Change =>
   areas.length === 0
     ? change
     : {
         everywhere: false,
         places: inMarks(change.places, markedAreas(areas)),
         back: change.back,
+        replaced: change.replaced,
       };
 
 /** Finds where a finished photo has to change for what the user wants. */
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
-  wish: string,
-  areas: ReadonlyArray<Box>,
-  /** What the edit took out. */
-  removed: ReadonlyArray<string>,
+  asked: Asked,
 ) {
+  const { areas, removed, earlier } = asked;
   const vision = yield* Vision;
   const { parts, pieces } = yield* inParts(file, markedAreas(areas));
   const answer = yield* vision.ask({
     role,
     name: 'places',
     schema: Found,
-    pieces: [...pieces, question(wish, areas.length, removed)],
+    pieces: [...pieces, question(asked)],
   });
   const places = apart(
     answer.places.flatMap(({ part, what, isRemoval, box }) => {
@@ -221,15 +247,47 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
-  const back = [...new Set(answer.back)].flatMap(
-    (number) => removed[number - 1] ?? [],
+  const marks = markedAreas(areas);
+  // Where the user marked something, only what was there comes back.
+  const back = [...new Set(answer.back)]
+    .flatMap((number) => removed[number - 1] ?? [])
+    .filter(
+      ({ box }) =>
+        marks.length === 0 ||
+        marks.some((mark) => insideOf(box, mark).length > 0),
+    )
+    .map(({ what }) => what);
+  const replaced = [...new Set(answer.replaces)].flatMap(
+    (number) => earlier[number - 1] ?? [],
   );
+  const asWished = { back, replaced };
   // Kept to the marks once they are read, also where they were found before.
   if (areas.length > 0) {
-    return { everywhere: false, places, back };
+    return { everywhere: false, places, ...asWished } satisfies Change;
   }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage
-    ? { everywhere: true, places: [], back }
-    : { everywhere: false, places, back };
+    ? ({ everywhere: true, places: [], ...asWished } satisfies Change)
+    : ({ everywhere: false, places, ...asWished } satisfies Change);
 });
+
+/**
+ * The wishes a photo has once it is changed: what was asked before and isn't
+ * taken back, then the new wish. What is to come back is named as the edit
+ * named it, since the user's words may only point at it, and apart, so that a
+ * later wish can take it back alone.
+ */
+export const wishesAfter = (
+  earlier: ReadonlyArray<string>,
+  wish: string,
+  { everywhere, places, back, replaced }: Change,
+): ReadonlyArray<string> => {
+  const isOnlyBack = back.length > 0 && !everywhere && places.length === 0;
+  return [
+    ...earlier.filter((before) => !replaced.includes(before)),
+    ...(isOnlyBack ? [] : [wish]),
+    ...(back.length === 0
+      ? []
+      : [`Keep what was taken out before: ${back.map(sentence).join(' ')}`]),
+  ];
+};

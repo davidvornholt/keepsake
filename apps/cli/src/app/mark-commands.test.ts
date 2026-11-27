@@ -287,6 +287,7 @@ describe('keepsake edit --mark', () => {
     fakeModels.answers.places = {
       everywhere: false,
       back: [],
+      replaces: [],
       places: [{ part: 0, what: 'Remove the chair', isRemoval: true, box }],
     };
     fakeModels.answers.choices = {

@@ -49,6 +49,7 @@ const editB = async () => {
   fakeModels.answers.places = {
     everywhere: false,
     back: [],
+    replaces: [],
     places: [place(chair, 0.1)],
   };
   fakeModels.answers.choices = { places: [choice(1, 1)] };
@@ -101,6 +102,7 @@ describe('keepsake edit, with a wish for places of a finished photo', () => {
     fakeModels.answers.places = {
       everywhere: false,
       back: [],
+      replaces: [],
       places: [place(chair, 0.1), place(boat, 0.6)],
     };
     fakeModels.answers.choices = () => ({
@@ -124,6 +126,7 @@ describe('keepsake edit, with a wish for places of a finished photo', () => {
     fakeModels.answers.places = {
       everywhere: false,
       back: [],
+      replaces: [],
       places: [place(chair, 0.1), place(boat, 0.6)],
     };
     fakeModels.answers.choices = () => ({
@@ -156,7 +159,12 @@ describe('keepsake edit, with a wish for places of a finished photo', () => {
 describe('keepsake edit, with a wish that is more or less than that', () => {
   it('pays for nothing when the photo doesn’t show what it is about', async () => {
     await editB();
-    fakeModels.answers.places = { everywhere: false, places: [], back: [] };
+    fakeModels.answers.places = {
+      everywhere: false,
+      places: [],
+      back: [],
+      replaces: [],
+    };
     const result = await editLisbon('B', '--wish', 'No chair');
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);
@@ -187,6 +195,7 @@ describe('keepsake edit, with a wish that is more or less than that', () => {
     fakeModels.answers.places = {
       everywhere: true,
       back: [],
+      replaces: [],
       places: [place(chair, 0.1)],
     };
     fakeModels.answers.assessment = {

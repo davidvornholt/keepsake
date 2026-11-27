@@ -1,6 +1,12 @@
 import { Effect } from 'effect';
 import { around, coverage, wholePicture } from '../../shared/boxes.ts';
-import type { Box, Outline, Person, Sign } from '../../shared/domain.ts';
+import type {
+  Box,
+  Outline,
+  Person,
+  Removal,
+  Sign,
+} from '../../shared/domain.ts';
 import {
   frameOf,
   type Raster,
@@ -85,6 +91,16 @@ export const removalsOnFaces = (
   removed.filter((_, index) => {
     const box = gone[index];
     return box !== undefined && isOnFace(people, box);
+  });
+
+/** What is removed indeed, as nothing on a face is. */
+export const carriedOut = (
+  { people, gone }: Pick<Originals, 'people' | 'gone'>,
+  removed: ReadonlyArray<string>,
+): ReadonlyArray<Removal> =>
+  removed.flatMap((what, index) => {
+    const box = gone[index];
+    return box === undefined || isOnFace(people, box) ? [] : [{ what, box }];
   });
 
 /** The texts and logos on a person. */

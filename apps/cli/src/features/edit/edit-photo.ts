@@ -1,15 +1,11 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
-import {
-  Box,
-  EditRecord,
-  type Photo,
-  type Pick,
-  Removal,
-} from '../../shared/domain.ts';
+import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
 import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import { withPhoto } from '../../shared/lock.ts';
+import { removedBy } from '../../shared/removed.ts';
 import { askReviewer, ReviewVision } from '../../shared/review-vision.ts';
+import { sentence } from '../../shared/sentence.ts';
 import {
   atomically,
   exists,
@@ -17,19 +13,24 @@ import {
   readJson,
   writeJson,
 } from '../../shared/store.ts';
-import { wishIn, writeWish } from '../../shared/wishes.ts';
+import { wishesIn, wishIn, wishOf, writeWishes } from '../../shared/wishes.ts';
 import { isGoingOn, noteProgress } from './anew.ts';
 import { bestEdit, captionOf, type Job, writeEdit } from './best-edit.ts';
 
 import { type CorrectionFiles, correct } from './correct/correct.ts';
-import { Change, findPlaces, inMarked, type Place } from './correct/places.ts';
+import {
+  Change,
+  findPlaces,
+  inMarked,
+  type Place,
+  wishesAfter,
+} from './correct/places.ts';
 import { keepEarlier } from './earlier.ts';
 import { finish } from './finish.ts';
 import { ImageModel } from './image-model.ts';
 import { keptOnFace, removalsOnFaces } from './keep-originals.ts';
 import { remembered } from './prepare.ts';
-import { sentence } from './prompt.ts';
-import { bothWishes, emptied } from './wishes.ts';
+import { emptied } from './wishes.ts';
 
 export type EditOptions = {
   /** How many versions the image model makes at once. */
@@ -75,7 +76,7 @@ const forget = Effect.fn('forget')(function* (
     ]);
   }
   if (wish !== null) {
-    yield* writeWish(files.wish, wish);
+    yield* writeWishes(files.wish, [wish]);
   }
 });
 
@@ -107,6 +108,8 @@ const Models = Schema.Struct({
 });
 const sameModels = Schema.toEquivalence(Models);
 
+const Request = Schema.Struct({ wish: Schema.String });
+
 /**
  * Forgets an earlier change, but goes on with one that isn't over and is made
  * with the same models. One from before they were noted goes on, since what it
@@ -118,7 +121,11 @@ const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
     reviewModel: (yield* ReviewVision).model,
   };
   const modelsFile = `${files.directory}/models.json`;
-  const before = yield* wishIn(files.wish);
+  const request = yield* readJson(Request, files.request);
+  // A change from before its request was noted apart noted it as its wish.
+  const before = Option.isSome(request)
+    ? request.value.wish
+    : yield* wishIn(files.wish);
   const areasBefore = yield* readJson(Areas, files.areas);
   const modelsBefore = yield* readJson(Models, modelsFile);
   const isSame =
@@ -134,7 +141,7 @@ const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
   if (!isSame || (yield* exists(files.outcome))) {
     yield* emptied(files.directory, []);
     yield* writeJson(Areas, files.areas, areas);
-    yield* writeWish(files.wish, wish);
+    yield* writeJson(Request, files.request, { wish });
   }
   yield* writeJson(Models, modelsFile, models);
 });
@@ -143,6 +150,8 @@ const begin = Effect.fn('begin')(function* ({ files, wish, areas }: ToChange) {
 const changePlaces = Effect.fn('changePlaces')(function* (
   { job, former, files, wish, areas }: ToChange,
   places: ReadonlyArray<Place>,
+  /** What the photo's wishes are once it is changed. */
+  wishes: ReadonlyArray<string>,
 ) {
   const image = yield* ImageModel;
   const { file, description, attempts, left } = yield* askReviewer(
@@ -170,6 +179,7 @@ const changePlaces = Effect.fn('changePlaces')(function* (
     ...former,
     // Also where it was the camera's own picture before.
     version: 'ai',
+    removed: yield* removedBy(former, job.files),
     model: image.model,
     review: [
       `Changed: ${sentence(wish)}`,
@@ -179,7 +189,7 @@ const changePlaces = Effect.fn('changePlaces')(function* (
   };
   const { record: recordFile, wish: wishFile } = job.files;
   yield* writeJson(EditRecord, recordFile, record);
-  yield* writeWish(wishFile, bothWishes(yield* wishIn(wishFile), wish));
+  yield* writeWishes(wishFile, wishes);
   return { record, notDone } satisfies Edited;
 });
 
@@ -218,74 +228,60 @@ const keptOnFaces = ({
       );
 
 /** Edits all of a photo anew. The edit it has stays until that is better. */
-const changeAll = Effect.fn('changeAll')(function* ({
-  job,
-  former,
-  files,
-  wish,
-}: ToChange) {
-  const { crop, input, record: recordFile, wish: wishFile } = job.files;
-  const wanted = bothWishes(yield* wishIn(wishFile), wish);
+const changeAll = Effect.fn('changeAll')(function* (
+  { job, former, files }: ToChange,
+  /** What the photo's wishes are once it is changed. */
+  wishes: ReadonlyArray<string>,
+) {
+  const { crop, input, record: recordFile } = job.files;
   const anew: Job = {
     ...job,
-    wish: wanted,
+    wish: wishOf(wishes),
     files: { ...files, crop, input, record: recordFile },
   };
+  // They go with the edit to where it is kept.
+  yield* writeWishes(files.wish, wishes);
   const made = yield* bestEdit(anew);
   if (made.best === null) {
     return { record: former, notDone: [made.notes] } satisfies Edited;
   }
   const record = yield* writeEdit(anew, made);
-  yield* writeWish(files.wish, wanted);
   yield* moved(files, job.files);
   return { record, notDone: keptOnFaces(made) } satisfies Edited;
 });
 
-/** What the edit took out of a finished photo. */
-const takenOut = Effect.fn('takenOut')(function* ({ job, former }: ToChange) {
-  if (former.version === 'camera') {
-    return [];
-  }
-  const removals = yield* readJson(Schema.Array(Removal), job.files.removals);
-  return Option.getOrElse(removals, () => []).map(({ what }) => what);
-});
-
-/**
- * The wish with what is to come back, which the edit of the camera's picture
- * then keeps, however the user's words named it.
- */
-const withBack = (wish: string, back: ReadonlyArray<string>): string =>
-  [
-    sentence(wish),
-    'Keep what was taken out before:',
-    ...back.map(sentence),
-  ].join(' ');
-
 /** Changes a finished photo, as little of it as the wish is about. */
 const change = Effect.fn('change')(function* (toChange: ToChange) {
-  const { files, wish, areas } = toChange;
+  const { job, files, wish, areas } = toChange;
   yield* begin(toChange);
-  const removed = yield* takenOut(toChange);
+  const earlier = yield* wishesIn(job.files.wish);
   const found = yield* remembered(
     Change,
     files.places,
-    askReviewer(findPlaces(files.final, wish, areas, removed)),
+    askReviewer(
+      findPlaces(files.final, {
+        wish,
+        areas,
+        removed: yield* removedBy(toChange.former, job.files),
+        earlier,
+      }),
+    ),
   );
-  const { everywhere, places, back } = inMarked(found, areas);
+  const marked = inMarked(found, areas);
+  const { everywhere, places, back } = marked;
+  const wishes = wishesAfter(earlier, wish, marked);
   // What the finished photo no longer shows comes back only from the camera's.
-  if (back.length > 0) {
-    return yield* changeAll({ ...toChange, wish: withBack(wish, back) });
+  if (everywhere || back.length > 0) {
+    return yield* changeAll(toChange, wishes);
   }
-  if (!everywhere && places.length === 0) {
+  if (places.length === 0) {
     const nothing =
       areas.length === 0
         ? 'The photo shows nothing that the wish is about.'
         : 'Nothing that the wish is about can change inside the marked places alone.';
     return { record: toChange.former, notDone: [nothing] } satisfies Edited;
   }
-  return everywhere
-    ? yield* changeAll(toChange)
-    : yield* changePlaces(toChange, places);
+  return yield* changePlaces(toChange, places, wishes);
 });
 
 /**

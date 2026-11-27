@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
+  asked,
   editLisbon,
   pickLisbon,
   setUp,
@@ -7,6 +8,7 @@ import {
   tearDown,
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
+import { shootOf, whileServing } from './light-table-fixtures.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -63,6 +65,7 @@ describe('keepsake edit, removing what is on a face', () => {
     fakeModels.answers.places = {
       everywhere: false,
       back: [],
+      replaces: [],
       places: [
         { part: 0, what: sticker, isRemoval: true, box: onCheek },
         { part: 0, what: chair, isRemoval: true, box: beside },
@@ -90,7 +93,10 @@ describe('keepsake edit, removing what is on a face', () => {
     await pickLisbon();
     herWithSticker();
     fakeModels.answers.removals = {
-      remove: [{ what: sticker, box: onCheek }],
+      remove: [
+        { what: sticker, box: onCheek },
+        { what: chair, box: beside },
+      ],
     };
     const result = await editLisbon('B', '--wish', 'Remove the sticker');
     expect(result.edited).toBe(1);
@@ -98,5 +104,15 @@ describe('keepsake edit, removing what is on a face', () => {
     expect(notDone).toHaveLength(1);
     expect(notDone.every(isAboutSticker)).toBe(true);
     expect(notDone[0]).toContain('face');
+    // Neither the page nor a change counts it as taken out.
+    const shown = await whileServing(shootOf);
+    const edit = shown.photos.find(
+      ({ id }: { readonly id: string }) => id === 'B',
+    )?.edit;
+    expect(edit?.removed).toEqual([{ what: chair, box: beside }]);
+    await editLisbon('B', '--wish', 'Warmer');
+    const question = asked('places')[0]?.texts.join(' ') ?? '';
+    expect(question).toContain(`1. ${chair}`);
+    expect(question).not.toContain(sticker);
   });
 });

@@ -117,6 +117,11 @@ const editFilesIn = (path: Path.Path, root: string) => (photo: string) => {
       ...editFiles(path, changes, base),
       camera: files.camera,
       final: files.final,
+      /**
+       * The change as it was asked for, which tells it from another. What it
+       * makes the photo's wishes is its `wish`.
+       */
+      request: path.join(changes, 'request.json'),
       /** Where the user wants a change. */
       areas: path.join(changes, 'areas.json'),
       /** What has to change, and where. */

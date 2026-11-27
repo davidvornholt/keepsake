@@ -16,6 +16,7 @@ import { finish } from './finish.ts';
 import { flawless } from './flawless.ts';
 import { exactFrame } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
+import { carriedOut } from './keep-originals.ts';
 import {
   cameraQuality,
   type Prepared,
@@ -151,7 +152,7 @@ export const captionOf = (
 export const writeEdit = Effect.fn('writeEdit')(function* (
   job: Job,
   {
-    prepared: { crop, size, description },
+    prepared: { crop, size, description, removed, originals },
     best,
     notes,
     attempts,
@@ -188,6 +189,7 @@ export const writeEdit = Effect.fn('writeEdit')(function* (
     crop,
     review: notes,
     attempts,
+    removed: best === null ? [] : carriedOut(originals, removed),
   };
   yield* writeJson(EditRecord, files.record, record);
   return record;
