@@ -80,6 +80,7 @@ const pickPhoto = Effect.fn('pickPhoto')(function* (
  * an album in Immich, so that it comes back into the album as it was or goes
  * into it for the first time. Without an album it waits for the owner to
  * order one, and none is made for it. Nothing changes when Immich refuses it.
+ * What is so already is left as it is, so it can be done again.
  */
 export const putIn = Effect.fn('putIn')(function* (
   open: OpenShoot,
@@ -87,7 +88,8 @@ export const putIn = Effect.fn('putIn')(function* (
   photo: string,
 ) {
   const hasAlbum = (yield* readPublication(open)) !== null;
-  if (hasAlbum && (yield* isFinished(open, photo))) {
+  const isThere = known.of.get(photo)?.kind === 'album';
+  if (hasAlbum && !isThere && (yield* isFinished(open, photo))) {
     yield* (yield* Publishing).publish(open, photo);
   }
   yield* bringBack(open, photo);

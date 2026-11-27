@@ -99,15 +99,11 @@ const isDone =
 const isWaiting = (progress: Progress) => (choice: Choice) =>
   choice.failed === null && !isDone(progress)(choice);
 
-/** What is still to be done, and what couldn't be, as the page shows it. */
-export const choicesOf = Effect.fn('choicesOf')(function* (
-  open: OpenShoot,
-  known: Standings,
-) {
-  const all = yield* readChoices(open.files);
-  const waits = isWaiting(yield* progressOf(open, known, all));
-  return all.filter((choice) => choice.failed !== null || waits(choice));
-});
+/**
+ * What is still to be done, and what couldn't be, as the page shows it: a
+ * choice is on its way until the page has noted all of it.
+ */
+export const choicesOf = (files: ShootFiles) => readChoices(files);
 
 const invalid = (message: string) => new InvalidInput({ message });
 
@@ -265,7 +261,8 @@ const notUndone =
 
 /**
  * Takes a photo out, or keeps it out when it is out already, as a pick may
- * have left it meanwhile. What the owner wanted changed of it goes with it.
+ * have left it meanwhile. What the owner wanted changed of it goes with it,
+ * also when it went out before the page stopped.
  */
 const takeOutOne = Effect.fn('takeOutOne')(function* (
   open: OpenShoot,
@@ -273,9 +270,12 @@ const takeOutOne = Effect.fn('takeOutOne')(function* (
   leaving: Choice,
 ) {
   const because = leaving.because ?? '';
-  if (isInNow(known, leaving.photo)) {
+  const standing = known.of.get(leaving.photo);
+  const isOut =
+    standing?.kind === 'taken-out' && standing.because === leaving.because;
+  if (!isOut && isInNow(known, leaving.photo)) {
     yield* (yield* Publishing).takeOut(open, [leaving.photo], because);
-  } else {
+  } else if (!isOut) {
     yield* keepOut(open, leaving.photo, because);
   }
   yield* withdrawOpen(open.files, leaving.photo);
@@ -336,8 +336,9 @@ const doAll = Effect.fn('doAll')(function* (open: OpenShoot) {
   const all = yield* readChoices(files);
   const edited = new Set((yield* readActivity(files))?.photos ?? []);
   const outcomes = new Map<string, Outcome>();
-  const progress = yield* progressOf(open, known, all);
-  for (const parts of actionsOf(all.filter(isWaiting(progress)))) {
+  // Each is done again until it is noted as done, which finishes what the
+  // page did of it before it stopped.
+  for (const parts of actionsOf(all.filter(({ failed }) => failed === null))) {
     for (const [photo, outcome] of yield* doAction(
       open,
       known,
@@ -347,16 +348,13 @@ const doAll = Effect.fn('doAll')(function* (open: OpenShoot) {
       outcomes.set(photo, outcome);
     }
   }
-  const after = yield* progressOf(open, yield* standings(open, model), all);
-  const left = all
-    .flatMap((one) => {
-      const outcome = outcomes.get(one.photo);
-      if (outcome === undefined) {
-        return [one];
-      }
-      return outcome === null ? [] : [{ ...one, failed: outcome }];
-    })
-    .filter((one) => one.failed !== null || isWaiting(after)(one));
+  const left = all.flatMap((one) => {
+    const outcome = outcomes.get(one.photo);
+    if (outcome === undefined) {
+      return [one];
+    }
+    return outcome === null ? [] : [{ ...one, failed: outcome }];
+  });
   yield* saveChoices(files, left);
   return left.some(({ failed }) => failed === null);
 });

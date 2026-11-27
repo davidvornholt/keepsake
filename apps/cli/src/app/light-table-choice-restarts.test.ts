@@ -1,15 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { copyFile } from 'node:fs/promises';
+import { copyFile, writeFile } from 'node:fs/promises';
 import {
   choose,
   inImmich,
+  outReason,
   publishLisbon,
   settled,
   standingOf,
 } from './choice-fixtures.ts';
-import { editLisbon, setUp, shootFile, tearDown } from './command-fixtures.ts';
+import {
+  editLisbon,
+  runOk,
+  setUp,
+  shootFile,
+  shootJson,
+  tearDown,
+} from './command-fixtures.ts';
 import { fakeTools } from './fake-tools.ts';
-import { whileServing } from './light-table-fixtures.ts';
+import { change, marksOf, send, whileServing } from './light-table-fixtures.ts';
 
 // What the page does with a choice it stopped in the middle of, or that
 // Immich took only part of.
@@ -27,6 +35,27 @@ const swap = (address: string) =>
     because: instead,
   });
 
+/** Saves a choice as a page that stopped before it was done left it. */
+const leftByPage = (photo: string, wants: 'in' | 'out') =>
+  writeFile(
+    shootFile('choices.json'),
+    JSON.stringify([
+      {
+        action: 'stopped',
+        photo,
+        wants,
+        because: wants === 'out' ? outReason : null,
+        madeAt: '2026-11-27T10:00:00.000Z',
+        failed: null,
+      },
+    ]),
+  );
+
+const pickedNow = async () =>
+  (await shootJson('picks.json')).picks.map(
+    ({ photo }: { photo: string }) => photo,
+  );
+
 describe('a photo used instead of one that is the same file in Immich', () => {
   it('leaves that one in the album', async () => {
     await publishLisbon();
@@ -43,6 +72,36 @@ describe('a photo used instead of one that is the same file in Immich', () => {
     expect(failed).toHaveLength(2);
     expect(inImmich()).toEqual(['A1', 'B', 'C']);
     expect(await standingOf('A1')).toEqual(before);
+  });
+});
+
+describe('a choice the page stopped before it noted it', () => {
+  it('chooses a photo that is in the album already', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    await runOk('publish', 'lisbon', 'A2');
+    await leftByPage('A2', 'in');
+    const left = await whileServing(settled);
+    expect(left).toEqual([]);
+    expect(await pickedNow()).toContain('A2');
+  });
+
+  it('lets the changes of a photo taken out already go', async () => {
+    await publishLisbon();
+    await whileServing((address) =>
+      send('PUT', `${address}/api/shoots/lisbon/marks`, {
+        ...change,
+        photo: 'B',
+        note: 'Warmer.',
+      }),
+    );
+    await runOk('take-out', 'lisbon', 'B', '--because', outReason);
+    await leftByPage('B', 'out');
+    const [left, marks] = await whileServing(async (address) => [
+      await settled(address),
+      await marksOf(address),
+    ]);
+    expect([left, marks]).toEqual([[], []]);
   });
 });
 
