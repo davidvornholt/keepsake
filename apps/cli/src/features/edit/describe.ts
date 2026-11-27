@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import { Effect, Option } from 'effect';
 import { Description, whatToDescribe } from '../../shared/describing.ts';
 import type { Box, Shoot } from '../../shared/domain.ts';
 import type { EditFiles } from '../../shared/edit-files.ts';
 import { rendered } from '../../shared/pictures.ts';
-import { readJson, writeJson } from '../../shared/store.ts';
+import { readBytes, readJson, writeJson } from '../../shared/store.ts';
 import { Vision } from '../../shared/vision.ts';
 import { edgesBeyond } from './beyond.ts';
 import { withoutRemoved } from './removals.ts';
@@ -20,7 +21,7 @@ const role =
  */
 export const descriptionOf = Effect.fn('descriptionOf')(function* (
   shoot: Shoot,
-  files: EditFiles,
+  files: Pick<EditFiles, 'description' | 'input'>,
   frame: Box,
   removed: ReadonlyArray<string>,
 ) {
@@ -48,4 +49,26 @@ export const descriptionOf = Effect.fn('descriptionOf')(function* (
   });
   yield* writeJson(Description, files.description, answer);
   return answer.description;
+});
+
+/**
+ * Says what a finished picture shows, apart from what is removed from it. Each
+ * picture is described once for what it leaves out.
+ */
+export const shownIn = Effect.fn('shownIn')(function* (
+  shoot: Shoot,
+  files: Pick<EditFiles, 'shown'>,
+  { file, frame }: { readonly file: string; readonly frame: Box },
+  removed: ReadonlyArray<string>,
+) {
+  const key = createHash('sha256')
+    .update(yield* readBytes(file))
+    .update(JSON.stringify({ frame, removed }))
+    .digest('hex');
+  return yield* descriptionOf(
+    shoot,
+    { input: file, description: files.shown(key) },
+    frame,
+    removed,
+  );
 });
