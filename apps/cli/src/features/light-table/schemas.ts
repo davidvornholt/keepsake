@@ -1,5 +1,5 @@
 import { Schema } from 'effect';
-import { Box } from '../../shared/domain.ts';
+import { Box, PublishedPhoto, Removed } from '../../shared/domain.ts';
 
 /** What an agent did about a mark. */
 export const Answer = Schema.Struct({
@@ -66,6 +66,14 @@ export type NewChoice = typeof NewChoice.Type;
  * A photo the owner wants in or out that isn't yet, because a command was
  * changing the choice or editing the photo then. Done as soon as it can be.
  */
+/** Where a photo stood before it came in for another. */
+export const Before = Schema.Struct({
+  removed: Schema.Array(Removed),
+  picked: Schema.Boolean,
+  published: Schema.NullOr(PublishedPhoto),
+});
+export type Before = typeof Before.Type;
+
 export const Choice = Schema.Struct({
   /** The same for both photos of a swap. */
   action: Schema.String,
@@ -76,6 +84,11 @@ export const Choice = Schema.Struct({
   madeAt: Schema.String,
   /** Why it couldn't be done. It stays undone until the owner chooses again. */
   failed: Schema.NullOr(Schema.String),
+  /**
+   * Where the photo that comes in for another stood, noted before anything
+   * of the swap is done, so it goes back there should the other stay.
+   */
+  before: Schema.optionalKey(Before),
 });
 export type Choice = typeof Choice.Type;
 

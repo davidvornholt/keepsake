@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { copyFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { BunServices } from '@effect/platform-bun';
+import { ConfigProvider, Effect, Option } from 'effect';
+import { choose as choosing, settle } from '../features/light-table/choices.ts';
+import type { NewChoice } from '../features/light-table/schemas.ts';
+import { judgeOf } from '../shared/judge.ts';
+import { standings } from '../shared/standing.ts';
+import { openShoot } from '../shared/store.ts';
 import {
   choose,
   inImmich,
@@ -10,14 +18,16 @@ import {
 } from './choice-fixtures.ts';
 import {
   editLisbon,
+  fake,
   runOk,
   setUp,
   shootFile,
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools } from './fake-tools.ts';
+import { fakeTools, fakeToolsLayer, type Run } from './fake-tools.ts';
 import { change, marksOf, send, whileServing } from './light-table-fixtures.ts';
+import { publishingLayer } from './publishing.ts';
 
 // What the page does with a choice it stopped in the middle of, or that
 // Immich took only part of.
@@ -26,6 +36,9 @@ beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
 const instead = 'You chose A2 instead.';
+
+/** The upload of A1, which publish sent to Immich first. */
+const assetOfA1 = 'asset-1';
 
 const swap = (address: string) =>
   choose(address, {
@@ -51,6 +64,42 @@ const leftByPage = (photo: string, wants: 'in' | 'out') =>
     ]),
   );
 
+/**
+ * Chooses as the page does, and stops where a program runs that `stopsAt`
+ * picks, as a page does that is stopped then.
+ */
+const stoppedAt = (wanted: NewChoice, stopsAt: (run: Run) => boolean) => {
+  fakeTools.pause = (run) =>
+    stopsAt(run)
+      ? Bun.sleep(0).then(() => {
+          throw new Error('The page stopped.');
+        })
+      : undefined;
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const open = yield* openShoot('lisbon');
+      const known = yield* standings(open, yield* judgeOf(open, Option.none()));
+      yield* choosing(open, known, wanted);
+      yield* settle(open);
+    }).pipe(
+      Effect.provide(publishingLayer),
+      Effect.provide(fakeToolsLayer),
+      Effect.provide(BunServices.layer),
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromDotEnvContents(
+            `HOME=${fake.home}\nXDG_DATA_HOME=${join(fake.home, 'data')}`,
+          ),
+        ),
+      ),
+    ),
+  )
+    .catch(() => undefined)
+    .finally(() => {
+      fakeTools.pause = undefined;
+    });
+};
+
 const pickedNow = async () =>
   (await shootJson('picks.json')).picks.map(
     ({ photo }: { photo: string }) => photo,
@@ -72,6 +121,26 @@ describe('a photo used instead of one that is the same file in Immich', () => {
     expect(failed).toHaveLength(2);
     expect(inImmich()).toEqual(['A1', 'B', 'C']);
     expect(await standingOf('A1')).toEqual(before);
+  });
+});
+
+describe('a swap the page stopped in the middle of', () => {
+  it('lets the photo that came in go back when the other stays', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const before = await standingOf('A2');
+    // The page stops as it takes A1 out, once A2 is in.
+    await stoppedAt(
+      { photo: 'A2', wants: 'in', instead: 'A1', because: instead },
+      ({ args }) => args[1] === 'remove' && args.includes(assetOfA1),
+    );
+    const halfWay = inImmich();
+    fakeTools.refused.add(assetOfA1);
+    const failed = await whileServing(settled);
+    expect(halfWay).toEqual(['A1', 'B', 'C', 'A2']);
+    expect(failed).toHaveLength(2);
+    expect(inImmich()).toEqual(['A1', 'B', 'C']);
+    expect(await standingOf('A2')).toEqual(before);
   });
 });
 

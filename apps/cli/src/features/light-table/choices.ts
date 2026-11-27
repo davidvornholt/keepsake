@@ -103,7 +103,10 @@ const isWaiting = (progress: Progress) => (choice: Choice) =>
  * What is still to be done, and what couldn't be, as the page shows it: a
  * choice is on its way until the page has noted all of it.
  */
-export const choicesOf = (files: ShootFiles) => readChoices(files);
+export const choicesOf = (files: ShootFiles) =>
+  Effect.map(readChoices(files), (all) =>
+    all.map(({ before: _, ...one }): Choice => one),
+  );
 
 const invalid = (message: string) => new InvalidInput({ message });
 
@@ -308,7 +311,7 @@ const doAction = Effect.fn('doAction')(function* (
   if (edited.has(comesIn.photo) && (yield* isFinished(open, comesIn.photo))) {
     return outcomes;
   }
-  const before = yield* beforeOf(open, comesIn.photo);
+  const before = comesIn.before ?? (yield* beforeOf(open, comesIn.photo));
   const isIn = yield* outcomeOf(putIn(open, known, comesIn.photo));
   outcomes.set(comesIn.photo, isIn);
   if (leaving === undefined) {
@@ -329,11 +332,36 @@ const doAction = Effect.fn('doAction')(function* (
   return outcomes;
 });
 
+/**
+ * Notes where the photo that comes in for another stands, before anything
+ * of the swap is done, so it can go back there also after a restart.
+ */
+const withBefore = Effect.fn('withBefore')(function* (
+  open: OpenShoot,
+  all: ReadonlyArray<Choice>,
+) {
+  const swaps = new Set(
+    all.flatMap(({ action, wants }) => (wants === 'out' ? [action] : [])),
+  );
+  const isNew = (one: Choice) =>
+    one.wants === 'in' && swaps.has(one.action) && one.before === undefined;
+  if (!all.some(isNew)) {
+    return all;
+  }
+  const noted = yield* Effect.forEach(all, (one) =>
+    isNew(one)
+      ? Effect.map(beforeOf(open, one.photo), (before) => ({ ...one, before }))
+      : Effect.succeed(one),
+  );
+  yield* saveChoices(open.files, noted);
+  return noted;
+});
+
 const doAll = Effect.fn('doAll')(function* (open: OpenShoot) {
   const { files } = open;
   const model = yield* judgeOf(open, Option.none());
   const known = yield* standings(open, model);
-  const all = yield* readChoices(files);
+  const all = yield* withBefore(open, yield* readChoices(files));
   const edited = new Set((yield* readActivity(files))?.photos ?? []);
   const outcomes = new Map<string, Outcome>();
   // Each is done again until it is noted as done, which finishes what the

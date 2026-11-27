@@ -1,5 +1,5 @@
 import { DateTime, Effect, Option, Schema } from 'effect';
-import { PickList, type PublishedPhoto, Removed } from '../../shared/domain.ts';
+import { PickList, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import { withAlbum } from '../../shared/lock.ts';
 import { readPublication } from '../../shared/publication.ts';
@@ -17,6 +17,7 @@ import {
 } from '../../shared/store.ts';
 import { pickOf } from '../../shared/verdicts.ts';
 import { Publishing } from './publishing.ts';
+import type { Before } from './schemas.ts';
 
 // What the page does to a photo it puts in, or keeps out, and how it lets a
 // photo be as it was when the photo it was to take the place of stays.
@@ -107,13 +108,6 @@ export const keepOut = (open: OpenShoot, photo: string, because: string) =>
     ]);
   }).pipe(withAlbum(open.files));
 
-/** What stood for a photo before it was put in. */
-type Before = {
-  readonly removed: ReadonlyArray<Removed>;
-  readonly picked: boolean;
-  readonly published: PublishedPhoto | undefined;
-};
-
 export const beforeOf = Effect.fn('beforeOf')(function* (
   open: OpenShoot,
   photo: string,
@@ -125,7 +119,7 @@ export const beforeOf = Effect.fn('beforeOf')(function* (
       (one) => one.photo === photo,
     ),
     picked: list?.picks.some((one) => one.photo === photo) ?? false,
-    published: publication?.photos.find((one) => one.photo === photo),
+    published: publication?.photos.find((one) => one.photo === photo) ?? null,
   } satisfies Before;
 });
 
@@ -136,7 +130,11 @@ export const undoPutIn = Effect.fn('undoPutIn')(function* (
   before: Before,
 ) {
   const { files } = open;
-  yield* (yield* Publishing).unpublish(open, photo, before.published);
+  yield* (yield* Publishing).unpublish(
+    open,
+    photo,
+    before.published ?? undefined,
+  );
   yield* Effect.gen(function* () {
     const all = yield* removalsOf(files);
     yield* writeJson(Removals, files.removed, [
