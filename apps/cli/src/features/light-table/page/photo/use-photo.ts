@@ -287,7 +287,7 @@ export const useMarking = (
         doing.shown.now();
         doing.composing.begin();
       } else {
-        store.choose(action.wanted, action.back).catch(() => undefined);
+        store.choose(action).catch(() => undefined);
         lookedAt();
       }
     },

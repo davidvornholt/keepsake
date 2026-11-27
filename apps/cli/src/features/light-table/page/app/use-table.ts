@@ -125,7 +125,7 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
       // A change needs words, and the photo large to draw on.
       onOpen(photo.id, true);
     } else {
-      store.choose(action.wanted, action.back).catch(() => undefined);
+      store.choose(action).catch(() => undefined);
     }
   };
 

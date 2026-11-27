@@ -236,6 +236,10 @@ describe('undoing a choice', () => {
     );
     expect(backOf(waits, behind, 'swap')).toEqual(swap);
     expect(backOf(waits, album, 'take-out')).toEqual(swap);
+    // Brought back, it goes on under another action.
+    expect(actionFor(waits, album, 'take-out')).toMatchObject({
+      restores: 'one',
+    });
   });
 
   it('brings back what waited for one photo alone', () => {

@@ -149,35 +149,78 @@ describe('undoing a choice', () => {
     instead: null,
   } as const;
   const back = { ...out, wants: 'in', because: null } as const;
+  const takeOut = { wanted: out, back, restores: null };
+  const heart = { did: 'favorite', photo: 'a', was: false } as const;
 
-  it('offers nothing for a choice keepsake couldn’t do, and keeps what came before', async () => {
+  /** A shoot that keepsake couldn’t do the choice noted under `action` for. */
+  const refused = (action: string) =>
+    sampleShoot(
+      [samplePhoto('a')],
+      [],
+      [sampleChoice('a', { action, failed: 'Immich refused.' })],
+    );
+
+  /** The store once the owner made photo a a favorite. */
+  const hearted = async () => {
     const store = await loaded();
     const hearting = store.favorite('a', true);
     (await next('PUT')).answer(new Response(null, { status: 204 }));
     await answerWith('GET', shootWith());
     await hearting;
-    const choosing = store.choose(out, back);
+    return store;
+  };
+
+  it('offers nothing for a choice keepsake couldn’t do, and keeps what came before', async () => {
+    const store = await hearted();
+    const choosing = store.choose(takeOut);
     await answerWith('POST', { action: 'one' });
-    const failed = sampleChoice('a', {
-      action: 'one',
-      failed: 'Immich refused.',
-    });
-    await answerWith('GET', sampleShoot([samplePhoto('a')], [], [failed]));
+    await answerWith('GET', refused('one'));
     await choosing;
-    expect(store.get().undoable).toEqual({
-      did: 'favorite',
-      photo: 'a',
-      was: false,
-    });
+    expect(store.get().undoable).toEqual(heart);
   });
 
   it('keeps a choice that keepsake did', async () => {
     const store = await loaded();
-    const choosing = store.choose(out, back);
+    const choosing = store.choose(takeOut);
     await answerWith('POST', { action: 'one' });
     await answerWith('GET', shootWith());
     await choosing;
     expect(store.get().undoable).toMatchObject({ did: 'chose', back });
+  });
+
+  it('waits for keepsake to say whether it could do a choice before taking it back', async () => {
+    const store = await hearted();
+    const choosing = store.choose(takeOut);
+    const sent = await next('POST');
+    const undoing = store.undo();
+    sent.answer(Response.json({ action: 'one' }));
+    await answerWith('GET', refused('one'));
+    await choosing;
+    await undoing;
+    expect(calls).toEqual([]);
+    expect(store.get().undoable).toEqual(heart);
+  });
+
+  it('knows what waited by the action it goes on under once its cancellation is undone', async () => {
+    const store = await hearted();
+    const choosing = store.choose(takeOut);
+    await answerWith('POST', { action: 'one' });
+    const waits = sampleChoice('a', { action: 'one' });
+    await answerWith('GET', sampleShoot([samplePhoto('a')], [], [waits]));
+    await choosing;
+    const cancelling = store.choose({
+      wanted: back,
+      back: out,
+      restores: 'one',
+    });
+    await answerWith('POST', { action: 'two' });
+    await answerWith('GET', shootWith());
+    await cancelling;
+    const undoing = store.undo();
+    await answerWith('POST', { action: 'three' });
+    await answerWith('GET', refused('three'));
+    await undoing;
+    expect(store.get().undoable).toEqual(heart);
   });
 });
 

@@ -104,7 +104,6 @@ describe('taking a photo out on the page', () => {
       );
       return [await answer.json(), choice, await choicesOf(address)];
     });
-    // The page knows by its action that the choice it made failed.
     expect(chosen).toEqual({ action: refused.action });
     expect(refused).toMatchObject({ photo: 'B', wants: 'out' });
     expect(refused.failed).toContain('did not take B out');

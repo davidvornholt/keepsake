@@ -31,6 +31,17 @@ export type ShootState = {
   readonly unsaved: Readonly<Record<string, NewMark>>;
 };
 
+/**
+ * A photo to put in or take out, and `back`, what undoes it. When it takes
+ * back a choice that waited, `back` chooses that again, and `restores` is
+ * the action it was noted under.
+ */
+export type Choosing = {
+  readonly wanted: NewChoice;
+  readonly back: NewChoice;
+  readonly restores: string | null;
+};
+
 export type Undo =
   | {
       readonly did: 'made';
@@ -45,6 +56,7 @@ export type Undo =
   | {
       readonly did: 'chose';
       readonly back: NewChoice;
+      readonly restores: string | null;
       readonly action: string | null;
     }
   | {
@@ -54,10 +66,6 @@ export type Undo =
       readonly was: boolean;
     };
 
-/**
- * The undos without those of choices that keepsake couldn't do, which left
- * nothing to undo.
- */
 const withoutFailed = (
   undos: ReadonlyArray<Undo>,
   choices: ReadonlyArray<Choice>,

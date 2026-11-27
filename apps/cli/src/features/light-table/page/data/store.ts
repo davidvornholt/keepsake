@@ -39,7 +39,7 @@ import {
   withSeen,
 } from './changes.ts';
 import { type Core, makeCore } from './store-core.ts';
-import type { Undo } from './store-state.ts';
+import type { Choosing, Undo } from './store-state.ts';
 
 // The shoot as the page knows it. A change shows at once and is sent to
 // keepsake; what keepsake then says replaces it.
@@ -74,16 +74,16 @@ const hearting = (core: Core) => async (photo: string, favorite: boolean) => {
   await core.send(() => saveFavorite(core.name, { photo, favorite }));
 };
 
-/**
- * Puts a photo in or takes one out without remembering it for Undo, and
- * tells `noted` the action keepsake noted it under.
- */
-const choosing =
-  (core: Core) =>
-  async (
-    wanted: NewChoice,
-    noted: (action: string) => void = () => undefined,
-  ) => {
+/** Puts photos in and takes them out, and takes that back. */
+const choosing = (core: Core) => {
+  /** The choices being sent, until keepsake is read again. */
+  const sending = new Set<Promise<unknown>>();
+
+  /**
+   * Puts a photo in or takes one out without remembering it for Undo, and
+   * tells `noted` the action keepsake noted it under.
+   */
+  const send = async (wanted: NewChoice, noted: (action: string) => void) => {
     const shoot = core.get().index?.shoot;
     if (shoot !== undefined) {
       core.setShoot(
@@ -93,8 +93,63 @@ const choosing =
         }),
       );
     }
-    await core.send(async () => noted(await sendChoice(core.name, wanted)));
+    const done = core.send(async () =>
+      noted(await sendChoice(core.name, wanted)),
+    );
+    sending.add(done);
+    await done;
+    sending.delete(done);
   };
+
+  /** The undos with the choice noted under `was` now noted under `is`. */
+  const renoted = (was: string, is: string) =>
+    core
+      .undos()
+      .map((undo) =>
+        undo.did === 'chose' && undo.action === was
+          ? { ...undo, action: is }
+          : undo,
+      );
+
+  return {
+    /**
+     * Puts a photo in or takes one out, at once or as soon as nothing else
+     * changes the album.
+     */
+    choose: async ({ wanted, back, restores }: Choosing) => {
+      const undo: Undo = { did: 'chose', back, restores, action: null };
+      core.setUndos([...core.undos(), undo]);
+      // Its action is known before keepsake is read again, which says
+      // whether it could be done.
+      await send(wanted, (action) => {
+        core.setUndos(
+          core.undos().map((one) => (one === undo ? { ...undo, action } : one)),
+        );
+      });
+    },
+    /**
+     * Takes back the choice that is undone last, once keepsake said whether
+     * it could do the choices sent, since one it couldn't do leaves nothing
+     * to take back.
+     */
+    undo: async (asked: Extract<Undo, { did: 'chose' }>) => {
+      await Promise.all(sending);
+      const undos = core.undos();
+      const last = undos.at(-1);
+      if (last?.did !== 'chose' || last.back !== asked.back) {
+        return;
+      }
+      core.setUndos(undos.slice(0, -1));
+      // What waited is chosen again under another action, which the choice
+      // that waited is now known by.
+      await send(last.back, (action) => {
+        if (last.restores !== null) {
+          core.setUndos(renoted(last.restores, action));
+        }
+      });
+    },
+  };
+};
 
 const marking = (core: Core) => {
   let drafts = 0;
@@ -151,24 +206,10 @@ const marking = (core: Core) => {
   };
 
   const heart = hearting(core);
-  const choose = choosing(core);
+  const choices = choosing(core);
 
   return {
-    /**
-     * Puts a photo in or takes one out, at once or as soon as nothing else
-     * changes the album. `back` is what undoes it.
-     */
-    choose: async (wanted: NewChoice, back: NewChoice) => {
-      const undo: Undo = { did: 'chose', back, action: null };
-      core.setUndos([...core.undos(), undo]);
-      // Its action is known before keepsake is read again, which says
-      // whether it could be done.
-      await choose(wanted, (action) => {
-        core.setUndos(
-          core.undos().map((one) => (one === undo ? { ...undo, action } : one)),
-        );
-      });
-    },
+    choose: choices.choose,
     /** Sets or takes away the favorite heart of a photo in Immich, at once. */
     favorite: async (photo: string, favorite: boolean) => {
       core.setUndos([
@@ -201,13 +242,13 @@ const marking = (core: Core) => {
       if (last === undefined) {
         return;
       }
+      if (last.did === 'chose') {
+        await choices.undo(last);
+        return;
+      }
       core.setUndos(core.undos().slice(0, -1));
       if (last.did === 'favorite') {
         await heart(last.photo, last.was);
-        return;
-      }
-      if (last.did === 'chose') {
-        await choose(last.back);
         return;
       }
       if (last.did === 'made') {

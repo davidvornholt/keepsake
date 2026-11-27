@@ -8,6 +8,7 @@ import {
   type Waiting,
 } from '../data/derive.ts';
 import { stemOf } from '../data/mentions.ts';
+import type { Choosing } from '../data/store-state.ts';
 import { lookOf, type Pencil } from './kinds.ts';
 
 // What the owner can say about a photo, and what a press of a key or a
@@ -133,12 +134,7 @@ export const offeredFor = (index: Index, photo: PhotoView): string => {
 };
 
 export type Action =
-  /** `back` is what undoes it. */
-  | {
-      readonly does: 'choose';
-      readonly wanted: NewChoice;
-      readonly back: NewChoice;
-    }
+  | ({ readonly does: 'choose' } & Choosing)
   /** A change needs words first. */
   | { readonly does: 'compose' };
 
@@ -216,7 +212,12 @@ const choosing = (
   index: Index,
   photo: PhotoView,
   wanted: NewChoice,
-): Action => ({ does: 'choose', wanted, back: undoOf(photo, wanted, index) });
+): Action => ({
+  does: 'choose',
+  wanted,
+  back: undoOf(photo, wanted, index),
+  restores: null,
+});
 
 /** What pressing a pencil does, or null when it makes no sense. */
 export const actionFor = (
@@ -232,11 +233,11 @@ export const actionFor = (
   }
   const waits = index.waiting.get(photo.id);
   if (waits !== undefined && pencilOf(waits) === pencil) {
-    // Undoing that brings back all of what waited.
     return {
       does: 'choose',
       wanted: takingBack(photo),
       back: wholeOf(index, waits),
+      restores: waits.choice.action,
     };
   }
   if (pencil === 'take-out') {
