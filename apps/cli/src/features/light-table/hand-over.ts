@@ -59,8 +59,11 @@ const handOversOf = Effect.fn('handOversOf')(function* (
   const picked = new Set(pickedOf(known));
   const at = DateTime.formatIso(yield* DateTime.now);
   return yield* Effect.forEach(yield* readHandOvers(files), (record) => {
+    // Where the photos stood before an order was made says nothing of it.
     const isDone =
-      isOrder(record) && !(record.album ?? []).some((one) => picked.has(one));
+      isOrder(record) &&
+      Date.parse(record.at) < known.at &&
+      !(record.album ?? []).some((one) => picked.has(one));
     if (!isDone) {
       return Effect.succeed(record);
     }

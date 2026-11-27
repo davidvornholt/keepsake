@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from 'effect';
+import { DateTime, Effect, Option, Schema } from 'effect';
 import {
   Album,
   type Moment,
@@ -231,6 +231,8 @@ export const standings = Effect.fn('standings')(function* (
   open: OpenShoot,
   model: string,
 ) {
+  // Before anything is read, so whatever was saved before is in what follows.
+  const at = DateTime.toEpochMillis(yield* DateTime.now);
   const judged = new Map(
     (yield* verdicts(open, model)).map(
       (verdict) => [verdict.moment, verdict] as const,
@@ -248,6 +250,8 @@ export const standings = Effect.fn('standings')(function* (
   );
   return {
     ...known,
+    /** When they were read: what was saved later may not be in them. */
+    at,
     verdicts: judged,
     /** The photos that stand for others of their moment, chosen or not. */
     fronts: new Set(moments.flatMap(({ fronts }) => fronts)),
