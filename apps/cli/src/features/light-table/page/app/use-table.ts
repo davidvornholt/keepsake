@@ -1,7 +1,7 @@
 import { type RefObject, useRef, useState } from 'react';
 import { type Index, isFavorite, pileAround } from '../data/derive.ts';
 import type { ShootStore } from '../data/store.ts';
-import { actionFor, offeredFor, pencilOfKey, undoOf } from '../marks/act.ts';
+import { actionFor, offeredFor, pencilOfKey } from '../marks/act.ts';
 import type { Pencil } from '../marks/kinds.ts';
 import type { Engine } from '../sheet/engine.ts';
 import type { Direction } from '../sheet/find.ts';
@@ -125,8 +125,7 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
       // A change needs words, and the photo large to draw on.
       onOpen(photo.id, true);
     } else {
-      const back = undoOf(photo, action.wanted, index);
-      store.choose(action.wanted, back).catch(() => undefined);
+      store.choose(action).catch(() => undefined);
     }
   };
 

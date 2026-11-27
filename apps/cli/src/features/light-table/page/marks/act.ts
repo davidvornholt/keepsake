@@ -5,8 +5,10 @@ import {
   isChosen,
   markedIn,
   pencilOf,
+  type Waiting,
 } from '../data/derive.ts';
 import { stemOf } from '../data/mentions.ts';
+import type { Choosing } from '../data/store-state.ts';
 import { lookOf, type Pencil } from './kinds.ts';
 
 // What the owner can say about a photo, and what a press of a key or a
@@ -132,7 +134,7 @@ export const offeredFor = (index: Index, photo: PhotoView): string => {
 };
 
 export type Action =
-  | { readonly does: 'choose'; readonly wanted: NewChoice }
+  | ({ readonly does: 'choose' } & Choosing)
   /** A change needs words first. */
   | { readonly does: 'compose' };
 
@@ -158,43 +160,37 @@ const puttingIn = (photo: PhotoView): NewChoice => ({
 const takingBack = (photo: PhotoView): NewChoice =>
   isChosen(photo) ? puttingIn(photo) : takingOut(photo);
 
-/** What pressing a pencil does, or null when it makes no sense. */
-export const actionFor = (
-  index: Index,
-  photo: PhotoView,
-  pencil: Pencil,
-): Action | null => {
-  if (!pencilsFor(index, photo).includes(pencil)) {
-    return null;
-  }
-  if (pencil === 'change') {
-    return { does: 'compose' };
-  }
-  if (isMadeOn(index, photo, pencil)) {
-    return { does: 'choose', wanted: takingBack(photo) };
-  }
-  if (pencil === 'take-out') {
-    return { does: 'choose', wanted: takingOut(photo) };
-  }
-  const front = pencil === 'swap' ? swapFor(index, photo) : null;
-  return {
-    does: 'choose',
-    wanted:
-      front === null
-        ? puttingIn(photo)
-        : {
-            ...puttingIn(photo),
-            instead: front.id,
-            because: insteadReason(photo.id),
-          },
-  };
+/**
+ * The whole of what waits for a photo, as the owner chose it, so that it
+ * can be chosen again: a swap with both its photos, whichever of them it
+ * is asked for.
+ */
+const wholeOf = (index: Index, waits: Waiting): NewChoice => {
+  const parts = index.shoot.choices.filter(
+    ({ action, failed }) => action === waits.choice.action && failed === null,
+  );
+  const comesIn = parts.find(({ wants }) => wants === 'in');
+  const leaving = parts.find(({ wants }) => wants === 'out');
+  return comesIn === undefined
+    ? {
+        photo: waits.choice.photo,
+        wants: 'out',
+        because: waits.choice.because,
+        instead: null,
+      }
+    : {
+        photo: comesIn.photo,
+        wants: 'in',
+        because: leaving?.because ?? null,
+        instead: leaving?.photo ?? null,
+      };
 };
 
 /**
  * What undoes a choice that was done: a photo taken out comes back, and one
  * put in goes out again, also the one that another took the place of.
  */
-export const undoOf = (
+const undoOf = (
   photo: PhotoView,
   { wants, instead }: NewChoice,
   index: Index,
@@ -210,6 +206,55 @@ export const undoOf = (
         instead: photo.id,
         because: takingOut(photo).because,
       };
+};
+
+const choosing = (
+  index: Index,
+  photo: PhotoView,
+  wanted: NewChoice,
+): Action => ({
+  does: 'choose',
+  wanted,
+  back: undoOf(photo, wanted, index),
+  restores: null,
+});
+
+/** What pressing a pencil does, or null when it makes no sense. */
+export const actionFor = (
+  index: Index,
+  photo: PhotoView,
+  pencil: Pencil,
+): Action | null => {
+  if (!pencilsFor(index, photo).includes(pencil)) {
+    return null;
+  }
+  if (pencil === 'change') {
+    return { does: 'compose' };
+  }
+  const waits = index.waiting.get(photo.id);
+  if (waits !== undefined && pencilOf(waits) === pencil) {
+    return {
+      does: 'choose',
+      wanted: takingBack(photo),
+      back: wholeOf(index, waits),
+      restores: waits.choice.action,
+    };
+  }
+  if (pencil === 'take-out') {
+    return choosing(index, photo, takingOut(photo));
+  }
+  const front = pencil === 'swap' ? swapFor(index, photo) : null;
+  return choosing(
+    index,
+    photo,
+    front === null
+      ? puttingIn(photo)
+      : {
+          ...puttingIn(photo),
+          instead: front.id,
+          because: insteadReason(photo.id),
+        },
+  );
 };
 
 const keys: Readonly<Record<string, Pencil>> = {

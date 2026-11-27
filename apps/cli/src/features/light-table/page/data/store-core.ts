@@ -26,6 +26,30 @@ const isUnknown = async (name: string): Promise<boolean> => {
   }
 };
 
+/** Whether loading failed because there is no such shoot. */
+const isGone = async (
+  name: string,
+  error: unknown,
+  isShown: boolean,
+): Promise<boolean> =>
+  (error instanceof Problem && error.isMissing) ||
+  (!isShown && (await isUnknown(name)));
+
+/**
+ * What settles once nothing is sent any more, and keepsake was read after
+ * that.
+ */
+const quietOnce = (isQuiet = false) => {
+  let settle: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  if (isQuiet) {
+    settle();
+  }
+  return { promise, settle };
+};
+
 export const makeCore = (name: string) => {
   const held = makeHeld();
   const { set, get } = held;
@@ -41,11 +65,7 @@ export const makeCore = (name: string) => {
   let isResting = false;
   /** Why the last change didn't reach keepsake, until that is dismissed. */
   let lost: string | null = null;
-
-  /** Whether loading failed because there is no such shoot. */
-  const isGone = async (error: unknown): Promise<boolean> =>
-    (error instanceof Problem && error.isMissing) ||
-    (get().index === null && (await isUnknown(name)));
+  let quiet = quietOnce(true);
 
   /** Shows what keepsake has, and nothing that never reached it. */
   const fallBack = () => {
@@ -64,6 +84,7 @@ export const makeCore = (name: string) => {
     const { problem } = get();
     known = shoot;
     isAhead = false;
+    held.forgetFailed(shoot.choices);
     set({
       status: 'ready',
       index: indexOf(shoot),
@@ -101,7 +122,7 @@ export const makeCore = (name: string) => {
         take(shoot);
       }
     } catch (error) {
-      const isMissing = await isGone(error);
+      const isMissing = await isGone(name, error, get().index !== null);
       if (read === reads) {
         fail(error, isMissing, () => {
           load().catch(() => undefined);
@@ -121,6 +142,8 @@ export const makeCore = (name: string) => {
       clearTimeout(again);
     },
     isBusy: () => inFlight > 0,
+    /** Waits until nothing is sent, and keepsake was read after that. */
+    whenQuiet: () => quiet.promise,
     dismissProblem: () => {
       lost = null;
       set({ problem: null });
@@ -130,6 +153,7 @@ export const makeCore = (name: string) => {
       work: () => Promise<Answer>,
     ): Promise<Answer | null> => {
       inFlight += 1;
+      quiet = inFlight === 1 ? quietOnce() : quiet;
       try {
         return await work();
       } catch (error) {
@@ -141,7 +165,7 @@ export const makeCore = (name: string) => {
       } finally {
         inFlight -= 1;
         if (inFlight === 0) {
-          await load();
+          await load().then(quiet.settle);
         }
       }
     },

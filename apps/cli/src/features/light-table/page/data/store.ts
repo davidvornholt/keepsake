@@ -1,10 +1,4 @@
-import type {
-  Changed,
-  HandOver,
-  Mark,
-  NewChoice,
-  NewMark,
-} from '../../contract.ts';
+import type { Changed, HandOver, Mark, NewMark } from '../../contract.ts';
 import {
   dismissChoice,
   forgetShoot,
@@ -18,7 +12,6 @@ import {
   saveLabels,
   saveRating,
   seePhoto,
-  sendChoice,
   takeBackMark,
 } from './api.ts';
 import {
@@ -28,7 +21,6 @@ import {
   replacedBy,
   tidyLabels,
   wantedOf,
-  withChoice,
   withFavorite,
   withLabels,
   withMark,
@@ -38,6 +30,7 @@ import {
   withSaved,
   withSeen,
 } from './changes.ts';
+import { choosing } from './store-choices.ts';
 import { type Core, makeCore } from './store-core.ts';
 import type { Undo } from './store-state.ts';
 
@@ -72,20 +65,6 @@ const hearting = (core: Core) => async (photo: string, favorite: boolean) => {
     core.setShoot(withFavorite(shoot, photo, favorite));
   }
   await core.send(() => saveFavorite(core.name, { photo, favorite }));
-};
-
-/** Puts a photo in or takes one out without remembering it for Undo. */
-const choosing = (core: Core) => async (wanted: NewChoice) => {
-  const shoot = core.get().index?.shoot;
-  if (shoot !== undefined) {
-    core.setShoot(
-      withChoice(shoot, wanted, {
-        now: new Date().toISOString(),
-        isWorking: core.get().activity !== null,
-      }),
-    );
-  }
-  await core.send(() => sendChoice(core.name, wanted));
 };
 
 const marking = (core: Core) => {
@@ -143,17 +122,10 @@ const marking = (core: Core) => {
   };
 
   const heart = hearting(core);
-  const choose = choosing(core);
+  const choices = choosing(core);
 
   return {
-    /**
-     * Puts a photo in or takes one out, at once or as soon as nothing else
-     * changes the album. `back` is what undoes it.
-     */
-    choose: async (wanted: NewChoice, back: NewChoice) => {
-      core.setUndos([...core.undos(), { did: 'chose', back }]);
-      await choose(wanted);
-    },
+    choose: choices.choose,
     /** Sets or takes away the favorite heart of a photo in Immich, at once. */
     favorite: async (photo: string, favorite: boolean) => {
       core.setUndos([
@@ -186,13 +158,13 @@ const marking = (core: Core) => {
       if (last === undefined) {
         return;
       }
+      if (last.did === 'chose') {
+        await choices.undo(last);
+        return;
+      }
       core.setUndos(core.undos().slice(0, -1));
       if (last.did === 'favorite') {
         await heart(last.photo, last.was);
-        return;
-      }
-      if (last.did === 'chose') {
-        await choose(last.back);
         return;
       }
       if (last.did === 'made') {

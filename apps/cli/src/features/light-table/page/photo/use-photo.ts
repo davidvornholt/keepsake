@@ -7,7 +7,6 @@ import {
   actionFor,
   offeredFor,
   pencilOfKey,
-  undoOf,
   writingFor,
 } from '../marks/act.ts';
 import type { Pencil } from '../marks/kinds.ts';
@@ -288,8 +287,7 @@ export const useMarking = (
         doing.shown.now();
         doing.composing.begin();
       } else {
-        const back = undoOf(photo, action.wanted, index);
-        store.choose(action.wanted, back).catch(() => undefined);
+        store.choose(action).catch(() => undefined);
         lookedAt();
       }
     },

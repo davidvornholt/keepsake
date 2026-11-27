@@ -51,8 +51,8 @@ const chosen = samplePhoto('a', { standing: { kind: 'picked' } });
 const behind = sampleBehind('b', 'a');
 const further = sampleBehind('c', 'a');
 const because = 'You chose b instead.';
-const working = { now, isWorking: true };
-const idle = { now, isWorking: false };
+const working = { now, action: 'draft-choice-1', isWorking: true };
+const idle = { now, action: 'draft-choice-1', isWorking: false };
 const swap = { photo: 'b', wants: 'in', because, instead: 'a' } as const;
 const putIn = (photo: string) =>
   ({ photo, wants: 'in', because: null, instead: null }) as const;

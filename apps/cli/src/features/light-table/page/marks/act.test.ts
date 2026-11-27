@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { PhotoView } from '../../contract.ts';
 import { indexOf } from '../data/derive.ts';
 import {
   sampleBehind,
@@ -18,9 +19,9 @@ import {
   pencilOfKey,
   pencilsFor,
   swapFor,
-  undoOf,
   writingFor,
 } from './act.ts';
+import type { Pencil } from './kinds.ts';
 
 const album = samplePhoto('a', {
   standing: { kind: 'album', url: '', favorite: true },
@@ -119,21 +120,21 @@ describe('actionFor', () => {
   const index = indexOf(sampleShoot(photos));
 
   it('takes a photo out at once, for a plain reason', () => {
-    expect(actionFor(index, album, 'take-out')).toEqual({
+    expect(actionFor(index, album, 'take-out')).toMatchObject({
       does: 'choose',
       wanted: { photo: 'a', wants: 'out', because: outReason, instead: null },
     });
   });
 
   it('puts a photo in at once', () => {
-    expect(actionFor(index, weak, 'put-in')).toEqual({
+    expect(actionFor(index, weak, 'put-in')).toMatchObject({
       does: 'choose',
       wanted: { photo: 'c', wants: 'in', because: null, instead: null },
     });
   });
 
   it('uses a photo instead of the one in front, as one', () => {
-    expect(actionFor(index, behind, 'swap')).toEqual({
+    expect(actionFor(index, behind, 'swap')).toMatchObject({
       does: 'choose',
       wanted: {
         photo: 'b',
@@ -153,7 +154,7 @@ describe('actionFor', () => {
         [sampleChoice('a'), sampleChoice('c', { wants: 'in' })],
       ),
     );
-    expect(actionFor(waits, album, 'take-out')).toEqual({
+    expect(actionFor(waits, album, 'take-out')).toMatchObject({
       does: 'choose',
       wanted: { photo: 'a', wants: 'in', because: null, instead: null },
     });
@@ -180,49 +181,89 @@ describe('actionFor', () => {
   });
 });
 
-describe('undoOf', () => {
+describe('undoing a choice', () => {
   const index = indexOf(sampleShoot(photos));
-  const plainly = { because: null, instead: null };
+  const backOf = (on: typeof index, photo: PhotoView, pencil: Pencil) => {
+    const action = actionFor(on, photo, pencil);
+    return action?.does === 'choose' ? action.back : null;
+  };
 
   it('puts back what was taken out', () => {
-    const wanted = {
-      photo: 'a',
-      wants: 'out',
-      because: outReason,
-      instead: null,
-    } as const;
-    expect(undoOf(album, wanted, index)).toEqual({
+    expect(backOf(index, album, 'take-out')).toEqual({
       photo: 'a',
       wants: 'in',
-      ...plainly,
+      because: null,
+      instead: null,
     });
   });
 
   it('takes out again what was put in, for the reason it had before', () => {
-    const wanted = { photo: 'g', wants: 'in', ...plainly } as const;
-    expect(undoOf(out, wanted, index)).toMatchObject({
+    expect(backOf(index, out, 'put-in')).toMatchObject({
       wants: 'out',
       because: 'Too dark.',
     });
-    const left = { photo: 'c', wants: 'in', ...plainly } as const;
-    expect(undoOf(weak, left, index)).toMatchObject({
+    expect(backOf(index, weak, 'put-in')).toMatchObject({
       wants: 'out',
       because: outReason,
     });
   });
 
   it('brings back the photo that another took the place of', () => {
-    const wanted = {
+    expect(backOf(index, behind, 'swap')).toEqual({
+      photo: 'a',
+      wants: 'in',
+      because: outReason,
+      instead: 'b',
+    });
+  });
+
+  it('brings back all of a swap that waited, from either of its photos', () => {
+    const swap = {
       photo: 'b',
       wants: 'in',
       because: insteadReason('b'),
       instead: 'a',
     } as const;
-    expect(undoOf(behind, wanted, index)).toEqual({
+    const waits = indexOf(
+      sampleShoot(
+        photos,
+        [],
+        [
+          sampleChoice('b', { action: 'one', wants: 'in', because: null }),
+          sampleChoice('a', { action: 'one', because: insteadReason('b') }),
+        ],
+      ),
+    );
+    expect(backOf(waits, behind, 'swap')).toEqual(swap);
+    expect(backOf(waits, album, 'take-out')).toEqual(swap);
+    // Brought back, it goes on under another action.
+    expect(actionFor(waits, album, 'take-out')).toMatchObject({
+      restores: 'one',
+    });
+  });
+
+  it('brings back what waited for one photo alone', () => {
+    const waits = indexOf(
+      sampleShoot(
+        photos,
+        [],
+        [
+          sampleChoice('a', { because: 'Blurred.' }),
+          sampleChoice('c', { wants: 'in', because: null }),
+        ],
+      ),
+    );
+    expect(backOf(waits, album, 'take-out')).toEqual({
       photo: 'a',
+      wants: 'out',
+      because: 'Blurred.',
+      instead: null,
+    });
+    expect(backOf(waits, weak, 'put-in')).toEqual({
+      photo: 'c',
       wants: 'in',
-      because: outReason,
-      instead: 'b',
+      because: null,
+      instead: null,
     });
   });
 });
