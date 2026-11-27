@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Option, Path, Schema } from 'effect';
 import { Moment, Photo, Publication, Shoot } from '../../shared/domain.ts';
 import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
+import { listAlbums } from '../../shared/immich.ts';
 import { checkTimeZone } from '../../shared/local-time.ts';
 import { exclusively } from '../../shared/lock.ts';
 import { nameFor } from '../../shared/shoot-names.ts';
@@ -16,6 +17,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { isSubscription } from '../../shared/subscriptions/subscriptions.ts';
+import type { AlbumList } from './contract.ts';
 import { notePreparation } from './preparation.ts';
 import type { NewShoot } from './schemas.ts';
 
@@ -60,6 +62,18 @@ const claim = <E, R>(
     );
     return isMade ? name : yield* claim(wanted, [...taken, name], make);
   });
+
+/** The albums in Immich, which a new album may join. */
+export const existingAlbums = Effect.map(
+  listAlbums,
+  (albums): AlbumList => ({
+    albums: albums.map(({ name, firstTakenOn, lastTakenOn }) => ({
+      name,
+      first: firstTakenOn ?? null,
+      last: lastTakenOn ?? null,
+    })),
+  }),
+);
 
 /** Notes a new shoot, which is empty until its photos are found. */
 export const makeShoot = Effect.fn('makeShoot')(function* (wanted: NewShoot) {

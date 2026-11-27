@@ -1,5 +1,10 @@
 import { Effect, Option } from 'effect';
-import { Album, Publication, type PublishedPhoto } from './domain.ts';
+import {
+  Album,
+  Publication,
+  type PublishedPhoto,
+  type SendingPhoto,
+} from './domain.ts';
 import { type OpenShoot, readJson } from './store.ts';
 
 /**
@@ -30,6 +35,7 @@ export type AlbumRecord = {
   readonly albumId?: string | undefined;
   readonly owned?: boolean | undefined;
   readonly photos: ReadonlyArray<PublishedPhoto>;
+  readonly sending?: ReadonlyArray<SendingPhoto> | undefined;
 };
 
 /** What went to each album keepsake knows of, the last one first. */
@@ -44,6 +50,7 @@ export const albumsOf = (
           albumId: published.albumId,
           owned: published.owned,
           photos: published.photos,
+          sending: published.sending,
         },
         ...(published.elsewhere ?? []),
       ];

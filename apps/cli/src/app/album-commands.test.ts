@@ -97,7 +97,7 @@ describe('keepsake publish, with an album that changed in Immich', () => {
     expect(fakeTools.albums[0]?.assets).toHaveLength(3);
   });
 
-  it('knows a photo only by a name that no other photo has', async () => {
+  it('counts no upload it didn’t make as one of its photos', async () => {
     fakeTools.files = [
       { file: 'one/B.ARW', second: 0 },
       { file: 'two/B.ARW', second: 600 },

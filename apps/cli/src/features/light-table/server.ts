@@ -98,6 +98,7 @@ const routesOf = Effect.fn('routesOf')(function* (
   const ours = toThePage(address);
   // biome-ignore-start lint/style/useNamingConvention: Bun's names for the HTTP methods
   return {
+    '/api/albums': { GET: ours(() => answer(answers.albums)) },
     '/api/folders': { GET: ours(() => answer(answers.folders)) },
     '/api/folders/look': {
       GET: ours((request) => answer(answers.look(request))),

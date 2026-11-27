@@ -12,8 +12,6 @@ import { type AlbumRecord, readPublication } from './publication.ts';
 import { isOutOf, readAllRemoved } from './standing.ts';
 import { type OpenShoot, readJson, writeJson } from './store.ts';
 
-const finishedName = /^(?<base>.+)-keepsake\.jpg$/u;
-
 const isSame = Schema.toEquivalence(
   Schema.Struct({
     photos: Schema.Array(AlbumPhoto),
@@ -28,52 +26,41 @@ const albumOf = (record: AlbumRecord) =>
     ? albumNamed(record.album)
     : albumWithId(record.albumId);
 
-/** The photos of the shoot by the last part of their id, for names to match. */
-const photosByBase = (open: OpenShoot) => {
-  const byBase = new Map<string, Array<string>>();
-  for (const id of open.photos.keys()) {
-    const base = id.slice(id.lastIndexOf('/') + 1);
-    byBase.set(base, [...(byBase.get(base) ?? []), id]);
-  }
-  return byBase;
-};
-
 /** The photos each upload is, as several photos can be the same file. */
-const photosOfAssets = (record: AlbumRecord) => {
+const photosOfAssets = (
+  uploads: ReadonlyArray<{ readonly photo: string; readonly asset: string }>,
+) => {
   const photosOf = new Map<string, Array<string>>();
-  for (const { asset, photo } of record.photos) {
+  for (const { asset, photo } of uploads) {
     photosOf.set(asset, [...(photosOf.get(asset) ?? []), photo]);
   }
   return photosOf;
 };
 
-/** Which photo of the shoot each asset of the album is, where that is known. */
-const photosIn = (
-  open: OpenShoot,
-  record: AlbumRecord,
-  assets: ReadonlyArray<Asset>,
-) => {
-  const photosOf = photosOfAssets(record);
-  const replaced = new Set(record.photos.flatMap((one) => one.replaced ?? []));
-  const byBase = photosByBase(open);
+/**
+ * Which photo of the shoot each asset of the album is. Only the uploads the
+ * shoot's record names count, since the album may hold other shoots' photos
+ * and the owner's, whose file names can be those of this shoot's photos. An
+ * upload still on its way counts for a photo that has no other in the album.
+ */
+const photosIn = (record: AlbumRecord, assets: ReadonlyArray<Asset>) => {
   const inAlbum = new Map<string, AlbumPhoto>();
-  for (const { id, fileName, favorite } of assets) {
-    const base = finishedName.exec(fileName)?.groups?.base ?? '';
-    const [match, ...others] = byBase.get(base) ?? [];
-    // An upload keepsake doesn't know is the photo of its name, unless that
-    // names several or keepsake replaced the upload since.
-    const named =
-      replaced.has(id) || others.length > 0 || match === undefined
-        ? []
-        : [match];
-    const known = photosOf.get(id);
-    for (const photo of known ?? named) {
-      // An outdated version may be there too until it is trashed.
-      if (known !== undefined || !inAlbum.has(photo)) {
-        inAlbum.set(photo, { photo, asset: id, favorite });
+  const add = (
+    uploads: ReadonlyArray<{ readonly photo: string; readonly asset: string }>,
+    isFirst: boolean,
+  ) => {
+    const photosOf = photosOfAssets(uploads);
+    for (const { id, favorite } of assets) {
+      for (const photo of photosOf.get(id) ?? []) {
+        // An outdated version may be there too until it is trashed.
+        if (isFirst || !inAlbum.has(photo)) {
+          inAlbum.set(photo, { photo, asset: id, favorite });
+        }
       }
     }
-  }
+  };
+  add(record.photos, true);
+  add(record.sending ?? [], false);
   return [...inAlbum.values()];
 };
 
@@ -129,7 +116,7 @@ const refreshNow = Effect.fn('refreshAlbum')(function* (
   }
   // Asked first, so little happens between reading the album and saving it.
   const server = yield* immichServer;
-  const photos = photosIn(open, record, yield* albumAssets(found.id));
+  const photos = photosIn(record, yield* albumAssets(found.id));
   const album: Album = {
     id: found.id,
     name: found.name,

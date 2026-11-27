@@ -1,4 +1,5 @@
 import type {
+  AlbumList,
   Changed,
   Favorite,
   FolderList,
@@ -118,6 +119,9 @@ export const saveFavorite = async (
 
 export const readFolders = async (): Promise<FolderList> =>
   (await ask('/api/folders')).json();
+
+export const readAlbums = async (): Promise<AlbumList> =>
+  (await ask('/api/albums')).json();
 
 export const lookIntoFolder = async (path: string): Promise<FolderLook> =>
   (await ask(`/api/folders/look?path=${encodeURIComponent(path)}`)).json();

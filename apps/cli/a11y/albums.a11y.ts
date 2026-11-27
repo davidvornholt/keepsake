@@ -15,6 +15,8 @@ const stopped = /has stopped$/u;
 const englishName =
   /its common English name where it has one, such as Vienna for Wien/u;
 const newAlbum = /^New album From/u;
+const joinsTavira =
+  /Immich has an album called Tavira already, with photos of 2 October to 4 October 2025\. The photos join it/u;
 const newAlbumWithKey = /^New album N$/u;
 
 test('shows every album on a shelf, with what waits at each', async ({
@@ -87,7 +89,11 @@ test('finds the folder a new album is made of', async ({ page }) => {
   await expect(named).toBeFocused();
   await expect(named).toHaveAccessibleDescription(englishName);
   await expect(page.getByText('09:00 on 18 October')).toBeVisible();
+  // Immich has an album of that name, which the photos join.
+  await expect(named).toHaveAccessibleDescription(joinsTavira);
   await scan(page);
+  await named.fill('Tavira beaches');
+  await expect(named).not.toHaveAccessibleDescription(joinsTavira);
 });
 
 test('makes a new album of a folder, and throws it away', async ({ page }) => {

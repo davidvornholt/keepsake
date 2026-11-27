@@ -72,9 +72,8 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
 /**
  * The album keepsake published to before, unless another is named. Albums are
  * found by their id, so one renamed in Immich stays the album. A shoot's first
- * album is a new one named after its title, even when an album has that name
- * already, since a title without a date may be that of another trip. Only an
- * album named with --album is looked up by its name. When the album is gone,
+ * album is the one that has its title, so shoots of one place share an album,
+ * and a new one only when no album has that name. When the album is gone,
  * keepsake makes a new one rather than take another album that has its name
  * now, which may be shared with others, but only if the album was the
  * account's own.
@@ -95,7 +94,13 @@ export const targetOf = Effect.fn('targetOf')(function* (
     return known ?? (yield* uniqueNamed(albums, name)) ?? fresh(name);
   }
   if (before === null) {
-    return fresh(open.shoot.title);
+    const { name, source, title } = open.shoot;
+    const found = yield* uniqueNamed(
+      albums,
+      title,
+      `publish to another with --album, or give the shoot another title with \`keepsake scan "${source}" --name ${name} --title "<title>"\``,
+    );
+    return found ?? fresh(title);
   }
   return withId(before.albumId) ?? (yield* gone(before));
 });

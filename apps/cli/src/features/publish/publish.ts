@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Effect, FileSystem, Option } from 'effect';
+import { Effect, FileSystem, Option, type Path } from 'effect';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
 import {
   Album,
@@ -18,7 +18,6 @@ import {
   isOwnAlbum,
   listAlbums,
   markFavorite,
-  type NamedAlbum,
   signedInUser,
   stackPhotos,
   tagPhoto,
@@ -38,6 +37,7 @@ import {
   writeJson,
 } from '../../shared/store.ts';
 import { outdatedOf } from './outdated.ts';
+import { publicationFor, withSending, withSent } from './record.ts';
 import { takeBack } from './take-back.ts';
 import {
   giveRemovalsTheirAlbum,
@@ -141,16 +141,26 @@ const carryFavorite = (
     }
   }).pipe(withAlbum(open.files));
 
+/** Where a photo is sent: the album, and what has to happen on the way. */
+type Sending = {
+  readonly album: string;
+  /** What the album has, which stays in it. */
+  readonly there: Set<string>;
+  /** Notes the upload in the album before the rest of the photo is sent. */
+  readonly note: (
+    asset: string,
+  ) => Effect.Effect<void, StoreFailed, FileSystem.FileSystem | Path.Path>;
+};
+
 const send = Effect.fn('send')(function* (
   open: OpenShoot,
   job: Job,
-  album: string,
-  /** What the album has, which stays in it. */
-  there: Set<string>,
+  { album, there, note }: Sending,
 ) {
   const { photo, digest, before } = job;
   const files = open.files.edit(photo);
   const asset = yield* uploadPhoto(files.final, album);
+  yield* note(asset);
   const isReplaced = before !== undefined && before.asset !== asset;
   // A photo that isn't published whole doesn't stay in the album.
   const cameraAsset = yield* Effect.gen(function* () {
@@ -180,73 +190,6 @@ const send = Effect.fn('send')(function* (
       : replaced,
   } satisfies Published;
 });
-
-/** The publication with a photo's upload in it, and the one it replaced. */
-const withSent = (
-  publication: Publication,
-  done: Published,
-  before: Published | undefined,
-): Publication => {
-  const sent = {
-    ...publication,
-    photos: [
-      ...publication.photos.filter(({ photo }) => photo !== done.photo),
-      done,
-    ],
-  };
-  const isReplaced = before !== undefined && before.asset !== done.asset;
-  return {
-    ...sent,
-    outdated: outdatedOf({
-      ...sent,
-      outdated: [
-        ...(sent.outdated ?? []),
-        ...(isReplaced ? [before.asset] : []),
-      ],
-    }),
-  };
-};
-
-/** The album keepsake publishes to, and whether it is the account's own. */
-type Destination = {
-  readonly id: string;
-  readonly name: string;
-  readonly owned: boolean | undefined;
-};
-
-/**
- * The publication keepsake goes on with for the album it publishes to. It
- * forgets the albums of the account's own that are gone, which were deleted,
- * so what they showed is not in use anymore.
- */
-const publicationFor = (
-  before: Publication | null,
-  album: Destination,
-  albums: ReadonlyArray<NamedAlbum>,
-): Publication => {
-  const records = albumsOf(before);
-  const isDeleted = (albumId: string, owned: boolean | undefined) =>
-    owned === true && !albums.some(({ id }) => id === albumId);
-  return {
-    album: album.name,
-    albumId: album.id,
-    ...(album.owned === undefined ? {} : { owned: album.owned }),
-    photos: records.find(({ albumId }) => albumId === album.id)?.photos ?? [],
-    outdated: before?.outdated ?? [],
-    elsewhere: records.flatMap(({ album: name, albumId, owned, photos }) =>
-      albumId === undefined || albumId === album.id || isDeleted(albumId, owned)
-        ? []
-        : [
-            {
-              album: name,
-              albumId,
-              ...(owned === undefined ? {} : { owned }),
-              photos,
-            },
-          ],
-    ),
-  };
-};
 
 /** The album to publish to, made if it is new and may be made. */
 const destinationOf = Effect.fn('destinationOf')(function* (
@@ -336,7 +279,14 @@ const publishNow = Effect.fn('publish')(function* (
   // One at a time, and noted right away, so nothing is uploaded twice.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
-      const done = yield* send(open, job, album.id, uploads);
+      const done = yield* send(open, job, {
+        album: album.id,
+        there: uploads,
+        note: (asset) => {
+          publication = withSending(publication, job.photo, asset);
+          return writeJson(Publication, open.files.publication, publication);
+        },
+      });
       publication = withSent(publication, done, job.before);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;

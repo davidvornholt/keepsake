@@ -14,6 +14,7 @@ import {
 import { field, mainButton } from '../ui/classes.ts';
 import { Img } from '../ui/placed.tsx';
 import { useFocused } from '../ui/use-focused.ts';
+import { Joining } from './joining.tsx';
 import {
   aboutOf,
   clockThere,
@@ -303,7 +304,7 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
       </p>
       <input
         ref={titleRef}
-        aria-describedby={`${titleId}-more`}
+        aria-describedby={`${titleId}-more ${titleId}-joins`}
         className={`${field} mt-3`}
         id={titleId}
         maxLength={120}
@@ -312,6 +313,7 @@ export const Details = ({ folder }: { readonly folder: Folder }) => {
         required={true}
         value={title}
       />
+      <Joining id={`${titleId}-joins`} title={title} />
       <label className={`mt-9 block ${heading}`} htmlFor={aboutId}>
         Where and when?
       </label>

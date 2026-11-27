@@ -262,6 +262,16 @@ export const PublishedPhoto = Schema.Struct({
 });
 export type PublishedPhoto = typeof PublishedPhoto.Type;
 
+/**
+ * An upload in the album whose photo isn't noted under `photos` yet, because
+ * the rest of it is still on its way or a publish stopped half-way.
+ */
+export const SendingPhoto = Schema.Struct({
+  photo: Schema.String,
+  asset: Schema.String,
+});
+export type SendingPhoto = typeof SendingPhoto.Type;
+
 /** What keepsake published to an album it published to before the last. */
 export const EarlierAlbum = Schema.Struct({
   album: Schema.String,
@@ -272,6 +282,7 @@ export const EarlierAlbum = Schema.Struct({
    */
   owned: Schema.optionalKey(Schema.Boolean),
   photos: Schema.Array(PublishedPhoto),
+  sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
 });
 export type EarlierAlbum = typeof EarlierAlbum.Type;
 
@@ -284,6 +295,7 @@ export const Publication = Schema.Struct({
   owned: Schema.optionalKey(Schema.Boolean),
   /** What was published to this album, and to no other. */
   photos: Schema.Array(PublishedPhoto),
+  sending: Schema.optionalKey(Schema.Array(SendingPhoto)),
   /** Replaced uploads that no `publish` has named under `outdated` yet. */
   outdated: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The other albums keepsake published to, by their id. */

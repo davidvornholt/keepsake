@@ -251,6 +251,20 @@ export type FolderList = {
   }>;
 };
 
+/**
+ * GET /api/albums: the albums in Immich, so the page can say which one the
+ * photos of a new album join, as its first publish joins the one album that
+ * has its title.
+ */
+export type AlbumList = {
+  readonly albums: ReadonlyArray<{
+    readonly name: string;
+    /** The days of its first and last photo, null while it has none. */
+    readonly first: string | null;
+    readonly last: string | null;
+  }>;
+};
+
 /** GET /api/folders/look?path=<path> */
 export type FolderLook = {
   readonly path: string;
