@@ -84,7 +84,9 @@ const makeView = (
     if (known?.revision === revision) {
       return known.made;
     }
-    const made = yield* shootView(gallery, doingOf(gallery.open.shoot.name));
+    const made = yield* shootView(gallery, () =>
+      doingOf(gallery.open.shoot.name),
+    );
     yield* saveLooks(gallery);
     yield* warmOnce(gallery);
     return made;
@@ -92,8 +94,7 @@ const makeView = (
 
   return Effect.fn('view')(function* (gallery: Gallery) {
     const { name } = gallery.open.shoot;
-    const { revision, ...now } = yield* changedSince(
-      gallery.open,
+    const { revision, ...now } = yield* changedSince(gallery.open, () =>
       doingOf(name),
     );
     const live = JSON.stringify(now);
@@ -178,7 +179,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     }
     const open = yield* openShoot(name);
     yield* refreshAlbum(open);
-    const current = yield* changedSince(open, doingOf(name));
+    const current = yield* changedSince(open, () => doingOf(name));
     changes.set(name, { at: now, changed: current });
     return current;
   });

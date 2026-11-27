@@ -83,8 +83,11 @@ export const makeCore = (name: string) => {
     }
   };
 
-  /** Takes what keepsake says, unless a change under way is newer. */
-  const take = (shoot: ShootView) => {
+  /**
+   * Takes what keepsake says, unless a change under way is newer, and what
+   * goes on unless keepsake told newer meanwhile.
+   */
+  const take = (shoot: ShootView, isLive: boolean) => {
     if (inFlight > 0) {
       return;
     }
@@ -95,7 +98,7 @@ export const makeCore = (name: string) => {
     set({
       status: 'ready',
       index: indexOf(shoot),
-      ...goingOnIn(shoot),
+      ...(isLive ? goingOnIn(shoot) : {}),
       // It answers again, so the notice that it doesn't has had its day,
       // unless a change was lost meanwhile.
       problem: problem === unreachable ? lost : problem,
@@ -121,10 +124,11 @@ export const makeCore = (name: string) => {
     clearTimeout(again);
     reads += 1;
     const read = reads;
+    const told = held.told();
     try {
       const shoot = await readShoot(name);
       if (read === reads) {
-        take(shoot);
+        take(shoot, held.told() === told);
       }
     } catch (error) {
       const isMissing = await isGone(name, error, get().index !== null);

@@ -102,6 +102,8 @@ type Marks = ReadonlyArray<Mark>;
 export const makeHeld = () => {
   let state = initial;
   let undos: ReadonlyArray<Undo> = [];
+  /** How many times keepsake told what goes on now, as it does every second. */
+  let told = 0;
   const listeners = new Set<() => void>();
 
   const set = (next: Partial<ShootState>) => {
@@ -120,6 +122,12 @@ export const makeHeld = () => {
         listeners.delete(listener);
       };
     },
+    /** Takes what keepsake tells goes on now. */
+    hear: (now: Partial<ShootState>) => {
+      told += 1;
+      set(now);
+    },
+    told: () => told,
     undos: () => undos,
     setUndos: (next: ReadonlyArray<Undo>) => {
       undos = next;

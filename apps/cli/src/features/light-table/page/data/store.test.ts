@@ -302,3 +302,60 @@ describe('reading the shoot', () => {
     expect(store.get().problem).toBeNull();
   });
 });
+
+/** Waits until the store has read the shoot. */
+const ready = async (store: ReturnType<typeof makeShootStore>) => {
+  if (store.get().status !== 'ready') {
+    await Bun.sleep(1);
+    await ready(store);
+  }
+};
+
+describe('what goes on now', () => {
+  const realEventSource = globalThis.EventSource;
+  /** What the page does when keepsake tells what changed. */
+  let tell: (changed: unknown) => void = () => undefined;
+
+  beforeEach(() => {
+    const events = () => ({
+      addEventListener: (
+        type: string,
+        listener: (event: MessageEvent) => void,
+      ) => {
+        if (type === 'changed') {
+          tell = (changed) =>
+            listener(
+              new MessageEvent('changed', { data: JSON.stringify(changed) }),
+            );
+        }
+      },
+      close: () => {
+        tell = () => undefined;
+      },
+    });
+    // A stand-in for the events, which the store makes with new.
+    globalThis.EventSource = function (this: unknown) {
+      return events();
+    } as unknown as typeof EventSource;
+  });
+
+  afterEach(() => {
+    globalThis.EventSource = realEventSource;
+  });
+
+  it('stays as keepsake told it after a read began', async () => {
+    const store = makeShootStore('lisbon');
+    const shoot = shootWith();
+    store.start();
+    await answerWith('GET', shoot);
+    await ready(store);
+    const reading = store.reload();
+    const read = await next('GET');
+    const { revision, activity, preparation, carrying } = shoot;
+    tell({ revision, activity, preparation, carrying, isChoiceBusy: true });
+    read.answer(Response.json(shoot));
+    await reading;
+    expect(store.get().isChoiceBusy).toBe(true);
+    store.stop();
+  });
+});

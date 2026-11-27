@@ -155,10 +155,13 @@ export type Doing = {
 /** Everything the page shows of a shoot. */
 export const shootView = Effect.fn('shootView')(function* (
   gallery: Gallery,
-  doing: Doing,
+  doing: () => Doing,
 ) {
   const { open } = gallery;
   const { files, shoot } = open;
+  // Before what it stands for, so a command that changes that meanwhile
+  // gives another revision.
+  const now = yield* changedSince(open, doing);
   const model = yield* modelOf(open);
   const known = yield* standings(open, model);
   const { album, picks } = known;
@@ -173,7 +176,7 @@ export const shootView = Effect.fn('shootView')(function* (
     name: shoot.name,
     title: shoot.title,
     about: shoot.about,
-    ...(yield* changedSince(open, doing)),
+    ...now,
     album:
       album === null
         ? null
@@ -207,7 +210,7 @@ export const shootView = Effect.fn('shootView')(function* (
 /** What may have changed since the page was given a shoot. */
 export const changedSince = Effect.fn('changedSince')(function* (
   open: OpenShoot,
-  { isWorking, isSettling }: Doing,
+  doing: () => Doing,
 ) {
   const { files } = open;
   return {
@@ -217,11 +220,14 @@ export const changedSince = Effect.fn('changedSince')(function* (
     carrying: yield* carryingOf(
       files,
       yield* roughlyUnsettled(files),
-      isWorking,
+      doing().isWorking,
     ),
     // The server holds the choice only while it does what was chosen, and
-    // a choice made meanwhile is done right after.
-    isChoiceBusy: !isSettling && (yield* isHeld(files.choiceLock)),
+    // a choice made meanwhile is done right after. Whether it does is
+    // asked when the lock is.
+    isChoiceBusy: yield* Effect.suspend(() =>
+      doing().isSettling ? Effect.succeed(false) : isHeld(files.choiceLock),
+    ),
   } satisfies Changed;
 });
 
