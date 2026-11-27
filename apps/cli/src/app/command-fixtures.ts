@@ -18,13 +18,13 @@ import { fakeTools, fakeToolsLayer, resetTools } from './fake-tools.ts';
 export const endpoint = 'https://example.openai.azure.com';
 
 /**
- * A home directory for one test, the key piped in, and more environment
- * variables.
+ * A home directory for one test, the key piped in, and environment variables
+ * to set, or to leave unset if undefined.
  */
 export const fake = {
   home: '',
   stdin: '',
-  env: {} as Record<string, string>,
+  env: {} as Record<string, string | undefined>,
 };
 
 type Spy = ReturnType<typeof import('bun:test').spyOn>;
@@ -86,14 +86,18 @@ const command = (args: ReadonlyArray<string>) =>
     Effect.provide(
       ConfigProvider.layer(
         ConfigProvider.fromDotEnvContents(
-          [
-            `HOME=${fake.home}`,
-            `XDG_CONFIG_HOME=${join(fake.home, 'config')}`,
-            `XDG_DATA_HOME=${join(fake.home, 'data')}`,
-            ...Object.entries(fake.env).map(
-              ([name, value]) => `${name}=${value}`,
-            ),
-          ].join('\n'),
+          Object.entries({
+            // biome-ignore-start lint/style/useNamingConvention: names of environment variables
+            HOME: fake.home,
+            XDG_CONFIG_HOME: join(fake.home, 'config'),
+            XDG_DATA_HOME: join(fake.home, 'data'),
+            // biome-ignore-end lint/style/useNamingConvention: names of environment variables
+            ...fake.env,
+          })
+            .flatMap(([name, value]) =>
+              value === undefined ? [] : [`${name}=${value}`],
+            )
+            .join('\n'),
         ),
       ),
     ),

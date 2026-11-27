@@ -1,4 +1,4 @@
-import { DateTime, Effect, FileSystem, Path } from 'effect';
+import { DateTime, Duration, Effect, Exit, FileSystem, Path } from 'effect';
 
 /** One call to a program, which its usage records are filed under. */
 export type UsageCall = {
@@ -25,6 +25,14 @@ export type ProgramUsage = {
   ) => ReadonlyArray<object>;
 };
 
+/**
+ * How long an answer, which is paid for, waits for its record. Writing one
+ * takes milliseconds unless the file system is stuck.
+ */
+const recordWait = Duration.seconds(1);
+
+const ignored = (_events: ReadonlyArray<unknown>) => Effect.void;
+
 /** Records the calls of one model in a file of their own. */
 export const usageRecorder = Effect.fn('usageRecorder')(function* ({
   folder,
@@ -32,7 +40,13 @@ export const usageRecorder = Effect.fn('usageRecorder')(function* ({
 }: ProgramUsage) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const directory = path.join(yield* folder, 'keepsake');
+  // Without a home there is nowhere to put the records, which matter less
+  // than the answers.
+  const found = yield* Effect.exit(folder);
+  if (Exit.isFailure(found)) {
+    return ignored;
+  }
+  const directory = path.join(found.value, 'keepsake');
   const session = crypto.randomUUID();
   // Claude Code and Codex list only files named like their own sessions, so
   // this name keeps the records out of `claude --resume` and `codex resume`.
@@ -50,10 +64,12 @@ export const usageRecorder = Effect.fn('usageRecorder')(function* ({
       if (text === '') {
         return;
       }
-      yield* fs.makeDirectory(directory, { recursive: true });
+      // Only the owner reads them, like the programs' own sessions.
+      yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
       // One write for each call keeps its lines together beside other calls.
-      yield* fs.writeFileString(file, text, { flag: 'a' });
+      yield* fs.writeFileString(file, text, { flag: 'a', mode: 0o600 });
     }).pipe(
+      Effect.timeout(recordWait),
       // The answer is paid for and worth more than its record, which only
       // shows the use.
       Effect.ignore,

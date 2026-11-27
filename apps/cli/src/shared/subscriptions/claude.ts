@@ -1,11 +1,10 @@
 // biome-ignore-all lint/style/useNamingConvention: names of Claude Code's events
-import { Effect, Path, Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { AnthropicStructuredOutput } from 'effect/ai';
 import { ToolFailed } from '../errors/errors.ts';
-import { xdgDirectory } from '../xdg.ts';
+import { claudeUsage } from './claude-usage.ts';
 import type { Program, ProgramQuestion } from './program-model.ts';
 import type { Effort } from './subscriptions.ts';
-import type { ProgramUsage, UsageCall } from './usage-records.ts';
 
 const Result = Schema.Struct({
   type: Schema.Literal('result'),
@@ -20,23 +19,6 @@ const Result = Schema.Struct({
   }),
 });
 const isResult = Schema.is(Result);
-
-/** What each model used for the answer, including calls `usage` leaves out. */
-const isSpent = Schema.is(
-  Schema.Struct({
-    type: Schema.Literal('result'),
-    modelUsage: Schema.Record(
-      Schema.String,
-      Schema.Struct({
-        inputTokens: Schema.Int,
-        outputTokens: Schema.Int,
-        cacheReadInputTokens: Schema.Int,
-        cacheCreationInputTokens: Schema.Int,
-        cacheCreationEphemeral1hInputTokens: Schema.optionalKey(Schema.Int),
-      }),
-    ),
-  }),
-);
 
 const content = (piece: string | Uint8Array) =>
   typeof piece === 'string'
@@ -94,48 +76,11 @@ const answer = Effect.fn('claude.answer')(function* (
   };
 });
 
-/** One line for each model, as Claude Code writes its answers into a session. */
-const usageLines = (
-  events: ReadonlyArray<unknown>,
-  { session, at }: UsageCall,
-) =>
-  Object.entries(events.findLast(isSpent)?.modelUsage ?? {}).map(
-    ([model, used]) => ({
-      type: 'assistant',
-      timestamp: at,
-      sessionId: session,
-      message: {
-        model,
-        usage: {
-          input_tokens: used.inputTokens,
-          cache_creation_input_tokens: used.cacheCreationInputTokens,
-          cache_read_input_tokens: used.cacheReadInputTokens,
-          output_tokens: used.outputTokens,
-          cache_creation: {
-            ephemeral_1h_input_tokens:
-              used.cacheCreationEphemeral1hInputTokens ?? 0,
-          },
-        },
-      },
-    }),
-  );
-
-const usage: ProgramUsage = {
-  folder: Effect.gen(function* () {
-    const path = yield* Path.Path;
-    return path.join(
-      yield* xdgDirectory('CLAUDE_CONFIG_DIR', '.claude'),
-      'projects',
-    );
-  }),
-  lines: usageLines,
-};
-
 /** Asks Claude Code, which uses the Claude subscription it is signed in to. */
 export const claude = (model: string, effort: Effort): Program<never> => ({
   subscription: 'claude',
   codecTransformer: AnthropicStructuredOutput.toCodecAnthropic,
   request: request(model, effort),
   answer,
-  usage,
+  usage: claudeUsage,
 });
