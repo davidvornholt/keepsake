@@ -175,8 +175,8 @@ const check = (
 
 /**
  * Notes what the owner chose, in the place of what they chose for those
- * photos before. What is so already, such as a photo put back in before it
- * went out, is forgotten.
+ * photos before, and gives the action it is noted under. What is so already,
+ * such as a photo put back in before it went out, is forgotten.
  */
 export const choose = Effect.fn('choose')(function* (
   open: OpenShoot,
@@ -226,6 +226,7 @@ export const choose = Effect.fn('choose')(function* (
     ...all.filter((one) => !replaced.has(one.action)),
     ...parts.filter(isWaiting(progress)),
   ]);
+  return action;
 });
 
 /** Forgets a choice that couldn't be done, once the owner has read why. */

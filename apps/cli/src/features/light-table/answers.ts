@@ -5,7 +5,7 @@ import { RatingAnswer, saveRating } from '../../shared/ratings.ts';
 import { standings } from '../../shared/standing.ts';
 import { type OpenShoot, openShoot } from '../../shared/store.ts';
 import { choose, dismissChoice } from './choices.ts';
-import { pictureWidths } from './contract.ts';
+import { type Chosen, pictureWidths } from './contract.ts';
 import { setFavorite } from './favorites.ts';
 import { type Folders, lookAtFolder } from './folders.ts';
 import { handOver } from './hand-over.ts';
@@ -215,12 +215,12 @@ export const makeAnswers = (has: Has) => ({
     Effect.gen(function* () {
       const wanted = yield* sent(NewChoice, request);
       const open = yield* openShoot(name);
-      yield* choose(open, yield* standingsOf(open), wanted);
+      const action = yield* choose(open, yield* standingsOf(open), wanted);
       yield* has.settling.now(name);
       // An order whose photos all went out is through, and so is what
       // waited for it.
       yield* has.runner.start(name);
-      return nothing();
+      return Response.json({ action } satisfies Chosen);
     }),
   dismiss: (name: string, action: string) =>
     Effect.gen(function* () {

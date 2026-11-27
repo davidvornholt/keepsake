@@ -179,9 +179,17 @@ const withDone = (
 export const withChoice = (
   shoot: ShootView,
   { photo, wants, because, instead }: NewChoice,
-  { now, isWorking }: { readonly now: string; readonly isWorking: boolean },
+  {
+    now,
+    action,
+    isWorking,
+  }: {
+    readonly now: string;
+    /** What the page notes it under until keepsake gives it an action. */
+    readonly action: string;
+    readonly isWorking: boolean;
+  },
 ): ShootView => {
-  const action = `${draftPrefix}${now}`;
   const part = (one: string, wanted: Choice['wants']): Choice => ({
     action,
     photo: one,
