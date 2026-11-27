@@ -258,6 +258,12 @@ export type ShootList = {
   }>;
 };
 
+/**
+ * What POST /api/shoots/<shoot>/choices answers: the action the choice is
+ * noted under, which a failure of it names.
+ */
+export type Chosen = { readonly action: string };
+
 /** GET /api/shoots/<shoot>/events, as server-sent events called `changed`. */
 export type Changed = {
   readonly revision: string;

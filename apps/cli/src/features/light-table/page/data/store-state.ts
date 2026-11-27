@@ -1,6 +1,7 @@
 import type {
   Activity,
   CarryingOut,
+  Choice,
   Mark,
   NewChoice,
   NewMark,
@@ -37,14 +38,40 @@ export type Undo =
       readonly replaced: Mark | null;
     }
   | { readonly did: 'took-back'; readonly mark: Mark }
-  /** A photo put in or taken out, which `back` undoes. */
-  | { readonly did: 'chose'; readonly back: NewChoice }
+  /**
+   * A photo put in or taken out, which `back` undoes, noted under `action`
+   * once keepsake has said so.
+   */
+  | {
+      readonly did: 'chose';
+      readonly back: NewChoice;
+      readonly action: string | null;
+    }
   | {
       readonly did: 'favorite';
       readonly photo: string;
       /** Whether it was a favorite before. */
       readonly was: boolean;
     };
+
+/**
+ * The undos without those of choices that keepsake couldn't do, which left
+ * nothing to undo.
+ */
+const withoutFailed = (
+  undos: ReadonlyArray<Undo>,
+  choices: ReadonlyArray<Choice>,
+): ReadonlyArray<Undo> => {
+  const failed = new Set(
+    choices.flatMap(({ action, failed: why }) =>
+      why === null ? [] : [action],
+    ),
+  );
+  return undos.filter(
+    (undo) =>
+      undo.did !== 'chose' || undo.action === null || !failed.has(undo.action),
+  );
+};
 
 const initial: ShootState = {
   status: 'loading',
@@ -86,6 +113,10 @@ export const makeHeld = () => {
     setUndos: (next: ReadonlyArray<Undo>) => {
       undos = next;
       set({});
+    },
+    /** Forgets the undos of choices keepsake couldn’t do. The next `set` shows it. */
+    forgetFailed: (choices: ReadonlyArray<Choice>) => {
+      undos = withoutFailed(undos, choices);
     },
     setShoot: (shoot: ShootView) => set({ index: indexOf(shoot) }),
     setMarks: (next: (marks: Marks) => Marks) => {

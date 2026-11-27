@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { Mark, ShootView } from '../../contract.ts';
 import { unreachable } from './api.ts';
-import { sampleMark, samplePhoto, sampleShoot } from './sample.ts';
+import {
+  sampleChoice,
+  sampleMark,
+  samplePhoto,
+  sampleShoot,
+} from './sample.ts';
 import { makeShootStore } from './store.ts';
 
 /** A request the page sent, which waits for the test to answer it. */
@@ -133,6 +138,46 @@ describe('undo', () => {
     // Takes back what made it in the first place.
     store.undo().catch(() => undefined);
     expect((await next('DELETE')).path).toEndWith('/marks/again');
+  });
+});
+
+describe('undoing a choice', () => {
+  const out = {
+    photo: 'a',
+    wants: 'out',
+    because: 'You didn’t want it in the album.',
+    instead: null,
+  } as const;
+  const back = { ...out, wants: 'in', because: null } as const;
+
+  it('offers nothing for a choice keepsake couldn’t do, and keeps what came before', async () => {
+    const store = await loaded();
+    const hearting = store.favorite('a', true);
+    (await next('PUT')).answer(new Response(null, { status: 204 }));
+    await answerWith('GET', shootWith());
+    await hearting;
+    const choosing = store.choose(out, back);
+    await answerWith('POST', { action: 'one' });
+    const failed = sampleChoice('a', {
+      action: 'one',
+      failed: 'Immich refused.',
+    });
+    await answerWith('GET', sampleShoot([samplePhoto('a')], [], [failed]));
+    await choosing;
+    expect(store.get().undoable).toEqual({
+      did: 'favorite',
+      photo: 'a',
+      was: false,
+    });
+  });
+
+  it('keeps a choice that keepsake did', async () => {
+    const store = await loaded();
+    const choosing = store.choose(out, back);
+    await answerWith('POST', { action: 'one' });
+    await answerWith('GET', shootWith());
+    await choosing;
+    expect(store.get().undoable).toMatchObject({ did: 'chose', back });
   });
 });
 

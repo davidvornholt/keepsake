@@ -26,6 +26,15 @@ const isUnknown = async (name: string): Promise<boolean> => {
   }
 };
 
+/** Whether loading failed because there is no such shoot. */
+const isGone = async (
+  name: string,
+  error: unknown,
+  isShown: boolean,
+): Promise<boolean> =>
+  (error instanceof Problem && error.isMissing) ||
+  (!isShown && (await isUnknown(name)));
+
 export const makeCore = (name: string) => {
   const held = makeHeld();
   const { set, get } = held;
@@ -41,11 +50,6 @@ export const makeCore = (name: string) => {
   let isResting = false;
   /** Why the last change didn't reach keepsake, until that is dismissed. */
   let lost: string | null = null;
-
-  /** Whether loading failed because there is no such shoot. */
-  const isGone = async (error: unknown): Promise<boolean> =>
-    (error instanceof Problem && error.isMissing) ||
-    (get().index === null && (await isUnknown(name)));
 
   /** Shows what keepsake has, and nothing that never reached it. */
   const fallBack = () => {
@@ -64,6 +68,7 @@ export const makeCore = (name: string) => {
     const { problem } = get();
     known = shoot;
     isAhead = false;
+    held.forgetFailed(shoot.choices);
     set({
       status: 'ready',
       index: indexOf(shoot),
@@ -101,7 +106,7 @@ export const makeCore = (name: string) => {
         take(shoot);
       }
     } catch (error) {
-      const isMissing = await isGone(error);
+      const isMissing = await isGone(name, error, get().index !== null);
       if (read === reads) {
         fail(error, isMissing, () => {
           load().catch(() => undefined);

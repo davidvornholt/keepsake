@@ -74,19 +74,27 @@ const hearting = (core: Core) => async (photo: string, favorite: boolean) => {
   await core.send(() => saveFavorite(core.name, { photo, favorite }));
 };
 
-/** Puts a photo in or takes one out without remembering it for Undo. */
-const choosing = (core: Core) => async (wanted: NewChoice) => {
-  const shoot = core.get().index?.shoot;
-  if (shoot !== undefined) {
-    core.setShoot(
-      withChoice(shoot, wanted, {
-        now: new Date().toISOString(),
-        isWorking: core.get().activity !== null,
-      }),
-    );
-  }
-  await core.send(() => sendChoice(core.name, wanted));
-};
+/**
+ * Puts a photo in or takes one out without remembering it for Undo, and
+ * tells `noted` the action keepsake noted it under.
+ */
+const choosing =
+  (core: Core) =>
+  async (
+    wanted: NewChoice,
+    noted: (action: string) => void = () => undefined,
+  ) => {
+    const shoot = core.get().index?.shoot;
+    if (shoot !== undefined) {
+      core.setShoot(
+        withChoice(shoot, wanted, {
+          now: new Date().toISOString(),
+          isWorking: core.get().activity !== null,
+        }),
+      );
+    }
+    await core.send(async () => noted(await sendChoice(core.name, wanted)));
+  };
 
 const marking = (core: Core) => {
   let drafts = 0;
@@ -151,8 +159,15 @@ const marking = (core: Core) => {
      * changes the album. `back` is what undoes it.
      */
     choose: async (wanted: NewChoice, back: NewChoice) => {
-      core.setUndos([...core.undos(), { did: 'chose', back }]);
-      await choose(wanted);
+      const undo: Undo = { did: 'chose', back, action: null };
+      core.setUndos([...core.undos(), undo]);
+      // Its action is known before keepsake is read again, which says
+      // whether it could be done.
+      await choose(wanted, (action) => {
+        core.setUndos(
+          core.undos().map((one) => (one === undo ? { ...undo, action } : one)),
+        );
+      });
     },
     /** Sets or takes away the favorite heart of a photo in Immich, at once. */
     favorite: async (photo: string, favorite: boolean) => {

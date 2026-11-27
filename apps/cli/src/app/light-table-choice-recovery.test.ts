@@ -63,7 +63,7 @@ describe('a finished photo that Immich doesn’t take', () => {
     expect(failed).toMatchObject({ photo: 'A2', wants: 'in' });
     expect(failed?.failed).not.toBeNull();
     expect(standing).toEqual(before);
-    expect(again).toBe(204);
+    expect(again).toBe(200);
     expect(inImmich()).toEqual(['A1', 'B', 'C', 'A2']);
   });
 

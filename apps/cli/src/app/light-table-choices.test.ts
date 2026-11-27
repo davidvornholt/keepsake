@@ -74,7 +74,7 @@ describe('taking a photo out on the page', () => {
       await marksOf(address),
       await choicesOf(address),
     ]);
-    expect([status, marks, choices]).toEqual([204, [], []]);
+    expect([status, marks, choices]).toEqual([200, [], []]);
     expect(inImmich()).toEqual(['A1', 'C']);
     expect(await standingOf('B')).toMatchObject({ kind: 'taken-out', because });
     expect(keepsakeRuns()).toEqual([]);
@@ -95,15 +95,17 @@ describe('taking a photo out on the page', () => {
   it('says so when Immich refuses, and the photo stays in', async () => {
     await publishLisbon();
     fakeTools.refused.add('asset-3');
-    const [refused, dismissed] = await serving(async (address) => {
-      await choose(address, { photo: 'B', wants: 'out' });
+    const [chosen, refused, dismissed] = await serving(async (address) => {
+      const answer = await choose(address, { photo: 'B', wants: 'out' });
       const [choice] = await choicesOf(address);
       await send(
         'DELETE',
         `${address}/api/shoots/lisbon/choices/${choice.action}`,
       );
-      return [choice, await choicesOf(address)];
+      return [await answer.json(), choice, await choicesOf(address)];
     });
+    // The page knows by its action that the choice it made failed.
+    expect(chosen).toEqual({ action: refused.action });
     expect(refused).toMatchObject({ photo: 'B', wants: 'out' });
     expect(refused.failed).toContain('did not take B out');
     expect(dismissed).toEqual([]);
@@ -280,6 +282,41 @@ describe('a choice while a command works on the shoot', () => {
     });
     expect([forgot, after]).toEqual([400, []]);
     expect(inImmich()).toEqual(['A1', 'C']);
+  });
+
+  it('goes on as a whole when its cancellation is undone', async () => {
+    await publishLisbon();
+    await editLisbon('A2');
+    const instead = 'You chose A2 instead.';
+    const swap: Wanted = {
+      photo: 'A2',
+      wants: 'in',
+      instead: 'A1',
+      because: instead,
+    };
+    const after = await serving(async (address) => {
+      await whileHeld(
+        async () => {
+          await choose(address, swap);
+          // The owner presses the swap again, then Undo.
+          await choose(address, { photo: 'A2', wants: 'out' });
+          await choose(address, swap);
+        },
+        'lisbon',
+        withChoice,
+      );
+      return eventually(
+        () => choicesOf(address),
+        (choices) => choices.length === 0,
+        patiently,
+      );
+    });
+    expect(after).toEqual([]);
+    expect(inImmich()).toEqual(['B', 'C', 'A2']);
+    expect(await standingOf('A1')).toMatchObject({
+      kind: 'taken-out',
+      because: instead,
+    });
   });
 
   it('waits to publish a photo while it is edited', async () => {
