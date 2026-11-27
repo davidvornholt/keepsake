@@ -15,7 +15,9 @@ import {
   withSeen,
 } from './changes.ts';
 import {
+  sampleBehind,
   sampleChoice,
+  sampleEdit,
   sampleMark,
   samplePhoto,
   sampleShoot,
@@ -45,20 +47,22 @@ describe('draftOf', () => {
 
 describe('withChoice', () => {
   const chosen = samplePhoto('a', { standing: { kind: 'picked' } });
-  const behind = samplePhoto('b', {
-    standing: { kind: 'similar', to: 'a', because: null },
-  });
+  const behind = sampleBehind('b', 'a');
+  const further = sampleBehind('c', 'a');
   const because = 'You chose b instead.';
+  const working = { now, isWorking: true };
+  const idle = { now, isWorking: false };
+  const swap = { photo: 'b', wants: 'in', because, instead: 'a' } as const;
 
-  it('waits until keepsake has done it, as one with what it replaces', () => {
+  it('waits while a command works, as one with what it replaces', () => {
     const shoot = sampleShoot([chosen, behind]);
-    const wanted = { photo: 'b', wants: 'in', because, instead: 'a' } as const;
-    const { choices } = withChoice(shoot, wanted, now);
+    const { choices, photos } = withChoice(shoot, swap, working);
     expect(choices).toMatchObject([
       { photo: 'b', wants: 'in', because: null, failed: null },
       { photo: 'a', wants: 'out', because, failed: null },
     ]);
     expect(new Set(choices.map(({ action }) => action)).size).toBe(1);
+    expect(photos).toEqual(shoot.photos);
   });
 
   it('takes back what waited, with all that went with it', () => {
@@ -68,7 +72,93 @@ describe('withChoice', () => {
     ];
     const shoot = sampleShoot([chosen, behind], [], waits);
     const back = { photo: 'b', wants: 'out', because, instead: null } as const;
-    expect(withChoice(shoot, back, now).choices).toEqual([]);
+    expect(withChoice(shoot, back, working).choices).toEqual([]);
+    const done = withChoice(shoot, back, idle);
+    expect(done.choices).toEqual([]);
+    expect(done.photos.map(({ standing }) => standing.kind)).toEqual([
+      'picked',
+      'taken-out',
+    ]);
+  });
+
+  it('is done at once otherwise, and forgets the change written for it', () => {
+    const open = sampleMark('one', { photo: 'a' });
+    const handed = sampleMark('two', { photo: 'a', handedOverAt: now });
+    const shoot = sampleShoot([chosen, behind], [open, handed]);
+    const out = {
+      photo: 'a',
+      wants: 'out',
+      because: 'Too dark.',
+      instead: null,
+    } as const;
+    const done = withChoice(shoot, out, idle);
+    expect(done.choices).toEqual([]);
+    expect(done.photos[0]?.standing).toEqual({
+      kind: 'taken-out',
+      at: now,
+      because: 'Too dark.',
+    });
+    expect(done.stacks).toEqual(shoot.stacks);
+    expect(done.marks).toEqual([handed]);
+  });
+
+  it('puts a finished photo into the album there is, and others among the chosen', () => {
+    const weak = samplePhoto('d', {
+      standing: { kind: 'left-out', because: null },
+      edit: sampleEdit('d'),
+    });
+    const put = {
+      photo: 'd',
+      wants: 'in',
+      because: null,
+      instead: null,
+    } as const;
+    const unpublished = sampleShoot([weak]);
+    const published = {
+      ...unpublished,
+      album: { name: 'Lisbon', url: 'https://immich/albums/1', readAt: now },
+    };
+    expect(withChoice(unpublished, put, idle).photos[0]?.standing).toEqual({
+      kind: 'picked',
+    });
+    expect(withChoice(published, put, idle).photos[0]?.standing).toEqual({
+      kind: 'album',
+      url: 'https://immich/albums/1',
+      favorite: false,
+    });
+  });
+
+  it('lets the photo that comes instead stand for the stack', () => {
+    const shoot = sampleShoot([chosen, behind, further]);
+    const done = withChoice(shoot, swap, idle);
+    expect(done.stacks).toEqual([
+      { front: 'a', photos: ['a'] },
+      { front: 'b', photos: ['b', 'c'] },
+    ]);
+    expect(done.photos.map(({ standing }) => standing)).toEqual([
+      { kind: 'taken-out', at: now, because },
+      { kind: 'picked' },
+      { kind: 'similar', to: 'b', because: null },
+    ]);
+  });
+
+  it('lays a photo put in as well in a stack of its own', () => {
+    const shoot = sampleShoot([chosen, behind, further]);
+    const put = {
+      photo: 'b',
+      wants: 'in',
+      because: null,
+      instead: null,
+    } as const;
+    const done = withChoice(shoot, put, idle);
+    expect(done.stacks).toEqual([
+      { front: 'a', photos: ['a', 'c'] },
+      { front: 'b', photos: ['b'] },
+    ]);
+    expect(done.photos[1]).toMatchObject({
+      stack: 'b',
+      standing: { kind: 'picked' },
+    });
   });
 });
 

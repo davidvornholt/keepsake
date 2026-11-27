@@ -78,7 +78,12 @@ const hearting = (core: Core) => async (photo: string, favorite: boolean) => {
 const choosing = (core: Core) => async (wanted: NewChoice) => {
   const shoot = core.get().index?.shoot;
   if (shoot !== undefined) {
-    core.setShoot(withChoice(shoot, wanted, new Date().toISOString()));
+    core.setShoot(
+      withChoice(shoot, wanted, {
+        now: new Date().toISOString(),
+        isWorking: core.get().activity !== null,
+      }),
+    );
   }
   await core.send(() => sendChoice(core.name, wanted));
 };
