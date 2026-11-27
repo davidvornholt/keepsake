@@ -134,7 +134,6 @@ describe('the folders of photos on the page', () => {
     expect(exiftool?.args.at(-1)).toBe(odd);
   });
 
-  // Writing 3000 files takes a while on a slow machine.
   it('hands exiftool very many photos in runs it can be given', async () => {
     // Names near the longest a file system allows fill a run with few photos,
     // since each photo also costs the scan a few runs of other programs.
@@ -156,5 +155,5 @@ describe('the folders of photos on the page', () => {
     for (const files of named) {
       expect(Buffer.byteLength(files.join('\0'))).toBeLessThan(256 * 1024);
     }
-  }, 30_000);
+  }, 30_000); // Writing 3000 files takes a while on a slow machine.
 });
