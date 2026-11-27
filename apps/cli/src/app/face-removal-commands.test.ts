@@ -62,6 +62,7 @@ describe('keepsake edit, removing what is on a face', () => {
     herWithSticker();
     fakeModels.answers.places = {
       everywhere: false,
+      back: [],
       places: [
         { part: 0, what: sticker, isRemoval: true, box: onCheek },
         { part: 0, what: chair, isRemoval: true, box: beside },

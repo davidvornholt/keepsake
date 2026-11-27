@@ -25,12 +25,13 @@ const Removals = Schema.Struct({
   ),
 });
 
-const question = `What should the retoucher take away? Name only what anyone notices at a glance and wishes away:
+const question = `What should the retoucher take away? Name what pulls the eye away from what the photo is about and what anyone would rather not see in it:
 
-- Strangers who happen to be in a photo of someone or something else, such as a building, a garden, a view, an animal or a couple: those behind or beside the people it was taken of, and the few who stand or walk in front of a sight or along a path in it. Name all of them, or none. Leave them where they are part of what the photo shows: a crowd, a busy street, a market, a queue, a show, traffic, or people who do what the photo is about.
-- Things that got into the frame and hide, cut into or crowd what the photo is about: other people’s hands, heads and phones, lamps and spotlights, chairs, bins, boxes, cones, notices and prohibition signs, and a railing in front of a view.
+- Strangers who happen to be in a photo of someone or something else, such as a building, a garden, a view, an animal or a couple: those behind or beside the people it was taken of, and those who stand or walk in front of a sight or along a path in it. Name all of them, or none. Leave them where they are part of what the photo shows: a crowd, a busy street, a market, a queue, a show, traffic, or people who do what the photo is about.
+- Things that got into the frame and hide, cut into or crowd what the photo is about: other people’s hands, heads and phones, lamps, spotlights and floodlights, chairs, bins, boxes, cones, notices and prohibition signs.
+- What was put up for use or for a while and spoils the view: cranes, scaffolding and other building work with its fences and barriers, fences, railings and nets in front of a view, a sight or an animal, poles, masts and overhead wires, and metal decorations fixed to a building or a sight. Name them also where they are there for good, unless the photo is about them.
 
-Leave what belongs to the place or was built as part of it, what is hardly seen, plants, sky and water, and people the photo was taken of with everything they wear and carry. Most photos need nothing: the list is empty then.`;
+Keep what the photo is about and what tells where it was taken: its subject, the people it was taken of and those who are with them, such as people who pose, look at the camera or are together with them, with everything they wear and carry, the buildings, sights, streets, walls and landscape of the place, and the signs that name it. Keep plants, sky and water, and what is hardly seen. Many photos need nothing: the list is empty then.`;
 
 /** Finds what a photo is better without. */
 export const findRemovals = Effect.fn('findRemovals')(function* (
@@ -99,5 +100,5 @@ export const aboutRemoved = (
   removed.length === 0
     ? []
     : [
-        `The edit was asked to remove the following and to continue what is behind it, so that is no fault and changes neither the moment nor the place, the people or the text. It is a fault when any of it is still there, when a trace, a smear or a gap shows where it was, or when something else was put there:\n${listed(removed)}`,
+        `The edit was asked to remove the following and to continue what is behind it, so that is no fault and changes neither the moment nor the place, the people or the text, however much of the photo it took up. It is a fault when any of it is still there, when a trace, a smear or a gap shows where it was, or when something else was put there:\n${listed(removed)}`,
       ];

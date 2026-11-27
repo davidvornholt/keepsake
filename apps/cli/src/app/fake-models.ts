@@ -65,7 +65,7 @@ export const usualAnswers = {
   crops: { subject: box, facing: 'neither', belongings: [], crops: [] },
   choice: { best: 1, reason: 'The whole frame is best.' },
   removals: { remove: [] },
-  places: { everywhere: true, places: [] },
+  places: { everywhere: true, places: [], back: [] },
   choices: { places: [] },
   people: { people: [] },
   everyone: { everyone: [] },

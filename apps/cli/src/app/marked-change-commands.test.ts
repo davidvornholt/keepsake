@@ -20,13 +20,13 @@ const marked = { left: 0.1, top: 0.3, right: 0.4, bottom: 0.7 };
 const chair = 'Remove the chair';
 
 /** The owner marked a place of B and handed it over. */
-const markB = () =>
+const markB = (note = chair) =>
   Bun.write(
     shootFile('marks', 'one.json'),
     JSON.stringify({
       id: 'one',
       photo: 'B',
-      note: chair,
+      note,
       boxes: [marked],
       madeAt: '2026-04-01T10:00:00Z',
       handedOverAt: '2026-04-01T11:00:00Z',
@@ -41,6 +41,7 @@ const finalFile = () => shootFile('edits', 'B', 'B-keepsake.jpg');
 const chairAt = (box: object) => {
   fakeModels.answers.places = {
     everywhere: false,
+    back: [],
     places: [{ part: 0, what: chair, isRemoval: true, box }],
   };
   fakeModels.answers.choices = {
@@ -72,6 +73,28 @@ const outsideMark = (file: string): ReadonlyArray<number> => {
 };
 
 describe('keepsake edit, with a mark at places of a finished photo', () => {
+  it('edits the photo anew to bring back what it took out', async () => {
+    await pickLisbon();
+    const crane = 'the yellow crane behind the church';
+    const back = `“Back, please. Keep what was taken out before: ${crane}.”`;
+    fakeModels.answers.removals = ({ texts }) => ({
+      remove: texts.join(' ').includes(back)
+        ? []
+        : [{ what: crane, box: marked }],
+    });
+    await editLisbon('B');
+    await markB('Back, please');
+    fakeModels.answers.places = { everywhere: false, back: [1], places: [] };
+    const result = await editLisbon('--mark', 'one', '--budget', '5');
+    expect(result.notDone).toEqual([]);
+    expect(asked('places')[0]?.texts.join(' ')).toContain(`1. ${crane}`);
+    expect(fakeModels.edits).toHaveLength(2);
+    expect(isLocal(fakeModels.edits[1]?.prompt)).toBe(false);
+    expect(asked('removals')[1]?.texts.join(' ')).toContain(back);
+    expect(asked('crops')).toHaveLength(1);
+    expect(await shootJson('edits', 'B', 'removals.json')).toEqual([]);
+  });
+
   it('changes a large thing only inside the mark', async () => {
     await pickLisbon();
     await editLisbon('B');
@@ -225,7 +248,7 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await editLisbon('B');
     await Bun.write(finalFile(), 'the former edit');
     await markB();
-    fakeModels.answers.places = { everywhere: true, places: [] };
+    fakeModels.answers.places = { everywhere: true, places: [], back: [] };
     const result = await editLisbon('--mark', 'one', '--budget', '5');
     expect(result.notDone).toHaveLength(1);
     expect(fakeModels.edits).toHaveLength(1);
@@ -237,7 +260,8 @@ describe('keepsake edit, with a mark that can’t be kept to', () => {
     await editLisbon('B');
     await Bun.write(finalFile(), 'the former edit');
     await markB();
-    // What a change that stopped left behind, before marks were kept to.
+    // What a change that stopped left behind, before marks were kept to and
+    // before it was asked what is to come back.
     const correction = (name: string, value: object) =>
       Bun.write(
         shootFile('edits', 'B', 'correction', name),

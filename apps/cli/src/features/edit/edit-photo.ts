@@ -1,5 +1,11 @@
 import { Effect, FileSystem, Option, Schema } from 'effect';
-import { Box, EditRecord, type Photo, type Pick } from '../../shared/domain.ts';
+import {
+  Box,
+  EditRecord,
+  type Photo,
+  type Pick,
+  Removal,
+} from '../../shared/domain.ts';
 import type { EditFiles } from '../../shared/edit-files.ts';
 import { StoreFailed } from '../../shared/errors/errors.ts';
 import { withPhoto } from '../../shared/lock.ts';
@@ -235,16 +241,41 @@ const changeAll = Effect.fn('changeAll')(function* ({
   return { record, notDone: keptOnFaces(made) } satisfies Edited;
 });
 
+/** What the edit took out of a finished photo. */
+const takenOut = Effect.fn('takenOut')(function* ({ job, former }: ToChange) {
+  if (former.version === 'camera') {
+    return [];
+  }
+  const removals = yield* readJson(Schema.Array(Removal), job.files.removals);
+  return Option.getOrElse(removals, () => []).map(({ what }) => what);
+});
+
+/**
+ * The wish with what is to come back, which the edit of the camera's picture
+ * then keeps, however the user's words named it.
+ */
+const withBack = (wish: string, back: ReadonlyArray<string>): string =>
+  [
+    sentence(wish),
+    'Keep what was taken out before:',
+    ...back.map(sentence),
+  ].join(' ');
+
 /** Changes a finished photo, as little of it as the wish is about. */
 const change = Effect.fn('change')(function* (toChange: ToChange) {
   const { files, wish, areas } = toChange;
   yield* begin(toChange);
+  const removed = yield* takenOut(toChange);
   const found = yield* remembered(
     Change,
     files.places,
-    askReviewer(findPlaces(files.final, wish, areas)),
+    askReviewer(findPlaces(files.final, wish, areas, removed)),
   );
-  const { everywhere, places } = inMarked(found, areas);
+  const { everywhere, places, back } = inMarked(found, areas);
+  // What the finished photo no longer shows comes back only from the camera's.
+  if (back.length > 0) {
+    return yield* changeAll({ ...toChange, wish: withBack(wish, back) });
+  }
   if (!everywhere && places.length === 0) {
     const nothing =
       areas.length === 0

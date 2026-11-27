@@ -41,6 +41,10 @@ const Found = Schema.Struct({
       }),
     }),
   ),
+  back: Schema.Array(Schema.Int).annotate({
+    description:
+      'The numbers of what the edit took out that they want back, from 1',
+  }),
 });
 
 /** How much is shown around what the user marked, in fractions of it. */
@@ -63,10 +67,27 @@ const aboutMarked = (marked: number): string =>
     ? ''
     : ` They marked where: ${marked === 1 ? 'the last part shows what is' : `the last ${marked} parts show what is`} in their ${marked === 1 ? 'mark' : 'marks'}, with a little around it. They mean what is there, even where their words alone could mean something else, and drew the marks roughly.`;
 
-const question = (wish: string, marked: number) =>
+/**
+ * What the edit took out, which only an edit of the camera's picture can bring
+ * back as it was.
+ */
+const aboutTakenOut = (removed: ReadonlyArray<string>): string =>
+  removed.length === 0
+    ? ' Answer with an empty list under back.'
+    : `
+
+The edit took the following out of the photo, so it no longer shows them:
+${removed.map((what, index) => `${index + 1}. ${what}`).join('\n')}
+List under back the numbers of what they want back, and give no place for it.`;
+
+const question = (
+  wish: string,
+  marked: number,
+  removed: ReadonlyArray<string>,
+) =>
   `Whoever took this photo wants this to be changed: “${wish}”${aboutMarked(marked)}
 
-When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.`;
+When that is about the photo as a whole, say that it is everywhere and list no places. Otherwise list every place that has to change, and nothing they didn’t ask for. Go through every part, since nothing may be missed. Give a box for each place, around all that has to change there, with its shadow and its reflection, and as little else as possible. Give one box for small things that lie close together, and at most ${mostPlaces} boxes in all. For each, give the number of the part that shows all of it best, or 0 for the whole photo when no part does, and the box in fractions of the width and height of that part or photo from its top left corner. The list is empty when the photo shows nothing of what they want to be changed.${aboutTakenOut(removed)}`;
 
 /** A place in a photo and what has to be done there. */
 export const Place = Schema.Struct({
@@ -80,6 +101,13 @@ export const Change = Schema.Struct({
   /** Whether the photo as a whole has to change. */
   everywhere: Schema.Boolean,
   places: Schema.Array(Place),
+  /**
+   * What the edit took out and is to come back. Changes found before it was
+   * asked bring nothing back.
+   */
+  back: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed([])),
+  ),
 });
 
 const areClose = (left: Box, right: Box): boolean =>
@@ -162,13 +190,19 @@ export const inMarked = (
 ): typeof Change.Type =>
   areas.length === 0
     ? change
-    : { everywhere: false, places: inMarks(change.places, markedAreas(areas)) };
+    : {
+        everywhere: false,
+        places: inMarks(change.places, markedAreas(areas)),
+        back: change.back,
+      };
 
 /** Finds where a finished photo has to change for what the user wants. */
 export const findPlaces = Effect.fn('findPlaces')(function* (
   file: string,
   wish: string,
   areas: ReadonlyArray<Box>,
+  /** What the edit took out. */
+  removed: ReadonlyArray<string>,
 ) {
   const vision = yield* Vision;
   const { parts, pieces } = yield* inParts(file, markedAreas(areas));
@@ -176,7 +210,7 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
     role,
     name: 'places',
     schema: Found,
-    pieces: [...pieces, question(wish, areas.length)],
+    pieces: [...pieces, question(wish, areas.length, removed)],
   });
   const places = apart(
     answer.places.flatMap(({ part, what, isRemoval, box }) => {
@@ -187,12 +221,15 @@ export const findPlaces = Effect.fn('findPlaces')(function* (
         : [{ what: [what], isRemoval, box: inPhoto(whole, tidy) }];
     }),
   );
+  const back = [...new Set(answer.back)].flatMap(
+    (number) => removed[number - 1] ?? [],
+  );
   // Kept to the marks once they are read, also where they were found before.
   if (areas.length > 0) {
-    return { everywhere: false, places };
+    return { everywhere: false, places, back };
   }
   const changed = places.reduce((sum, { box }) => sum + coverage(box), 0);
   return answer.everywhere || changed > mostCoverage
-    ? { everywhere: true, places: [] }
-    : { everywhere: false, places };
+    ? { everywhere: true, places: [], back }
+    : { everywhere: false, places, back };
 });
