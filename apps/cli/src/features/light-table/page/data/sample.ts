@@ -41,6 +41,7 @@ export const samplePhoto = (
   id,
   takenAt: '2026-05-01T10:00:00+01:00',
   stack: id,
+  moment: id,
   camera: null,
   lens: null,
   focalLength: null,
@@ -56,7 +57,7 @@ export const samplePhoto = (
   ...change,
 });
 
-/** A photo that lies behind another, which shows the same. */
+/** A photo that lies behind another of its moment, which shows the same. */
 export const sampleBehind = (
   id: string,
   front: string,
@@ -64,6 +65,7 @@ export const sampleBehind = (
 ): PhotoView =>
   samplePhoto(id, {
     stack: front,
+    moment: front,
     standing: { kind: 'similar', to: front, because: null },
     ...change,
   });

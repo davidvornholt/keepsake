@@ -71,6 +71,8 @@ export type PhotoView = {
   readonly takenAt: string;
   /** The photo in front of its stack, which can be this one. */
   readonly stack: string;
+  /** The moment it was taken in, which can hold several stacks. One in none is its own. */
+  readonly moment: string;
   readonly camera: string | null;
   readonly lens: string | null;
   readonly focalLength: number | null;
