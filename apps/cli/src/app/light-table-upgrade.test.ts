@@ -10,6 +10,7 @@ import {
 import {
   change,
   handOver,
+  marksOf,
   pickedOf,
   send,
   shootOf,
@@ -30,10 +31,8 @@ const oldMark = (id: string, handedOverAt: string, answer: object | null) =>
     JSON.stringify({
       id,
       photo: 'B',
-      kind: 'change',
       note: 'Remove the chair',
       boxes: [],
-      other: null,
       madeAt: '2026-04-01T10:00:00.000Z',
       handedOverAt,
       answer,
@@ -108,5 +107,92 @@ describe('a shoot from before hand-overs had a file each', () => {
     expect(waiting.marks).toHaveLength(2);
     expect(waiting.album).not.toBeNull();
     expect(waiting.agreedDollars).toBe(1);
+  });
+});
+
+type Kinded = {
+  readonly id: string;
+  readonly kind: string;
+  readonly photo: string;
+  readonly note: string;
+  readonly other?: string;
+};
+
+/** A mark as keepsake saved it while marks had a kind. */
+const kindedMark = ({ id, other, ...mark }: Kinded) =>
+  Bun.write(
+    shootFile('marks', `${id}.json`),
+    JSON.stringify({
+      id,
+      ...mark,
+      boxes: [],
+      other: other ?? null,
+      madeAt: '2026-04-01T10:00:00.000Z',
+      answer: null,
+      seenAt: null,
+    }),
+  );
+
+describe('a shoot from when marks had a kind', () => {
+  const kinded = async () => {
+    await pickLisbon();
+    await kindedMark({
+      id: 'change',
+      kind: 'change',
+      photo: 'B',
+      note: 'Warmer.',
+    });
+    await kindedMark({
+      id: 'out',
+      kind: 'take-out',
+      photo: 'C',
+      note: 'Too dark.',
+    });
+    await kindedMark({ id: 'in', kind: 'put-in', photo: 'A2', note: '' });
+    await kindedMark({
+      id: 'swap',
+      kind: 'swap',
+      photo: 'A2',
+      note: 'Brighter.',
+      other: 'A1',
+    });
+    await Bun.write(
+      shootFile('hand-overs', 'swapped.json'),
+      JSON.stringify({
+        id: 'swapped',
+        at: pendingAt,
+        dollars: 1,
+        spentBefore: 0,
+        marks: ['swap'],
+        album: null,
+        fulfilledAt: null,
+      }),
+    );
+  };
+
+  it('keeps its changes, and leaves out what isn’t a change', async () => {
+    await kinded();
+    const all = await runOk('marks', 'lisbon', '--all');
+    expect(all.marks.map(({ id }: { id: string }) => id)).toEqual(['change']);
+    const waiting = await runOk('marks', 'lisbon');
+    expect(waiting.marks).toEqual([]);
+    const shown = await whileServing(marksOf);
+    expect(shown.map(({ id }: { id: string }) => id)).toEqual(['change']);
+  });
+
+  it('refuses a mark from a page that still has kinds', async () => {
+    await pickLisbon();
+    const statuses = await whileServing(async (address) => [
+      await statusOf(
+        send('PUT', `${address}/api/shoots/lisbon/marks`, {
+          ...change,
+          kind: 'take-out',
+          other: null,
+        }),
+      ),
+      await statusOf(send('PUT', `${address}/api/shoots/lisbon/marks`, change)),
+    ]);
+    expect(statuses).toEqual([400, 200]);
+    expect(await whileServing(marksOf)).toHaveLength(1);
   });
 });

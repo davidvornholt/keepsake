@@ -28,23 +28,14 @@ type Props = {
 };
 
 const Asked = ({ line }: { readonly line: Line }) => {
-  const { mark, other } = line;
-  const look = lookOf[mark.kind];
+  const { mark } = line;
   const boxes = mark.boxes.length;
   return (
     <div className="min-w-0 flex-1">
       <p className="flex flex-wrap items-center gap-x-2 text-lamp">
-        {look.said}
-        {other === null ? null : (
-          <>
-            <span className="text-quiet">in place of</span>
-            <PhotoLink className="h-8" how="push" photo={other.id} />
-          </>
-        )}
+        {lookOf.change.said}
       </p>
-      {mark.note === '' ? null : (
-        <p className="mt-0.5 text-print">{mark.note}</p>
-      )}
+      <p className="mt-0.5 text-print">{mark.note}</p>
       {boxes === 0 ? null : (
         <p className="type-edge mt-1 text-quiet">
           {count(boxes, 'box', 'boxes')} drawn on it
@@ -74,7 +65,7 @@ const State = ({ line, isOpen, isWorkedOn }: Omit<Props, 'going'>) => {
         </p>
       ) : null}
       <button
-        aria-label={`Take back: ${lookOf[mark.kind].said}, photo ${index.numberOf.get(mark.photo) ?? 0}`}
+        aria-label={`Take back: ${lookOf.change.said}, photo ${index.numberOf.get(mark.photo) ?? 0}`}
         className={`${quietButton} min-h-10 whitespace-nowrap`}
         disabled={mark.handedOverAt !== null}
         onClick={() => {
@@ -91,7 +82,7 @@ const State = ({ line, isOpen, isWorkedOn }: Omit<Props, 'going'>) => {
 
 export const LedgerRow = ({ line, going, isOpen, isWorkedOn }: Props) => {
   const { mark, photo } = line;
-  const look = lookOf[mark.kind];
+  const look = lookOf.change;
   const hasRing = !isOpen || going !== null;
   return (
     <li
@@ -109,7 +100,7 @@ export const LedgerRow = ({ line, going, isOpen, isWorkedOn }: Props) => {
           <WaxMark
             className="size-7"
             color={look.wax}
-            seed={seedTextOf(mark.photo, mark.kind)}
+            seed={seedTextOf(mark.photo, 'change')}
             shape={look.shape}
           />
           {hasRing ? (

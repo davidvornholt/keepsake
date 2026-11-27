@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { rm } from 'node:fs/promises';
+import { readdir, readlink, rm } from 'node:fs/promises';
 import process from 'node:process';
 import { BunServices } from '@effect/platform-bun';
 import { Effect } from 'effect';
@@ -20,6 +20,7 @@ import {
   statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
+import { publishingLayer } from './publishing.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -291,11 +292,27 @@ describe('who the light table answers', () => {
           keepsake: [],
         }).pipe(
           Effect.scoped,
+          Effect.provide(publishingLayer),
           Effect.provide(fakeToolsLayer),
           Effect.provide(BunServices.layer),
         ),
       ),
     );
     await expect(serving).rejects.toThrow('Leave out --port');
+  });
+});
+
+describe('a light table that is served many times', () => {
+  it('leaves no file watchers behind, which tests would run out of', async () => {
+    const watchers = async () => {
+      const fds = await readdir('/proc/self/fd');
+      const links = await Promise.all(
+        fds.map((fd) => readlink(`/proc/self/fd/${fd}`).catch(() => '')),
+      );
+      return links.filter((link) => link === 'anon_inode:inotify').length;
+    };
+    const before = await watchers();
+    await whileServing((address) => fetch(address));
+    expect(await watchers()).toBe(before);
   });
 });

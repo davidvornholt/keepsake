@@ -23,6 +23,15 @@ import {
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
 
+/**
+ * A shoot whose chosen photos are edited where they are marked, so that a
+ * mark is a change, which is handed over without an order.
+ */
+const markable = async () => {
+  await pickLisbon();
+  await editLisbon('A1', 'B');
+};
+
 const serving = <A>(visit: (address: string) => Promise<A>) =>
   whileServing(visit, { agent: 'start-agent' });
 
@@ -67,7 +76,7 @@ const started = async (address: string) => {
 };
 
 describe('the agent', () => {
-  beforeEach(pickLisbon);
+  beforeEach(markable);
 
   it('is started when something is handed over', async () => {
     const link = 'https://example.com/threads/1';
@@ -167,7 +176,7 @@ describe('the agent', () => {
 const settle = () => Bun.sleep(100);
 
 describe('the agent for a hand-over', () => {
-  beforeEach(pickLisbon);
+  beforeEach(markable);
 
   it('isn’t started for what a waiting agent took', async () => {
     const waiting = runOk('marks', 'lisbon', '--wait');
@@ -234,7 +243,7 @@ describe('the agent for a hand-over', () => {
 });
 
 describe('an agent no program said it started', () => {
-  beforeEach(pickLisbon);
+  beforeEach(markable);
 
   it('is started again for what the page took, while an agent waits', async () => {
     let tries = 0;
@@ -366,7 +375,7 @@ describe('the favorites on the light table', () => {
   });
 
   it('are only in the album', async () => {
-    await pickLisbon();
+    await markable();
     expect(await whileServing((address) => favor(address, 'B', true))).toBe(
       400,
     );

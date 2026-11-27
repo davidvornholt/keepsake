@@ -9,6 +9,8 @@ import { removeForgotten } from './new-shoot.ts';
 // biome-ignore lint/correctness/noUnresolvedImports: Bun turns an imported page into a bundle to serve
 import page from './page/index.html';
 import { makePreparations } from './preparation.ts';
+import type { Publishing } from './publishing.ts';
+import { makeSettling } from './settling.ts';
 import { makeShoots } from './shoots.ts';
 
 const badRequest = 400;
@@ -38,7 +40,8 @@ type Serving = {
 type Needed =
   | FileSystem.FileSystem
   | Path.Path
-  | ChildProcessSpawner.ChildProcessSpawner;
+  | ChildProcessSpawner.ChildProcessSpawner
+  | Publishing;
 
 type Failure = { readonly _tag: string; readonly message: string };
 
@@ -64,6 +67,13 @@ const toThePage =
       : new Response(null, { status: forbidden });
   };
 
+/** Whether the server couldn't listen because the address is taken. */
+const isInUse = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  error.code === 'EADDRINUSE';
+
 const statuses = new Map([
   ['InvalidInput', badRequest],
   ['StepMissing', notFound],
@@ -76,12 +86,11 @@ const failure = ({ _tag, message }: Failure) =>
 const routesOf = Effect.fn('routesOf')(function* (
   has: Has,
   address: URL | undefined,
+  writing: Semaphore.Semaphore,
 ) {
   const { shoots } = has;
   const answers = makeAnswers(has);
   const run = Effect.runPromiseWith(yield* Effect.context<Needed>());
-  // One change at a time, since some read a file and write it again.
-  const writing = yield* Semaphore.make(1);
   const answer = (work: Effect.Effect<Response, Failure, Needed>) =>
     run(work.pipe(Effect.catch((error) => Effect.succeed(failure(error)))));
   const change = (work: Effect.Effect<Response, Failure, Needed>) =>
@@ -130,6 +139,16 @@ const routesOf = Effect.fn('routesOf')(function* (
     '/api/shoots/:shoot/marks/:mark/seen': {
       POST: ours<'/api/shoots/:shoot/marks/:mark/seen'>(({ params }) =>
         change(answers.seen(params.shoot, params.mark)),
+      ),
+    },
+    '/api/shoots/:shoot/choices': {
+      POST: ours<'/api/shoots/:shoot/choices'>((request) =>
+        change(answers.choose(request.params.shoot, request)),
+      ),
+    },
+    '/api/shoots/:shoot/choices/:action': {
+      DELETE: ours<'/api/shoots/:shoot/choices/:action'>(({ params }) =>
+        change(answers.dismiss(params.shoot, params.action)),
       ),
     },
     '/api/shoots/:shoot/hand-over': {
@@ -183,13 +202,26 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
   const shoots = yield* makeShoots(agent !== undefined, workers);
   const preparations = yield* makePreparations(keepsake);
   const folders = yield* makeFolders(photos);
+  // One change at a time, since some read a file and write it again.
+  const writing = yield* Semaphore.make(1);
+  const settling = yield* makeSettling(writing);
   const routes = yield* routesOf(
-    { shoots, folders, preparations, workers, agent, launching: new Set() },
+    {
+      shoots,
+      folders,
+      preparations,
+      settling,
+      workers,
+      agent,
+      launching: new Set(),
+    },
     address,
+    writing,
   );
   yield* removeForgotten;
   yield* Effect.forkScoped(shoots.prepare);
   yield* preparations.resume;
+  yield* settling.resume;
   return yield* Effect.acquireRelease(
     Effect.try({
       try: () =>
@@ -197,14 +229,21 @@ export const serveLightTable = Effect.fn('serveLightTable')(function* ({
           hostname: '127.0.0.1',
           port,
           idleTimeout: patience,
-          // The page reloads while it is being worked on.
-          // biome-ignore lint/style/noProcessEnv: the build puts its value here, so the binary needs no environment
-          development: process.env.NODE_ENV !== 'production',
+          // Out of development, Bun would share a port that is in use.
+          reusePort: false,
+          // The page reloads while it is being worked on. Not in tests,
+          // which serve it often: Bun keeps each server's file watchers.
+          development: !['production', 'test'].includes(
+            // biome-ignore lint/style/noProcessEnv: the build puts its value here, so the binary needs no environment
+            process.env.NODE_ENV ?? '',
+          ),
           routes,
         }),
-      catch: () =>
+      catch: (error) =>
         new InvalidInput({
-          message: `Something else is using port ${port}. Leave out --port to use any free one.`,
+          message: isInUse(error)
+            ? `Something else is using port ${port}. Leave out --port to use any free one.`
+            : `The page couldn’t be served: ${error instanceof Error ? error.message : String(error)}`,
         }),
     }),
     (server) => Effect.promise(() => server.stop(true)),

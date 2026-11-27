@@ -134,7 +134,7 @@ const workOf = (ledger: Ledger, chosen: number, each: string): string => {
 const Order = ({ ledger }: { readonly ledger: Ledger }) => {
   const { index } = useShootContext();
   const each = dollarsOf(index.shoot.dollars.perEdit);
-  const chosen = ledger.isFirst ? ledger.chosenAfter : ledger.picked;
+  const chosen = ledger.picked;
   return (
     <div className="max-w-[36rem] pb-5 text-print">
       <p>
@@ -169,8 +169,8 @@ const Lists = ({
         <section aria-label="To hand over">
           {both || ledger.ordersAlbum ? (
             <h2 className="type-edge pt-1 pb-2 text-quiet">
-              {ledger.ordersAlbum && ledger.isFirst
-                ? 'Your changes to the choice'
+              {ledger.ordersAlbum
+                ? 'Your wishes for the edits'
                 : 'To hand over'}
             </h2>
           ) : null}
@@ -347,13 +347,13 @@ const Sheet = ({
           !ledger.ordersAlbum &&
           index.shoot.ordered === null ? (
             <p className="max-w-[36rem] text-print">
-              No photo carries a mark. Mark what you want different, and an
-              agent does it:{' '}
+              No photo carries a mark. Mark what should change with{' '}
+              <Named letter="C" says="Change" />, and an agent edits it.{' '}
               <span className="text-quiet">
-                <Named letter="C" says="Change" />,{' '}
                 <Named letter="X" says="Take out" />,{' '}
                 <Named letter="P" says="Put in" /> and{' '}
-                <Named letter="S" says="Use this one instead" />.
+                <Named letter="S" says="Use this one instead" /> happen at once
+                and cost nothing.
               </span>
             </p>
           ) : null}

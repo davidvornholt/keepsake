@@ -1,4 +1,4 @@
-import { DateTime, Effect, FileSystem, Option } from 'effect';
+import { DateTime, Effect, FileSystem, Option, Schema } from 'effect';
 import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
 import {
   type OpenShoot,
@@ -22,6 +22,18 @@ const storeFailed = (error: { readonly message: string }) =>
   new StoreFailed({ message: `Could not use the marks: ${error.message}` });
 
 /**
+ * A mark as it may be saved: marks had a kind once, and those of the kinds
+ * that are done on the page now are no longer for an agent.
+ */
+const StoredMark = Schema.Struct({
+  ...SavedMark.fields,
+  kind: Schema.optionalKey(Schema.String),
+});
+
+const isChange = ({ kind }: typeof StoredMark.Type) =>
+  kind === undefined || kind === 'change';
+
+/**
  * Every mark of a shoot, oldest first. A mark is handed over once a hand-over
  * that names it is saved, and not before.
  */
@@ -35,7 +47,7 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
   );
   const marks = yield* Effect.forEach(
     names.filter((name) => name.endsWith(extension) && !name.startsWith('.')),
-    (name) => readJson(SavedMark, `${files.marks}/${name}`),
+    (name) => readJson(StoredMark, `${files.marks}/${name}`),
     { concurrency: 'unbounded' },
   );
   const handedAt = new Map(
@@ -46,8 +58,9 @@ export const readMarks = Effect.fn('readMarks')(function* (files: ShootFiles) {
   return (
     marks
       .flatMap(Option.toArray)
+      .filter(isChange)
       .map(
-        (mark): Mark => ({
+        ({ kind: _, ...mark }): Mark => ({
           ...mark,
           handedOverAt: handedAt.get(mark.id) ?? null,
         }),
@@ -100,18 +113,14 @@ export const makeMark = Effect.fn('makeMark')(function* (
   open: OpenShoot,
   wanted: NewMark,
 ) {
-  const { photo, kind, note, boxes, other } = wanted;
-  const needsOther = kind === 'swap';
-  if (
-    !open.photos.has(photo) ||
-    (needsOther ? other === null || !open.photos.has(other) : other !== null)
-  ) {
+  const { photo, note, boxes } = wanted;
+  if (!open.photos.has(photo)) {
     return yield* new InvalidInput({
-      message: 'The mark is about photos the shoot doesn’t have.',
+      message: 'The mark is about a photo the shoot doesn’t have.',
     });
   }
   // An agent can't know what to change, also where boxes show the place.
-  if (kind === 'change' && note.trim() === '') {
+  if (note.trim() === '') {
     return yield* new InvalidInput({ message: 'Say what should change.' });
   }
   const all = yield* readMarks(open.files);
@@ -119,10 +128,8 @@ export const makeMark = Effect.fn('makeMark')(function* (
   const mark: Mark = {
     id: crypto.randomUUID().replaceAll('-', '').slice(0, idLength),
     photo,
-    kind,
     note: note.trim(),
     boxes,
-    other,
     madeAt: yield* now,
     handedOverAt: null,
     answer: null,
@@ -160,6 +167,20 @@ export const takeBack = Effect.fn('takeBack')(function* (
     });
   }
   yield* remove(files, mark);
+});
+
+/**
+ * Lets go of what the owner wrote about a photo and didn't hand over, as
+ * when the photo went out of the album.
+ */
+export const withdrawOpen = Effect.fn('withdrawOpen')(function* (
+  files: ShootFiles,
+  photo: string,
+) {
+  const open = (yield* readMarks(files)).filter(
+    (mark) => mark.photo === photo && isOpen(mark),
+  );
+  yield* Effect.forEach(open, (mark) => remove(files, mark));
 });
 
 /** Notes what an agent did about a mark. */

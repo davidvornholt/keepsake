@@ -82,6 +82,23 @@ const wanted: ReadonlyArray<Wanted> = [
     seed: 19,
   },
   {
+    name: 'cascais',
+    title: 'Cascais',
+    about: 'Cascais, October 2026',
+    month: '2026-10',
+    step: 'edited',
+    seed: 29,
+  },
+  {
+    name: 'nazare',
+    title: 'Nazaré',
+    about: 'Nazaré, November 2026',
+    month: '2026-11',
+    step: 'edited',
+    seed: 31,
+    failedTakeOut: 'Immich did not take it out of the album.',
+  },
+  {
     name: 'tomar',
     title: 'Tomar',
     about: 'Tomar, November 2026',

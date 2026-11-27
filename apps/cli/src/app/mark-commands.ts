@@ -3,6 +3,7 @@ import { Argument, Command, Flag } from 'effect/cli';
 import {
   agreedDollars,
   claimUnsettled,
+  isForAgent,
   type Only,
   orderAmong,
   unsettledOf,
@@ -52,13 +53,9 @@ const shown = Effect.fn('shown')(function* (
   known: Standings,
   toShow: ReadonlyArray<Mark>,
 ) {
-  return yield* Effect.forEach(toShow, ({ photo, other, ...mark }) =>
+  return yield* Effect.forEach(toShow, ({ photo, ...mark }) =>
     Effect.gen(function* () {
-      return {
-        ...mark,
-        ...(yield* aboutPhoto(open, known, photo)),
-        other: other === null ? null : yield* aboutPhoto(open, known, other),
-      };
+      return { ...mark, ...(yield* aboutPhoto(open, known, photo)) };
     }),
   );
 });
@@ -106,7 +103,8 @@ const listed = Effect.fn('listed')(function* (
     handOvers: unsettled.map(({ id }) => id),
     found: every.filter(
       (mark) =>
-        (all || isWaiting(mark)) && (only === null || named.has(mark.id)),
+        (all || (isWaiting(mark) && isForAgent(known)(mark))) &&
+        (only === null || named.has(mark.id)),
     ),
     album: yield* ordered(open, known, only),
     agreedDollars: yield* agreedDollars(open.files, known, only),

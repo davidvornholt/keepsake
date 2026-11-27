@@ -1,22 +1,16 @@
 import { useEffect, useState } from 'react';
-import type {
-  Box,
-  MarkKind,
-  NewMark,
-  PhotoView,
-  Picture,
-} from '../../contract.ts';
+import type { Box, NewMark, PhotoView, Picture } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { favoriteHint } from '../app/use-table.ts';
-import { wantedOf } from '../data/changes.ts';
 import { isFavorite, markedIn, type Pile } from '../data/derive.ts';
 import {
   actionFor,
-  kindOfKey,
   offeredFor,
-  type Writing,
+  pencilOfKey,
+  undoOf,
   writingFor,
 } from '../marks/act.ts';
+import type { Pencil } from '../marks/kinds.ts';
 import type { Keys } from '../ui/keys.ts';
 import type { Version } from './compare.tsx';
 import type { Draft } from './composer.tsx';
@@ -110,31 +104,12 @@ const draftOf = ({ note, boxes }: NewMark): Draft => ({
   boxes: boxes.map((box) => ({ box, since: longAgo })),
 });
 
-/**
- * The put-in or swap that a wish goes with: the open one, or the one the
- * wish was written for when keepsake didn't get either, which saving the
- * wish makes again.
- */
-const wishedOf = (
-  writing: Writing | null,
-  unsaved: NewMark | null,
-): NewMark | null => {
-  if (writing?.into === 'wish') {
-    return wantedOf(writing.mark);
-  }
-  if (writing === null && unsaved !== null && unsaved.kind !== 'change') {
-    return unsaved;
-  }
-  return null;
-};
-
 /** The change that is being written, and what the owner does with it. */
 export const useComposing = (photo: PhotoView) => {
   const { index, state, store } = useShootContext();
   const writing = writingFor(index, photo);
   const saved = writing?.mark ?? null;
   const unsaved = state.unsaved[photo.id] ?? null;
-  const wished = wishedOf(writing, unsaved);
   /** What is written when the change is begun: what wasn't saved, if any. */
   const fresh = (): Draft =>
     unsaved === null
@@ -182,8 +157,9 @@ export const useComposing = (photo: PhotoView) => {
   return {
     draft,
     setDraft,
-    isWish: wished !== null,
-    canDraw: draft !== null && wished === null,
+    // The first edit of a photo finds its own places, so only a finished
+    // photo has places to show.
+    canDraw: draft !== null && photo.edit !== null,
     isSaved: (saved?.note ?? '') !== '',
     selected,
     select: setSelected,
@@ -219,25 +195,17 @@ export const useComposing = (photo: PhotoView) => {
       if (draft === null) {
         return;
       }
-      const note = draft.note.trim();
-      if (wished !== null) {
-        store.make({ ...wished, note });
-      } else if (writing?.into === 'change') {
+      if (writing !== null) {
         store.make({
           photo: photo.id,
-          kind: 'change',
-          note,
+          note: draft.note.trim(),
           boxes: draft.boxes.map(({ box }) => box),
-          other: null,
         });
       }
       end();
     },
     remove: () => {
-      if (writing?.into === 'wish') {
-        // The photo still comes in, without the wish.
-        store.make({ ...wantedOf(writing.mark), note: '' });
-      } else if (saved !== null) {
+      if (saved !== null) {
         store.takeBack(saved).catch(() => undefined);
       }
       end();
@@ -309,17 +277,16 @@ export const useMarking = (
         store.hint(favoriteHint);
       }
     },
-    onKind: (kind: MarkKind) => {
-      const action = actionFor(index, photo, kind);
+    onPencil: (pencil: Pencil) => {
+      const action = actionFor(index, photo, pencil);
       if (action === null) {
         store.hint(offeredFor(index, photo));
       } else if (action.does === 'compose') {
         doing.shown.now();
         doing.composing.begin();
-      } else if (action.does === 'take-back') {
-        store.takeBack(action.mark).catch(() => undefined);
       } else {
-        store.make(action.wanted);
+        const back = undoOf(photo, action.wanted, index);
+        store.choose(action.wanted, back).catch(() => undefined);
         lookedAt();
       }
     },
@@ -344,8 +311,8 @@ export const keysOf = (
 ): Keys => {
   const { shown, marking, photo } = doing;
   const marks: Keys = [...markKeys].map((key) => {
-    const kind = kindOfKey(key);
-    return [key, kind === null ? undefined : () => marking.onKind(kind)];
+    const pencil = pencilOfKey(key);
+    return [key, pencil === null ? undefined : () => marking.onPencil(pencil)];
   });
   const inPile = (step: -1 | 1) => () => {
     const next = stepInPile(around.pile, photo.id, step);

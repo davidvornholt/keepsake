@@ -5,10 +5,8 @@ import { checkPrices, edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel, imageModelAccess } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
-import {
-  publish as publishShoot,
-  tellOutdated,
-} from '../features/publish/publish.ts';
+import { tellOutdated } from '../features/publish/outdated.ts';
+import { publish as publishShoot } from '../features/publish/publish.ts';
 import { scan } from '../features/scan/scan.ts';
 import { ModelFailed } from '../shared/errors/errors.ts';
 import { askReviewer } from '../shared/review-vision.ts';

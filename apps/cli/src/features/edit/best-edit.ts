@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { tidyBox } from '../../shared/boxes.ts';
 import { EditRecord, type Pick } from '../../shared/domain.ts';
+import { withPhoto } from '../../shared/lock.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { askReviewer } from '../../shared/review-vision.ts';
 import { starsFor } from '../../shared/stars.ts';
@@ -179,7 +180,7 @@ export const writeEdit = Effect.fn('writeEdit')(function* (
       yield* writeBytes(draft, cropped);
       yield* finish(draft, job.camera, draft, caption);
     }),
-  );
+  ).pipe(withPhoto(job.open.files, job.photo.id));
   const record: EditRecord = {
     photo: job.photo.id,
     version: best === null ? 'camera' : 'ai',

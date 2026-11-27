@@ -6,6 +6,7 @@ import {
   type Verdict,
 } from '../../shared/domain.ts';
 import { StepMissing } from '../../shared/errors/errors.ts';
+import { withChoice } from '../../shared/lock.ts';
 import { inSteps } from '../../shared/progress.ts';
 import { type OpenShoot, readJson, writeJson } from '../../shared/store.ts';
 import { verdicts } from '../../shared/verdicts.ts';
@@ -134,8 +135,7 @@ type PickOptions = {
 
 const samePhotos = Schema.toEquivalence(Schema.Array(Pick));
 
-/** Chooses the photos worth editing. */
-export const pick = Effect.fn('pick')(function* (
+const pickNow = Effect.fn('pick')(function* (
   open: OpenShoot,
   options: PickOptions,
 ) {
@@ -193,3 +193,10 @@ export const pick = Effect.fn('pick')(function* (
     notJudged: open.moments.length - judged.length,
   };
 });
+
+/**
+ * Chooses the photos worth editing. The owner's choices on the page wait
+ * meanwhile, since this one replaces the choice.
+ */
+export const pick = (open: OpenShoot, options: PickOptions) =>
+  pickNow(open, options).pipe(withChoice(open.files));

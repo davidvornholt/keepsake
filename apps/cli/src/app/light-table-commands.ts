@@ -10,6 +10,7 @@ import {
   optionalString,
 } from './command-inputs.ts';
 import { emit } from './output.ts';
+import { publishingLayer } from './publishing.ts';
 
 const highestPort = 65_535;
 const mostFolders = 20;
@@ -74,7 +75,7 @@ export const serve = Command.make(
       yield* saveAddress(url, reachedAt !== undefined);
       yield* emit({ url });
       return yield* Effect.never;
-    }).pipe(Effect.scoped),
+    }).pipe(Effect.scoped, Effect.provide(publishingLayer)),
 ).pipe(
   Command.withDescription(
     'Serve the light table, a page on this machine where the owner of the photos sees what was chosen and why, compares each edit with the camera’s picture, marks what should change, and rates photos. Runs until it is stopped.',

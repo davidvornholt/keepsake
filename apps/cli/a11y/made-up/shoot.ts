@@ -33,6 +33,8 @@ export type Wanted = {
   readonly month: string;
   /** Makes its pictures different from those of other shoots. */
   readonly seed: number;
+  /** Why taking out the photo in front of D60 failed, when the page tried. */
+  readonly failedTakeOut?: string;
 };
 
 const model = 'claude/claude-opus-5-5';
@@ -286,7 +288,6 @@ const writePublished = (root: string, wanted: Wanted) =>
       write(root, join('marks', `${mark.id}.json`), {
         ...mark,
         photo: shownOf(mark.photo),
-        other: mark.other === null ? null : shownOf(mark.other),
       }),
     ),
     write(root, join('hand-overs', 'marks.json'), {
@@ -362,6 +363,20 @@ export const writeShoot = async (shoots: string, wanted: Wanted) => {
             maximum: null,
             stopped: wanted.stopped,
           }),
+        ]),
+    ...(wanted.failedTakeOut === undefined
+      ? []
+      : [
+          write(root, 'choices.json', [
+            {
+              action: 'failed',
+              photo: shownOf('D60'),
+              wants: 'out',
+              because: 'You didn’t want it in the album.',
+              madeAt: readAt,
+              failed: wanted.failedTakeOut,
+            },
+          ]),
         ]),
     ...(wanted.toRate === true
       ? [

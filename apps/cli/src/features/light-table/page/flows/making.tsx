@@ -215,7 +215,7 @@ const Chosen = ({ sheet }: { readonly sheet: Place }) => {
         </h2>
         <p className="mt-1.5 text-quiet">
           Go over the choice: take out what you don’t want, put in what you
-          miss. Nothing is edited until you order the album.
+          miss, both at once. Nothing is edited until you order the album.
         </p>
       </div>
       <div className="flex items-center gap-x-4">

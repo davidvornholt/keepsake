@@ -1,16 +1,15 @@
 import type { Mark, PhotoView } from '../../contract.ts';
-import { chosenAfter, type Index } from '../data/derive.ts';
+import { type Index, isChosen } from '../data/derive.ts';
 
-// The marks an agent is to act on, as a list to go over before they are
-// handed over, and to follow afterwards; and what handing over costs.
+// The changes an agent is to act on, as a list to go over before they are
+// handed over, and to follow afterwards; and what handing over costs, with
+// the order of the chosen photos' edits.
 
 export type Line = {
   readonly mark: Mark;
   readonly photo: PhotoView;
   /** Whether acting on it means one more photo to edit, which costs money. */
   readonly costs: boolean;
-  /** The photo a swap takes out. */
-  readonly other: PhotoView | null;
 };
 
 export type Ledger = {
@@ -34,10 +33,6 @@ export type Ledger = {
   /** The photos edited when everything is handed over, and about what they cost. */
   readonly edits: number;
   readonly dollars: number;
-  /** How many photos are chosen now, once the open marks are acted on, and at most. */
-  readonly chosen: number;
-  readonly chosenAfter: number;
-  readonly limit: number | null;
 };
 
 const none: ReadonlySet<string> = new Set();
@@ -49,58 +44,48 @@ const isPicked = (photo: PhotoView | null | undefined): boolean =>
 const awaitsEdit = (photo: PhotoView | null | undefined): boolean =>
   isPicked(photo) && photo?.edit === null;
 
-/** Whether a mark means one more photo to edit. */
-const costsOf = ({ mark, photo }: Omit<Line, 'costs'>): boolean => {
-  if (mark.kind === 'change') {
-    // A wish for a photo that isn't edited yet is part of its first edit.
-    return !awaitsEdit(photo);
-  }
-  // A wish for a photo that has an edit already has it edited again.
-  return (
-    (mark.kind === 'put-in' || mark.kind === 'swap') &&
-    (photo.edit === null || mark.note !== '')
-  );
-};
+/** Whether a change means one more photo to edit. */
+const costsOf = ({ photo }: Omit<Line, 'costs'>): boolean =>
+  // A wish for a photo that isn't edited yet is part of its first edit.
+  !awaitsEdit(photo);
 
-/**
- * The photos that wait for their first edit once the open marks are acted on:
- * the chosen ones when the album is ordered, without those taken out, and with
- * those that come in.
- */
+/** The photos that wait for their first edit: the chosen ones, once the album is ordered. */
 const toEditOf = (
   { shoot }: Index,
-  open: ReadonlyArray<Line>,
   ordersAlbum: boolean,
-): ReadonlySet<string> => {
-  const toEdit = new Set(
+): ReadonlySet<string> =>
+  new Set(
     ordersAlbum ? shoot.photos.filter(awaitsEdit).map(({ id }) => id) : [],
   );
-  for (const { mark, photo, other } of open) {
-    if (mark.kind === 'take-out' || mark.kind === 'swap') {
-      toEdit.delete(mark.kind === 'swap' ? (other?.id ?? '') : photo.id);
-    }
-    if (
-      (mark.kind === 'put-in' || mark.kind === 'swap') &&
-      photo.edit === null
-    ) {
-      toEdit.add(photo.id);
-    }
-  }
-  return toEdit;
-};
 
-const linesOf = (index: Index): ReadonlyArray<Line> => {
+/**
+ * Whether a wish for the first edit of a photo waits for the photo to be
+ * ordered: it is done with the photo's edit, which only an order pays for.
+ */
+const awaitsOrder = (
+  { shoot }: Index,
+  ordersAlbum: boolean,
+  { mark, photo }: Omit<Line, 'costs'>,
+): boolean =>
+  mark.handedOverAt === null &&
+  awaitsEdit(photo) &&
+  !ordersAlbum &&
+  !(shoot.ordered?.photos.includes(photo.id) ?? false);
+
+const linesOf = (index: Index, ordersAlbum: boolean): ReadonlyArray<Line> => {
   const { shoot, byId, numberOf } = index;
   return shoot.marks
     .filter((mark) => mark.answer === null)
     .flatMap((mark): ReadonlyArray<Line> => {
       const photo = byId.get(mark.photo);
-      if (photo === undefined) {
+      // A photo that went out of the album is edited no more.
+      if (photo === undefined || !isChosen(photo)) {
         return [];
       }
-      const other = mark.other === null ? null : (byId.get(mark.other) ?? null);
-      const line = { mark, photo, other };
-      return [{ ...line, costs: costsOf(line) }];
+      const line = { mark, photo };
+      return awaitsOrder(index, ordersAlbum, line)
+        ? []
+        : [{ ...line, costs: costsOf(line) }];
     })
     .toSorted(
       (left, right) =>
@@ -119,13 +104,13 @@ export const ledgerOf = (
   held: ReadonlySet<string> = none,
 ): Ledger => {
   const { shoot } = index;
-  const lines = linesOf(index);
+  const picked = shoot.photos.filter(isPicked).length;
+  const ordersAlbum = picked > 0 && shoot.ordered === null;
+  const lines = linesOf(index, ordersAlbum);
   const isOpen = ({ mark }: Line) =>
     mark.handedOverAt === null || held.has(mark.id);
   const open = lines.filter(isOpen);
-  const picked = shoot.photos.filter(isPicked).length;
-  const ordersAlbum = picked > 0 && shoot.ordered === null;
-  const toEdit = toEditOf(index, open, ordersAlbum);
+  const toEdit = toEditOf(index, ordersAlbum);
   const firstEdits = shoot.photos.filter(
     (photo) => awaitsEdit(photo) && toEdit.has(photo.id),
   ).length;
@@ -146,12 +131,6 @@ export const ledgerOf = (
     firstEdits,
     edits,
     dollars: edits * shoot.dollars.perEdit,
-    chosen: index.chosen,
-    chosenAfter: chosenAfter(
-      index,
-      open.map(({ mark }) => mark),
-    ),
-    limit: shoot.picked?.maximum ?? null,
   };
 };
 

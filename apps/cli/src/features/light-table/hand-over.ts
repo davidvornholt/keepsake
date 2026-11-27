@@ -1,7 +1,7 @@
 import { DateTime, Effect, Schema } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import type { Standings } from '../../shared/standing.ts';
-import type { ShootFiles } from '../../shared/store.ts';
+import { exists, type ShootFiles } from '../../shared/store.ts';
 import {
   claim,
   claimOn,
@@ -27,6 +27,24 @@ const pickedOf = (known: Standings): ReadonlyArray<string> =>
     kind === 'picked' ? [photo] : [],
   );
 
+/**
+ * Whether what the owner wrote about a photo is for an agent: a photo that
+ * went out of the album is edited no more.
+ */
+export const isForAgent =
+  (known: Standings) =>
+  ({ photo }: Mark): boolean => {
+    const kind = known.of.get(photo)?.kind;
+    return kind === 'album' || kind === 'picked';
+  };
+
+/** Whether a photo has a finished edit, which a change changes. */
+const isEdited = (files: ShootFiles, photo: string) =>
+  Effect.gen(function* () {
+    const edit = files.edit(photo);
+    return (yield* exists(edit.record)) && (yield* exists(edit.final));
+  });
+
 const isOrder = ({ album, fulfilledAt }: HandOverRecord) =>
   album !== null && fulfilledAt === null;
 
@@ -41,8 +59,11 @@ const handOversOf = Effect.fn('handOversOf')(function* (
   const picked = new Set(pickedOf(known));
   const at = DateTime.formatIso(yield* DateTime.now);
   return yield* Effect.forEach(yield* readHandOvers(files), (record) => {
+    // Where the photos stood before an order was made says nothing of it.
     const isDone =
-      isOrder(record) && !(record.album ?? []).some((one) => picked.has(one));
+      isOrder(record) &&
+      Date.parse(record.at) < known.at &&
+      !(record.album ?? []).some((one) => picked.has(one));
     if (!isDone) {
       return Effect.succeed(record);
     }
@@ -72,7 +93,9 @@ export const unsettledOf = Effect.fn('unsettledOf')(function* (
   only: Only = null,
 ) {
   const waiting = new Set(
-    (yield* readMarks(files)).filter(isWaiting).map(({ id }) => id),
+    (yield* readMarks(files))
+      .filter((mark) => isWaiting(mark) && isForAgent(known)(mark))
+      .map(({ id }) => id),
   );
   return (yield* handOversOf(files, known)).filter(
     (record) =>
@@ -183,11 +206,20 @@ export const handOver = Effect.fn('handOver')(function* (
   known: Standings,
   wanted: HandOver,
 ) {
-  const marks = (yield* readMarks(files)).filter(isOpen);
   const picked = pickedOf(known);
-  const isOrdered = (yield* orderOf(files, known)) !== null;
-  const orderable = isOrdered || picked.length === 0 ? null : picked;
+  const order = yield* orderOf(files, known);
+  const orderable = order !== null || picked.length === 0 ? null : picked;
   const { album } = wanted;
+  // A wish for the first edit of a photo is done with that edit, which only
+  // an order pays for: it waits until the photo is ordered.
+  const ordered = new Set([...(order?.photos ?? []), ...(album ?? [])]);
+  const marks = yield* Effect.filter(
+    (yield* readMarks(files)).filter(
+      (mark) => isOpen(mark) && isForAgent(known)(mark),
+    ),
+    ({ photo }) =>
+      ordered.has(photo) ? Effect.succeed(true) : isEdited(files, photo),
+  );
   const ids = marks.map(({ id }) => id);
   const isAsOrderable = album === null || isSame(album, orderable);
   // First, since what the page shows may be gone, which leaves nothing.

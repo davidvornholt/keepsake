@@ -1,6 +1,5 @@
 import { Schema } from 'effect';
-import { Box } from '../../shared/domain.ts';
-import { markKinds } from './kinds.ts';
+import { Box, PublishedPhoto, Removed } from '../../shared/domain.ts';
 
 /** What an agent did about a mark. */
 export const Answer = Schema.Struct({
@@ -10,18 +9,17 @@ export const Answer = Schema.Struct({
 });
 
 /**
- * What the owner wants to be done with a photo, as it is saved. A photo has at
- * most one mark that isn't handed over.
+ * How the owner wants a photo to change, as it is saved: what an agent acts
+ * on once it is handed over, by editing the photo again, or for the first
+ * time when it is only chosen. A photo has at most one mark that isn't
+ * handed over.
  */
 export const SavedMark = Schema.Struct({
   id: Schema.String,
   photo: Schema.String,
-  kind: Schema.Literals(markKinds),
   note: Schema.String,
-  /** What a change is about, in fractions of the finished photo. */
+  /** What the change is about, in fractions of the finished photo. */
   boxes: Schema.Array(Box),
-  /** The photo of the album that a swap takes out. */
-  other: Schema.NullOr(Schema.String),
   madeAt: Schema.String,
   answer: Schema.NullOr(Answer),
   /** When the owner looked at what came of it. */
@@ -39,12 +37,62 @@ export type Mark = typeof Mark.Type;
 /** What the page sends to make a mark: PUT /api/shoots/<shoot>/marks */
 export const NewMark = Schema.Struct({
   photo: Schema.String,
-  kind: Schema.Literals(markKinds),
   note: Schema.String,
   boxes: Schema.Array(Box),
-  other: Schema.NullOr(Schema.String),
 });
 export type NewMark = typeof NewMark.Type;
+
+/**
+ * Whether the owner wants a photo in the album, or chosen for it while it
+ * has no edit, or out of it. That costs nothing, so the page does it at once.
+ */
+const Wants = Schema.Literals(['in', 'out']);
+
+/**
+ * What the page sends to put a photo in or take one out: POST
+ * /api/shoots/<shoot>/choices. With `instead`, the photo comes in in the
+ * place of that one, which goes out.
+ */
+export const NewChoice = Schema.Struct({
+  photo: Schema.String,
+  wants: Wants,
+  /** Why the photo goes out, or why `instead` does. */
+  because: Schema.NullOr(Schema.String),
+  instead: Schema.NullOr(Schema.String),
+});
+export type NewChoice = typeof NewChoice.Type;
+
+/**
+ * A photo the owner wants in or out that isn't yet, because a command was
+ * changing the choice or editing the photo then. Done as soon as it can be.
+ */
+/** Where a photo stood before it came in for another. */
+export const Before = Schema.Struct({
+  removed: Schema.Array(Removed),
+  picked: Schema.Boolean,
+  published: Schema.NullOr(PublishedPhoto),
+  /** Whether it was in the album then, which the swap leaves it in. */
+  inAlbum: Schema.optionalKey(Schema.Boolean),
+});
+export type Before = typeof Before.Type;
+
+export const Choice = Schema.Struct({
+  /** The same for both photos of a swap. */
+  action: Schema.String,
+  photo: Schema.String,
+  wants: Wants,
+  /** Why it goes out. */
+  because: Schema.NullOr(Schema.String),
+  madeAt: Schema.String,
+  /** Why it couldn't be done. It stays undone until the owner chooses again. */
+  failed: Schema.NullOr(Schema.String),
+  /**
+   * Where the photo that comes in for another stood, noted before anything
+   * of the swap is done, so it goes back there should the other stay.
+   */
+  before: Schema.optionalKey(Before),
+});
+export type Choice = typeof Choice.Type;
 
 /** What the page sends to label a photo: PUT /api/shoots/<shoot>/labels */
 export const NewLabels = Schema.Struct({

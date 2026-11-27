@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { indexOf } from '../data/derive.ts';
 import {
   sampleBehind,
+  sampleChoice,
   sampleMark,
   samplePhoto,
   sampleShoot,
@@ -9,12 +10,15 @@ import {
 import {
   actionFor,
   effectFor,
+  insteadReason,
   isMadeOn,
-  kindOfKey,
-  kindsFor,
   nameFor,
   offeredFor,
+  outReason,
+  pencilOfKey,
+  pencilsFor,
   swapFor,
+  undoOf,
   writingFor,
 } from './act.ts';
 
@@ -28,70 +32,76 @@ const weak = samplePhoto('c', {
 const picked = samplePhoto('d', { standing: { kind: 'picked' } });
 const behindWeak = sampleBehind('e', 'c');
 const undecided = samplePhoto('f', { standing: { kind: 'open' } });
-const photos = [album, behind, weak, picked, behindWeak, undecided];
+const out = samplePhoto('g', {
+  standing: {
+    kind: 'taken-out',
+    at: '2026-05-21T10:00:00.000Z',
+    because: 'Too dark.',
+  },
+});
+const photos = [album, behind, weak, picked, behindWeak, undecided, out];
 
-describe('kindsFor', () => {
+describe('pencilsFor', () => {
   const index = indexOf(sampleShoot(photos));
 
   it('offers what makes sense for where a photo stands', () => {
-    expect(kindsFor(index, album)).toEqual(['change', 'take-out']);
-    expect(kindsFor(index, picked)).toEqual(['change', 'take-out']);
-    expect(kindsFor(index, behind)).toEqual(['swap', 'put-in']);
-    expect(kindsFor(index, weak)).toEqual(['put-in']);
-    expect(kindsFor(index, behindWeak)).toEqual(['put-in']);
-    expect(kindsFor(index, undecided)).toEqual([]);
+    expect(pencilsFor(index, album)).toEqual(['change', 'take-out']);
+    expect(pencilsFor(index, picked)).toEqual(['change', 'take-out']);
+    expect(pencilsFor(index, behind)).toEqual(['swap', 'put-in']);
+    expect(pencilsFor(index, weak)).toEqual(['put-in']);
+    expect(pencilsFor(index, behindWeak)).toEqual(['put-in']);
+    expect(pencilsFor(index, out)).toEqual(['put-in']);
+    expect(pencilsFor(index, undecided)).toEqual([]);
   });
 
-  it('names a mark for the photo it is offered for', () => {
+  it('names a pencil for the photo it is offered for', () => {
     expect(nameFor(index, behind, 'put-in')).toBe('Put in as well');
-    expect(nameFor(index, weak, 'put-in')).not.toBe('Put in as well');
+    expect(nameFor(index, weak, 'put-in')).toBe('Put in');
+    expect(nameFor(index, out, 'put-in')).toBe('Put back');
     expect(nameFor(index, picked, 'change')).toBe('Wish for the edit');
     expect(effectFor(index, picked, 'take-out')).toContain('isn’t edited');
     expect(effectFor(index, behind, 'put-in')).toContain('stays');
+    expect(effectFor(index, album, 'take-out')).toContain('now');
   });
 
-  it('offers a wish once a photo is to come in, and writes it into that mark', () => {
-    const plain = sampleMark('1', { photo: 'c', kind: 'put-in' });
-    const marked = indexOf(sampleShoot(photos, [plain]));
-    expect(kindsFor(marked, weak)).toEqual(['put-in', 'change']);
-    expect(nameFor(marked, weak, 'change')).toBe('Wish for the edit');
-    expect(effectFor(marked, weak, 'change')).toContain('goes with the photo');
-    expect(writingFor(marked, weak)).toEqual({ into: 'wish', mark: plain });
-    expect(isMadeOn(marked, weak, 'change')).toBe(false);
-    expect(actionFor(marked, weak, 'change')).toEqual({ does: 'compose' });
-
-    const wished = { ...plain, note: 'Warmer' };
-    const withWish = indexOf(sampleShoot(photos, [wished]));
-    expect(isMadeOn(withWish, weak, 'change')).toBe(true);
-    expect(isMadeOn(withWish, weak, 'put-in')).toBe(true);
-
-    const swap = sampleMark('2', { photo: 'b', kind: 'swap', other: 'a' });
-    const swapped = indexOf(sampleShoot(photos, [swap]));
-    expect(kindsFor(swapped, behind)).toEqual(['swap', 'put-in', 'change']);
-    expect(writingFor(swapped, behind)).toEqual({ into: 'wish', mark: swap });
-  });
-
-  it('writes a change of a chosen photo, and nothing of one that stays out', () => {
-    const change = sampleMark('1', {
-      photo: 'a',
-      kind: 'change',
-      note: 'Warmer',
-    });
-    expect(writingFor(indexOf(sampleShoot(photos, [change])), album)).toEqual({
-      into: 'change',
-      mark: change,
-    });
-    expect(writingFor(index, picked)).toEqual({ into: 'change', mark: null });
+  it('writes a change of a chosen photo, and nothing of one that is out', () => {
+    const change = sampleMark('1', { photo: 'a', note: 'Warmer' });
+    const marked = indexOf(sampleShoot(photos, [change]));
+    expect(writingFor(marked, album)).toEqual({ mark: change });
+    expect(isMadeOn(marked, album, 'change')).toBe(true);
+    expect(writingFor(index, picked)).toEqual({ mark: null });
     expect(writingFor(index, weak)).toBeNull();
     expect(isMadeOn(index, weak, 'change')).toBe(false);
+  });
+
+  it('draws the pencil of what waits for other work', () => {
+    const waits = indexOf(
+      sampleShoot(
+        photos,
+        [],
+        [
+          sampleChoice('b', { action: 'one', wants: 'in', because: null }),
+          sampleChoice('a', { action: 'one' }),
+          sampleChoice('c', { wants: 'in', because: null }),
+        ],
+      ),
+    );
+    expect(isMadeOn(waits, behind, 'swap')).toBe(true);
+    expect(isMadeOn(waits, behind, 'put-in')).toBe(false);
+    expect(isMadeOn(waits, album, 'take-out')).toBe(true);
+    expect(isMadeOn(waits, weak, 'put-in')).toBe(true);
+    expect(effectFor(waits, weak, 'put-in')).toContain('Press again');
+    const failed = sampleChoice('c', { wants: 'in', failed: 'No.' });
+    const notWaiting = indexOf(sampleShoot(photos, [], [failed]));
+    expect(isMadeOn(notWaiting, weak, 'put-in')).toBe(false);
   });
 
   it('says what is offered when something else was tried', () => {
     expect(offeredFor(index, picked)).toStartWith(
       'This photo is chosen for the album: Wish for the edit (C), ',
     );
-    expect(offeredFor(index, weak)).toStartWith(
-      'This photo isn’t in the album: ',
+    expect(offeredFor(index, weak)).toBe(
+      'This photo isn’t in the album: Put in (P).',
     );
     expect(offeredFor(index, undecided)).toBe(
       'This photo isn’t decided yet. Marks come once the best are chosen.',
@@ -106,78 +116,124 @@ describe('kindsFor', () => {
 });
 
 describe('actionFor', () => {
-  it('makes a mark, and takes it back when it is chosen again', () => {
-    const index = indexOf(sampleShoot(photos));
+  const index = indexOf(sampleShoot(photos));
+
+  it('takes a photo out at once, for a plain reason', () => {
     expect(actionFor(index, album, 'take-out')).toEqual({
-      does: 'make',
+      does: 'choose',
+      wanted: { photo: 'a', wants: 'out', because: outReason, instead: null },
+    });
+  });
+
+  it('puts a photo in at once', () => {
+    expect(actionFor(index, weak, 'put-in')).toEqual({
+      does: 'choose',
+      wanted: { photo: 'c', wants: 'in', because: null, instead: null },
+    });
+  });
+
+  it('uses a photo instead of the one in front, as one', () => {
+    expect(actionFor(index, behind, 'swap')).toEqual({
+      does: 'choose',
       wanted: {
-        photo: 'a',
-        kind: 'take-out',
-        note: '',
-        boxes: [],
-        other: null,
+        photo: 'b',
+        wants: 'in',
+        because: insteadReason('b'),
+        instead: 'a',
       },
     });
-    const mark = sampleMark('1', { photo: 'a', kind: 'take-out' });
-    const marked = indexOf(sampleShoot(photos, [mark]));
-    expect(actionFor(marked, album, 'take-out')).toEqual({
-      does: 'take-back',
-      mark,
+    expect(insteadReason('b')).toBe('You chose b instead.');
+  });
+
+  it('takes back what waits when its pencil is pressed again', () => {
+    const waits = indexOf(
+      sampleShoot(
+        photos,
+        [],
+        [sampleChoice('a'), sampleChoice('c', { wants: 'in' })],
+      ),
+    );
+    expect(actionFor(waits, album, 'take-out')).toEqual({
+      does: 'choose',
+      wanted: { photo: 'a', wants: 'in', because: null, instead: null },
     });
-    const other = sampleMark('2', { photo: 'b', kind: 'swap', other: 'a' });
-    const swapped = indexOf(sampleShoot(photos, [other]));
-    expect(actionFor(swapped, behind, 'put-in')?.does).toBe('make');
+    expect(actionFor(waits, weak, 'put-in')).toMatchObject({
+      does: 'choose',
+      wanted: { photo: 'c', wants: 'out' },
+    });
   });
 
   it('asks for words before a change, also once one is written', () => {
-    const mark = sampleMark('1', {
-      photo: 'a',
-      kind: 'change',
-      note: 'Warmer',
-    });
-    expect(actionFor(indexOf(sampleShoot(photos)), album, 'change')).toEqual({
-      does: 'compose',
-    });
+    const mark = sampleMark('1', { photo: 'a', note: 'Warmer' });
+    expect(actionFor(index, album, 'change')).toEqual({ does: 'compose' });
     expect(
       actionFor(indexOf(sampleShoot(photos, [mark])), album, 'change'),
     ).toEqual({ does: 'compose' });
   });
 
-  it('keeps the wish for a photo that is put in another way', () => {
-    const mark = sampleMark('1', {
-      photo: 'b',
-      kind: 'put-in',
-      note: 'Warmer',
-    });
-    const action = actionFor(
-      indexOf(sampleShoot(photos, [mark])),
-      behind,
-      'swap',
-    );
-    expect(action?.does === 'make' && action.wanted.note).toBe('Warmer');
-  });
-
-  it('names the photo a swap takes out', () => {
-    const action = actionFor(indexOf(sampleShoot(photos)), behind, 'swap');
-    expect(action?.does === 'make' && action.wanted.other).toBe('a');
-  });
-
   it('refuses what makes no sense', () => {
-    const index = indexOf(sampleShoot(photos));
     expect(actionFor(index, album, 'put-in')).toBeNull();
     expect(actionFor(index, weak, 'swap')).toBeNull();
+    expect(actionFor(index, weak, 'change')).toBeNull();
     expect(actionFor(index, picked, 'swap')).toBeNull();
     expect(actionFor(index, undecided, 'put-in')).toBeNull();
   });
 });
 
+describe('undoOf', () => {
+  const index = indexOf(sampleShoot(photos));
+  const plainly = { because: null, instead: null };
+
+  it('puts back what was taken out', () => {
+    const wanted = {
+      photo: 'a',
+      wants: 'out',
+      because: outReason,
+      instead: null,
+    } as const;
+    expect(undoOf(album, wanted, index)).toEqual({
+      photo: 'a',
+      wants: 'in',
+      ...plainly,
+    });
+  });
+
+  it('takes out again what was put in, for the reason it had before', () => {
+    const wanted = { photo: 'g', wants: 'in', ...plainly } as const;
+    expect(undoOf(out, wanted, index)).toMatchObject({
+      wants: 'out',
+      because: 'Too dark.',
+    });
+    const left = { photo: 'c', wants: 'in', ...plainly } as const;
+    expect(undoOf(weak, left, index)).toMatchObject({
+      wants: 'out',
+      because: outReason,
+    });
+  });
+
+  it('brings back the photo that another took the place of', () => {
+    const wanted = {
+      photo: 'b',
+      wants: 'in',
+      because: insteadReason('b'),
+      instead: 'a',
+    } as const;
+    expect(undoOf(behind, wanted, index)).toEqual({
+      photo: 'a',
+      wants: 'in',
+      because: outReason,
+      instead: 'b',
+    });
+  });
+});
+
 describe('keys', () => {
-  it('stand for marks, in either case', () => {
-    expect(kindOfKey('c')).toBe('change');
-    expect(kindOfKey('X')).toBe('take-out');
-    expect(kindOfKey('p')).toBe('put-in');
-    expect(kindOfKey('S')).toBe('swap');
-    expect(kindOfKey('k')).toBeNull();
-    expect(kindOfKey('f')).toBeNull();
+  it('stand for pencils, in either case', () => {
+    expect(pencilOfKey('c')).toBe('change');
+    expect(pencilOfKey('X')).toBe('take-out');
+    expect(pencilOfKey('p')).toBe('put-in');
+    expect(pencilOfKey('S')).toBe('swap');
+    expect(pencilOfKey('k')).toBeNull();
+    expect(pencilOfKey('f')).toBeNull();
   });
 });

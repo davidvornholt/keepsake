@@ -1,10 +1,28 @@
 import type { PhotoView } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
+import { type Index, pencilOf } from '../data/derive.ts';
 import { type Said, standingOf, whyOf } from '../data/words.ts';
+import { lookOf } from '../marks/kinds.ts';
 import { Mentioned } from '../ui/photo-link.tsx';
 
 // Where a photo stands and why, in plain sight right below it: that it is
-// in the album, or what kept it out.
+// in the album, or what kept it out, or that the owner put it in or took it
+// out and that waits for other work.
+
+const onItsWay = 'Keepsake does it as soon as the work going on now is done.';
+
+/** What waits to be done to a photo, said as where it stands, if anything waits. */
+const waitingOf = (index: Index, photo: PhotoView): Said | null => {
+  const waits = index.waiting.get(photo.id);
+  return waits === undefined
+    ? null
+    : {
+        text: lookOf[pencilOf(waits)].said,
+        other: null,
+        because: onItsWay,
+        tone: waits.choice.wants === 'in' ? 'in' : 'out',
+      };
+};
 
 const dots: Readonly<Record<Said['tone'], string>> = {
   in: 'bg-lamp',
@@ -14,8 +32,10 @@ const dots: Readonly<Record<Said['tone'], string>> = {
 
 export const StandingLine = ({ photo }: { readonly photo: PhotoView }) => {
   const { index, state } = useShootContext();
-  const said = standingOf(index, photo);
-  const why = whyOf(index, photo, state.preparation !== null);
+  const waiting = waitingOf(index, photo);
+  const said = waiting ?? standingOf(index, photo);
+  const why =
+    waiting?.because ?? whyOf(index, photo, state.preparation !== null);
   const score = photo.verdict?.score ?? null;
   return (
     <div className="mx-auto flex min-h-12 w-full max-w-[46rem] items-center px-4 py-1">

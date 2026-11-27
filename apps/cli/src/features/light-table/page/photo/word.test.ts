@@ -13,7 +13,6 @@ const wordFor = (marks: ReadonlyArray<Mark>, how = calm) =>
 
 const handed = sampleMark('handed', {
   photo: 'a',
-  kind: 'change',
   note: 'Less sky.',
   handedOverAt: handedAt,
 });
@@ -24,7 +23,6 @@ const answered: Mark = {
 };
 const mine = sampleMark('mine', {
   photo: 'a',
-  kind: 'change',
   note: 'Warmer.',
 });
 

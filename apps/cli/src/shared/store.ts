@@ -104,6 +104,39 @@ export const shootsDirectory = Effect.gen(function* () {
   return path.join(data, 'keepsake', 'shoots');
 });
 
+/** Where the edit of a photo of the shoot keeps everything. */
+const editFilesIn = (path: Path.Path, root: string) => (photo: string) => {
+  const directory = path.join(root, 'edits', editFolderName(photo));
+  const base = path.basename(photo);
+  const files = editFiles(path, directory, base);
+  const changes = path.join(directory, 'correction');
+  return {
+    ...files,
+    /** A change to the finished photo, which stays until that is done. */
+    correction: {
+      ...editFiles(path, changes, base),
+      camera: files.camera,
+      final: files.final,
+      /** Where the user wants a change. */
+      areas: path.join(changes, 'areas.json'),
+      /** What has to change, and where. */
+      places: path.join(changes, 'places.json'),
+      /** What an attempt starts from, in the size the image model makes. */
+      inputOf: (attempt: number) => path.join(changes, `input-${attempt}.jpg`),
+      /** The finished photo with the changes of a version. */
+      candidate: (attempt: number, number: number) =>
+        path.join(changes, `candidate-${attempt}-${number}.png`),
+      /** Which of them is best at each place. */
+      choices: (attempt: number) =>
+        path.join(changes, `choices-${attempt}.json`),
+      /** The finished photo with the best of them. */
+      result: (attempt: number) => path.join(changes, `result-${attempt}.png`),
+      /** What came of it. */
+      outcome: path.join(changes, 'outcome.json'),
+    },
+  };
+};
+
 const shootNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
 /** Where keepsake keeps everything about one shoot. */
@@ -136,6 +169,8 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     /** What Immich last had in the album, and what was taken out of it. */
     album: path.join(root, 'album.json'),
     removed: path.join(root, 'removed.json'),
+    /** What the owner chose on the page that waits for the shoot to be free. */
+    choices: path.join(root, 'choices.json'),
     /** What the owner wants, a file for each mark. */
     marks: path.join(root, 'marks'),
     labels: path.join(root, 'labels.json'),
@@ -144,6 +179,18 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     lock: path.join(locks, name),
     /** Held while what is in its album is read or changed. */
     albumLock: path.join(locks, `${name}.album`),
+    /**
+     * Held while the choice or the album changes: by `pick`, `publish` and
+     * `take-out` for as long as they run, and by the page. Not by `edit`, so
+     * the owner can change the choice while photos are edited.
+     */
+    choiceLock: path.join(locks, `${name}.choice`),
+    /**
+     * Held while a photo's finished file changes, by `edit`, and while the
+     * page publishes it, so what is published is what was hashed.
+     */
+    photoLock: (photo: string) =>
+      path.join(locks, `${name}.photo-${editFolderName(photo)}`),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
     /** The agent that waits for marks, and the one the page started last. */
@@ -179,39 +226,7 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     flatEdits: path.join(root, 'flat-edits'),
     /** Where they are while they move. */
     unnesting: path.join(root, 'unnesting'),
-    edit: (photo: string) => {
-      const directory = path.join(root, 'edits', editFolderName(photo));
-      const base = path.basename(photo);
-      const files = editFiles(path, directory, base);
-      const changes = path.join(directory, 'correction');
-      return {
-        ...files,
-        /** A change to the finished photo, which stays until that is done. */
-        correction: {
-          ...editFiles(path, changes, base),
-          camera: files.camera,
-          final: files.final,
-          /** Where the user wants a change. */
-          areas: path.join(changes, 'areas.json'),
-          /** What has to change, and where. */
-          places: path.join(changes, 'places.json'),
-          /** What an attempt starts from, in the size the image model makes. */
-          inputOf: (attempt: number) =>
-            path.join(changes, `input-${attempt}.jpg`),
-          /** The finished photo with the changes of a version. */
-          candidate: (attempt: number, number: number) =>
-            path.join(changes, `candidate-${attempt}-${number}.png`),
-          /** Which of them is best at each place. */
-          choices: (attempt: number) =>
-            path.join(changes, `choices-${attempt}.json`),
-          /** The finished photo with the best of them. */
-          result: (attempt: number) =>
-            path.join(changes, `result-${attempt}.png`),
-          /** What came of it. */
-          outcome: path.join(changes, 'outcome.json'),
-        },
-      };
-    },
+    edit: editFilesIn(path, root),
   };
 });
 export type ShootFiles = Effect.Success<ReturnType<typeof shootFiles>>;

@@ -5,11 +5,11 @@ import { edit as editShoot } from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
-import {
-  publish as publishShoot,
-  tellOutdated,
-} from '../features/publish/publish.ts';
+import { tellOutdated } from '../features/publish/outdated.ts';
+import { publish as publishShoot } from '../features/publish/publish.ts';
+import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
+import { withChoice } from '../shared/lock.ts';
 import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
@@ -26,7 +26,7 @@ import {
   visionModel,
 } from './command-inputs.ts';
 import { emit, emitWithCost } from './output.ts';
-import { whatToEdit } from './what-to-edit.ts';
+import { markOfChosen, whatToEdit } from './what-to-edit.ts';
 
 const lowestScore = 1;
 const highestScore = 10;
@@ -226,15 +226,30 @@ export const publish = Command.make(
       'album',
       'Publish to the album with this name instead, made if there is none (default: the album published to before, or else a new album named after the shoot’s title)',
     ),
+    mark: optionalString(
+      'mark',
+      'Publish the photo a mark is about, unless the owner took it out meanwhile',
+    ),
   },
-  ({ shoot, photos, album }) =>
+  ({ shoot, photos, album, mark }) =>
     workOn(shoot, (open) =>
-      publishShoot(open, photos, album).pipe(
-        Effect.flatMap((published) =>
-          tellOutdated(open, published.outdated, (outdated) =>
-            emit({ ...published, outdated }),
-          ),
-        ),
+      Effect.gen(function* () {
+        if (Option.isSome(mark) && photos.length > 0) {
+          return yield* new InvalidInput({
+            message: 'Name no photos with --mark, which is about one already.',
+          });
+        }
+        const names = Option.isSome(mark)
+          ? [(yield* markOfChosen(open, mark.value)).photo]
+          : photos;
+        const published = yield* publishShoot(open, names, album);
+        yield* tellOutdated(open, published.outdated, (outdated) =>
+          emit({ ...published, outdated }),
+        );
+      }).pipe(
+        // Until it told, so the page publishes nothing in between, and
+        // takes out no photo of a mark while it is published.
+        withChoice(open.files),
       ),
     ).pipe(Effect.provide(Spending.layer)),
 ).pipe(

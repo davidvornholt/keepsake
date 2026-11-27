@@ -1,6 +1,13 @@
-import type { Changed, HandOver, Mark, NewMark } from '../../contract.ts';
+import type {
+  Changed,
+  HandOver,
+  Mark,
+  NewChoice,
+  NewMark,
+} from '../../contract.ts';
 import {
   askForAgent,
+  dismissChoice,
   forgetShoot,
   goOnPreparing,
   handOverMarks,
@@ -11,6 +18,7 @@ import {
   saveLabels,
   saveRating,
   seeMark,
+  sendChoice,
   takeBackMark,
 } from './api.ts';
 import {
@@ -19,9 +27,11 @@ import {
   replacedBy,
   tidyLabels,
   wantedOf,
+  withChoice,
   withFavorite,
   withLabels,
   withMark,
+  withoutChoice,
   withoutMark,
   withRating,
   withSaved,
@@ -41,7 +51,7 @@ const renamed = (
 ): ReadonlyArray<Undo> => {
   const swap = (one: Mark): Mark => (one.id === id ? mark : one);
   return undos.map((undo) => {
-    if (undo.did === 'favorite') {
+    if (undo.did === 'favorite' || undo.did === 'chose') {
       return undo;
     }
     return undo.did === 'made'
@@ -52,6 +62,24 @@ const renamed = (
         }
       : { ...undo, mark: swap(undo.mark) };
   });
+};
+
+/** Sets the heart without remembering it for Undo. */
+const hearting = (core: Core) => async (photo: string, favorite: boolean) => {
+  const shoot = core.get().index?.shoot;
+  if (shoot !== undefined) {
+    core.setShoot(withFavorite(shoot, photo, favorite));
+  }
+  await core.send(() => saveFavorite(core.name, { photo, favorite }));
+};
+
+/** Puts a photo in or takes one out without remembering it for Undo. */
+const choosing = (core: Core) => async (wanted: NewChoice) => {
+  const shoot = core.get().index?.shoot;
+  if (shoot !== undefined) {
+    core.setShoot(withChoice(shoot, wanted, new Date().toISOString()));
+  }
+  await core.send(() => sendChoice(core.name, wanted));
 };
 
 const marking = (core: Core) => {
@@ -92,16 +120,11 @@ const marking = (core: Core) => {
   };
 
   /**
-   * Keeps what was written for a change or a wish until it is written again, when
+   * Keeps what was written for a change until it is written again, when
    * keepsake didn't get it, so that it isn't lost while another photo is
-   * shown. The whole mark is kept, since a wish may have lost the put-in or
-   * swap it went with.
+   * shown.
    */
   const keepUnsaved = (id: string, wanted: NewMark) => {
-    // Only a change or a wish has words to lose.
-    if (wanted.note === '') {
-      return;
-    }
     core
       .idOf(id)
       .then((real) => {
@@ -113,16 +136,18 @@ const marking = (core: Core) => {
       .catch(() => undefined);
   };
 
-  /** Sets the heart without remembering it for Undo. */
-  const heart = async (photo: string, favorite: boolean) => {
-    const shoot = core.get().index?.shoot;
-    if (shoot !== undefined) {
-      core.setShoot(withFavorite(shoot, photo, favorite));
-    }
-    await core.send(() => saveFavorite(core.name, { photo, favorite }));
-  };
+  const heart = hearting(core);
+  const choose = choosing(core);
 
   return {
+    /**
+     * Puts a photo in or takes one out, at once or as soon as nothing else
+     * changes the album. `back` is what undoes it.
+     */
+    choose: async (wanted: NewChoice, back: NewChoice) => {
+      core.setUndos([...core.undos(), { did: 'chose', back }]);
+      await choose(wanted);
+    },
     /** Sets or takes away the favorite heart of a photo in Immich, at once. */
     favorite: async (photo: string, favorite: boolean) => {
       core.setUndos([
@@ -160,6 +185,10 @@ const marking = (core: Core) => {
         await heart(last.photo, last.was);
         return;
       }
+      if (last.did === 'chose') {
+        await choose(last.back);
+        return;
+      }
       if (last.did === 'made') {
         await remove(last.mark.id);
       }
@@ -177,6 +206,14 @@ const unsaved =
   'A mark wasn’t saved, so nothing was handed over. Look them over and hand them over again.';
 
 const answering = (core: Core) => ({
+  /** Forgets a choice that couldn't be done, once the owner has read why. */
+  dismissChoice: async (action: string) => {
+    const shoot = core.get().index?.shoot;
+    if (shoot !== undefined) {
+      core.setShoot(withoutChoice(shoot, action));
+    }
+    await core.send(() => dismissChoice(core.name, action));
+  },
   seen: async (id: string) => {
     core.setMarks((marks) => withSeen(marks, id, new Date().toISOString()));
     await core.send(() => seeMark(core.name, id));

@@ -25,7 +25,7 @@ test('shows every album on a shelf, with what waits at each', async ({
   await expect(page.getByText(albumCount)).toBeVisible();
   const album = (name: string) => page.getByRole('link', { name });
   await expect(album('Lisbon')).toContainText('8 in the album');
-  await expect(album('Lisbon')).toContainText('3 marks to hand over');
+  await expect(album('Lisbon')).toContainText('2 marks to hand over');
   await expect(album('Sagres')).toContainText('10 chosen, ready for your look');
   await expect(album('Braga')).toContainText('Nothing chosen yet');
   await expect(album('Aveiro')).toContainText('Stopped');

@@ -1,5 +1,5 @@
 import { Effect, Option } from 'effect';
-import { type Moment, Verdict } from './domain.ts';
+import { type Moment, type Pick, Verdict } from './domain.ts';
 import { type OpenShoot, readJson } from './store.ts';
 
 /** Whether two lists have the same photos in the same order. */
@@ -83,3 +83,11 @@ export const verdicts = Effect.fn('verdicts')(function* (
   );
   return found.flatMap(Option.toArray);
 });
+
+/** A photo of a judged moment as a pick, with its own score where it has one. */
+export const pickOf = (verdict: Verdict, photo: string): Pick => {
+  const { moment, subject, further } = verdict;
+  const { score, description } =
+    further.find((one) => one.photo === photo) ?? verdict;
+  return { photo, moment, score, subject, description };
+};

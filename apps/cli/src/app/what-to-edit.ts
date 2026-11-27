@@ -1,7 +1,31 @@
 import { Effect, Option } from 'effect';
 import { markWith } from '../features/light-table/marks.ts';
+import { readAlbum } from '../shared/album.ts';
 import { InvalidInput } from '../shared/errors/errors.ts';
-import { openShoot } from '../shared/store.ts';
+import { judgeOf } from '../shared/judge.ts';
+import { standings } from '../shared/standing.ts';
+import { type OpenShoot, openShoot } from '../shared/store.ts';
+
+/**
+ * A mark, while its photo is chosen or in the album. The owner may have
+ * taken it out since they handed the mark over, on the page or in Immich.
+ */
+export const markOfChosen = Effect.fn('markOfChosen')(function* (
+  open: OpenShoot,
+  id: string,
+) {
+  const mark = yield* markWith(open.files, id);
+  // From Immich, where the owner may have taken it out, and never the cache.
+  yield* readAlbum(open);
+  const known = yield* standings(open, yield* judgeOf(open, Option.none()));
+  const kind = known.of.get(mark.photo)?.kind;
+  if (kind !== 'album' && kind !== 'picked') {
+    return yield* new InvalidInput({
+      message: `${mark.photo} was taken out meanwhile, so nothing was done for the mark ${id}. Answer it with --not-done and that reason.`,
+    });
+  }
+  return mark;
+});
 
 /** The photos to edit, and what is wanted of them and where. */
 export const whatToEdit = Effect.fn('whatToEdit')(function* (
@@ -42,8 +66,8 @@ export const whatToEdit = Effect.fn('whatToEdit')(function* (
         'Give --budget with --mark: what is left of what the owner agreed to spend.',
     });
   }
-  const { files } = yield* openShoot(shoot);
-  const { photo, note, boxes } = yield* markWith(files, mark.value);
+  const open = yield* openShoot(shoot);
+  const { photo, note, boxes } = yield* markOfChosen(open, mark.value);
   const wish = own ?? (note === '' ? null : note);
   if (wish === null && boxes.length > 0) {
     return yield* new InvalidInput({

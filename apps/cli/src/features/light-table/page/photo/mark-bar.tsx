@@ -1,16 +1,18 @@
 import { Heart, Undo2 } from 'lucide-react';
-import type { MarkKind, PhotoView } from '../../contract.ts';
+import type { PhotoView } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { isFavorite } from '../data/derive.ts';
-import { effectFor, isMadeOn, kindsFor, nameFor } from '../marks/act.ts';
-import { lookOf, seedTextOf } from '../marks/kinds.ts';
+import { effectFor, isMadeOn, nameFor, pencilsFor } from '../marks/act.ts';
+import { lookOf, type Pencil, seedTextOf } from '../marks/kinds.ts';
 import { WaxMark } from '../marks/wax-mark.tsx';
 import { Key } from '../ui/controls.tsx';
 import { useSince } from '../ui/use-since.ts';
 
-// The owner's pencils, below the photo. A mark that is made is drawn in wax;
-// pressing it again takes it back, and Undo is there for as long as it can
-// be. Beside them, for a photo of the album, the favorite heart of Immich.
+// The owner's pencils, below the photo. Taking a photo out or putting it in
+// happens at once; while it waits for other work, its pencil is drawn in wax
+// and pressing it again takes it back. A change is drawn once it is written.
+// Undo is there for as long as it can be. Beside them, for a photo of the
+// album, the favorite heart of Immich.
 
 const iconSize = 16;
 const heartSize = 20;
@@ -19,35 +21,35 @@ const button =
 
 const MarkButton = ({
   photo,
-  kind,
+  pencil,
   isMade,
-  onKind,
+  onPencil,
 }: {
   readonly photo: PhotoView;
-  readonly kind: MarkKind;
+  readonly pencil: Pencil;
   readonly isMade: boolean;
-  readonly onKind: (kind: MarkKind) => void;
+  readonly onPencil: (pencil: Pencil) => void;
 }) => {
   const { index } = useShootContext();
-  const look = lookOf[kind];
-  const since = useSince(isMade ? kind : null);
+  const look = lookOf[pencil];
+  const since = useSince(isMade ? pencil : null);
   return (
     <button
       aria-keyshortcuts={look.key}
       aria-pressed={isMade}
       className={button}
-      onClick={() => onKind(kind)}
-      title={effectFor(index, photo, kind)}
+      onClick={() => onPencil(pencil)}
+      title={effectFor(index, photo, pencil)}
       type="button"
     >
       <WaxMark
         className="size-6"
         color={isMade ? look.wax : 'quiet'}
-        seed={seedTextOf(photo.id, kind)}
+        seed={seedTextOf(photo.id, pencil)}
         shape={look.shape}
         since={isMade ? since : null}
       />
-      <span className="whitespace-nowrap">{nameFor(index, photo, kind)}</span>
+      <span className="whitespace-nowrap">{nameFor(index, photo, pencil)}</span>
       <Key>{look.key}</Key>
     </button>
   );
@@ -85,18 +87,18 @@ const FavoriteButton = ({ photo }: { readonly photo: PhotoView }) => {
 
 export const MarkBar = ({
   photo,
-  onKind,
+  onPencil,
 }: {
   readonly photo: PhotoView;
-  readonly onKind: (kind: MarkKind) => void;
+  readonly onPencil: (pencil: Pencil) => void;
 }) => {
   const { index, state, store } = useShootContext();
   const { undoable } = state;
-  const kinds = kindsFor(index, photo);
+  const pencils = pencilsFor(index, photo);
   return (
     <div className="flex min-h-12 justify-center">
       <div className="relative">
-        {kinds.length === 0 ? (
+        {pencils.length === 0 ? (
           <p className="flex min-h-12 items-center px-4 text-center text-quiet">
             Once the best photos are chosen, you mark here what you want
             different.
@@ -106,12 +108,12 @@ export const MarkBar = ({
             aria-label="Mark this photo"
             className="flex items-center gap-1 sm:gap-2"
           >
-            {kinds.map((kind) => (
-              <li key={kind}>
+            {pencils.map((pencil) => (
+              <li key={pencil}>
                 <MarkButton
-                  isMade={isMadeOn(index, photo, kind)}
-                  kind={kind}
-                  onKind={onKind}
+                  isMade={isMadeOn(index, photo, pencil)}
+                  onPencil={onPencil}
+                  pencil={pencil}
                   photo={photo}
                 />
               </li>

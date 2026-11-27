@@ -22,6 +22,7 @@ const anyBox = /^Box \d+ of \d+$/u;
 const portoMarks = /\/api\/shoots\/porto\/marks$/u;
 const putIn = /^Put in/u;
 const wishFor = /^Wish for the edit/u;
+const takeOut = /^Take out/u;
 
 test('shows a finished photo whole and from close', async ({ page }) => {
   await open(page, '/lisbon/photos/D121');
@@ -141,29 +142,47 @@ test('asks for a change in words', async ({ page }) => {
   await expect(said).toBeHidden();
 });
 
-test('takes a wish with a photo that is put in', async ({ page }) => {
+test('puts a photo in at once, and takes a wish for its edit', async ({
+  page,
+}) => {
   await open(page, '/porto/photos/D70');
   await expect(marks(page)).toHaveText([putIn]);
   await page.keyboard.press('p');
-  await expect(pressed(page, putIn)).toBeVisible();
+  await expect(standing(page)).toContainText('Chosen for the album');
+  await expect(marks(page)).toHaveText([wishFor, takeOut]);
+  await scan(page);
   await page.keyboard.press('c');
   const note = page.getByRole('textbox', {
     name: 'What do you want of the edit?',
   });
   await expect(note).toBeFocused();
-  // Boxes show places of an edit, and the photo may have none yet.
+  // Boxes show places of an edit, and the photo has none yet.
   await expect(large(page).locator('[data-boxes]')).toHaveCount(0);
-  await scan(page);
+  await expect(page.getByText('Drag on the photo')).toHaveCount(0);
   await note.fill('Warmer light.');
   await page.keyboard.press('Enter');
-  const said = large(page).getByText('To be put in: Warmer light.').first();
+  const said = large(page).getByText('To be changed: Warmer light.').first();
   await expect(said).toBeVisible();
-  await expect(pressed(page, putIn)).toBeVisible();
   await expect(pressed(page, wishFor)).toBeVisible();
-  await page.keyboard.press('c');
-  await page.getByRole('button', { name: 'Take back the wish' }).click();
+  await page.getByRole('button', { name: 'Undo' }).click();
   await expect(said).toBeHidden();
-  await expect(pressed(page, putIn)).toBeVisible();
+  await expect(standing(page)).toContainText('Chosen for the album');
+});
+
+test('says so when a photo couldn’t be taken out of the album', async ({
+  page,
+}) => {
+  // Immich refused when the page tried to take it out.
+  await open(page, '/nazare/photos/D63');
+  const notice = page
+    .getByRole('status')
+    .filter({ hasText: 'wasn’t taken out' });
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText('Immich did not take it out');
+  await expect(standing(page)).toContainText('Chosen for the album');
+  await scan(page);
+  await notice.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(notice).toBeHidden();
 });
 
 test('gives back a change that keepsake didn’t get', async ({ page }) => {
@@ -203,54 +222,6 @@ test('gives back a change that keepsake didn’t get', async ({ page }) => {
   await page.keyboard.press('c');
   await expect(note).toHaveValue('Less sky.');
   await expect(boxes).toHaveCount(drawn);
-});
-
-test('gives back a wish that keepsake didn’t get with its put-in', async ({
-  page,
-}) => {
-  // Saving fails until both the put-in and the wish were sent.
-  const sent = Promise.withResolvers<void>();
-  let isFailing = true;
-  await page.route(portoMarks, async (route) => {
-    if (isFailing) {
-      await sent.promise;
-      await route.abort();
-    } else {
-      await route.continue();
-    }
-  });
-  await open(page, '/porto/photos/D50');
-  await expect(standing(page)).toContainText('Left out');
-  await expect(marks(page)).toHaveText([putIn]);
-  await page.keyboard.press('p');
-  await expect(pressed(page, putIn)).toBeVisible();
-  await page.keyboard.press('c');
-  const note = page.getByRole('textbox', {
-    name: 'What do you want of the edit?',
-  });
-  await note.fill('Warmer light.');
-  await note.press('Enter');
-  await expect(note).toBeHidden();
-  const failed = page.waitForEvent('requestfailed');
-  sent.resolve();
-  await failed;
-
-  // The put-in is lost too, so the wish brings the photo in again.
-  await expect(pressed(page, putIn)).toBeHidden();
-  await expect(note).toHaveValue('Warmer light.');
-  await expect(large(page).locator('[data-boxes]')).toHaveCount(0);
-  isFailing = false;
-  const saved = page.waitForResponse(
-    (response) => portoMarks.test(response.url()) && response.ok(),
-  );
-  await note.press('Enter');
-  const said = large(page).getByText('To be put in: Warmer light.').first();
-  await expect(said).toBeVisible();
-  await expect(pressed(page, putIn)).toBeVisible();
-  // Only what keepsake got is there after a reload.
-  await saved;
-  await page.reload();
-  await expect(said).toBeVisible();
 });
 
 test('labels a photo', async ({ page }) => {
@@ -322,10 +293,11 @@ test('marks a photo with a finger', {
   // The desktop runs this too, at the same time and on a photo of its own.
   await open(page, `/tomar/photos/${isMobile ? 'D31' : 'D12'}`);
   await marks(page).filter({ hasText: 'Take out' }).click();
-  await expect(pressed(page, 'Take out')).toBeVisible();
+  await expect(standing(page)).toContainText('Taken out by you');
+  await expect(marks(page)).toContainText(['Put back']);
   await scan(page);
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(pressed(page, 'Take out')).toBeHidden();
+  await expect(standing(page)).toContainText('Chosen for the album');
   const about = page.getByRole('complementary', { name: 'About this photo' });
   if ((await notes(page).getAttribute('aria-expanded')) === 'false') {
     await notes(page).click();

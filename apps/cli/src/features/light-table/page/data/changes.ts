@@ -1,4 +1,10 @@
-import type { Mark, NewMark, ShootView } from '../../contract.ts';
+import type {
+  Choice,
+  Mark,
+  NewChoice,
+  NewMark,
+  ShootView,
+} from '../../contract.ts';
 
 // What a change does to a shoot, worked out here so that the page shows it
 // before keepsake has answered. Keepsake's answer replaces it afterwards.
@@ -18,18 +24,57 @@ export const draftOf = (wanted: NewMark, id: string, now: string): Mark => ({
   seenAt: null,
 });
 
-export const wantedOf = ({
+export const wantedOf = ({ photo, note, boxes }: Mark): NewMark => ({
   photo,
-  kind,
   note,
   boxes,
-  other,
-}: Mark): NewMark => ({
-  photo,
-  kind,
-  note,
-  boxes,
-  other,
+});
+
+/**
+ * What the owner chose, as waiting until keepsake has done it. It takes the
+ * place of what they chose for those photos before, and what is so already
+ * waits for nothing.
+ */
+export const withChoice = (
+  shoot: ShootView,
+  { photo, wants, because, instead }: NewChoice,
+  now: string,
+): ShootView => {
+  const action = `${draftPrefix}${now}`;
+  const part = (one: string, wanted: Choice['wants']): Choice => ({
+    action,
+    photo: one,
+    wants: wanted,
+    because: wanted === 'out' ? because : null,
+    madeAt: now,
+    failed: null,
+  });
+  const parts = [
+    part(photo, wants),
+    ...(instead === null ? [] : [part(instead, 'out')]),
+  ];
+  const isIn = (one: string) => {
+    const kind = shoot.photos.find(({ id }) => id === one)?.standing.kind;
+    return kind === 'album' || kind === 'picked';
+  };
+  const replaced = new Set(
+    shoot.choices
+      .filter((one) => parts.some((made) => made.photo === one.photo))
+      .map((one) => one.action),
+  );
+  return {
+    ...shoot,
+    choices: [
+      ...shoot.choices.filter((one) => !replaced.has(one.action)),
+      ...parts.filter((one) => isIn(one.photo) !== (one.wants === 'in')),
+    ],
+  };
+};
+
+/** Forgets a choice that couldn't be done. */
+export const withoutChoice = (shoot: ShootView, action: string): ShootView => ({
+  ...shoot,
+  choices: shoot.choices.filter((one) => one.action !== action),
 });
 
 /** The open mark that a new one takes the place of. */

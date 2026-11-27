@@ -3,6 +3,7 @@ import { everything, type Filters } from '../app/route.ts';
 import { indexOf } from '../data/derive.ts';
 import {
   sampleBehind,
+  sampleChoice,
   sampleEdit,
   sampleMark,
   samplePhoto,
@@ -24,10 +25,8 @@ const later = samplePhoto('e', { takenAt: nextDay, edit: sampleEdit('e') });
 const index = indexOf(
   sampleShoot(
     [first, behind, alsoBehind, weak, later],
-    [
-      sampleMark('m', { photo: 'e' }),
-      sampleMark('n', { photo: 'b', kind: 'swap', other: 'a' }),
-    ],
+    [sampleMark('m', { photo: 'e', note: 'Warmer.' })],
+    [sampleChoice('b', { wants: 'in', because: null })],
   ),
 );
 
@@ -50,7 +49,9 @@ describe('contentOf', () => {
       opened: null,
       isWorkedOn: true,
     });
-    expect(a?.marks.map(({ mark }) => mark.id)).toEqual(['n']);
+    expect(a?.marks.map(({ photo, pencil }) => [photo, pencil])).toEqual([
+      ['b', 'put-in'],
+    ]);
     expect(d).toMatchObject({ id: 'd', isLit: false, pile: 1 });
     const [e] = content[1]?.frames ?? [];
     expect(e?.marks).toHaveLength(1);
@@ -113,7 +114,7 @@ describe('contentOf', () => {
         samplePhoto('b', { ...picked, edit: sampleEdit('b') }),
         samplePhoto('c', { standing: { kind: 'left-out', because: null } }),
       ]),
-      ordered: { at: nextDay, dollars: 1.5 },
+      ordered: { at: nextDay, dollars: 1.5, photos: [] },
     });
     const [sheet] = contentOf(ordered, everything, nobody);
     expect(sheet?.frames.map(({ order }) => order)).toEqual([

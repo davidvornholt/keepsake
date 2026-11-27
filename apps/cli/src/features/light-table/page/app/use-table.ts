@@ -1,8 +1,8 @@
 import { type RefObject, useRef, useState } from 'react';
-import type { MarkKind } from '../../contract.ts';
 import { type Index, isFavorite, pileAround } from '../data/derive.ts';
 import type { ShootStore } from '../data/store.ts';
-import { actionFor, kindOfKey, offeredFor } from '../marks/act.ts';
+import { actionFor, offeredFor, pencilOfKey, undoOf } from '../marks/act.ts';
+import type { Pencil } from '../marks/kinds.ts';
 import type { Engine } from '../sheet/engine.ts';
 import type { Direction } from '../sheet/find.ts';
 import { moveCursor, pointedAt } from '../sheet/steer.ts';
@@ -111,9 +111,9 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
     }
   };
 
-  const mark = (kind: MarkKind) => {
+  const mark = (pencil: Pencil) => {
     const photo = pointed();
-    const action = photo === undefined ? null : actionFor(index, photo, kind);
+    const action = photo === undefined ? null : actionFor(index, photo, pencil);
     if (photo === undefined) {
       return;
     }
@@ -124,10 +124,9 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
     if (action.does === 'compose') {
       // A change needs words, and the photo large to draw on.
       onOpen(photo.id, true);
-    } else if (action.does === 'take-back') {
-      store.takeBack(action.mark).catch(() => undefined);
     } else {
-      store.make(action.wanted);
+      const back = undoOf(photo, action.wanted, index);
+      store.choose(action.wanted, back).catch(() => undefined);
     }
   };
 
@@ -146,8 +145,8 @@ export const useTable = ({ index, store, show, onOpen }: Wanted) => {
   const keys: Keys = [
     ...arrows.map(([key, direction]) => [key, () => move(direction)] as const),
     ...[...markKeys].map((key) => {
-      const kind = kindOfKey(key);
-      return [key, kind === null ? undefined : () => mark(kind)] as const;
+      const pencil = pencilOfKey(key);
+      return [key, pencil === null ? undefined : () => mark(pencil)] as const;
     }),
     ['Enter', open],
     [

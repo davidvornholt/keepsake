@@ -43,6 +43,7 @@ export const revisionOf = Effect.fn('revisionOf')(function* (
       files.toRate,
       files.album,
       files.removed,
+      files.choices,
       files.labels,
       files.preparation,
       files.agent,

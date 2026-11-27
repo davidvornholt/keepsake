@@ -29,7 +29,10 @@ describe('makingOf', () => {
   it('is a choice to go over until it is ordered', () => {
     expect(making(sampleShoot([picked, undecided]))).toBe('chosen');
     expect(
-      making({ ...sampleShoot([picked]), ordered: { at, dollars: 0.75 } }),
+      making({
+        ...sampleShoot([picked]),
+        ordered: { at, dollars: 0.75, photos: ['a'] },
+      }),
     ).toBe('ordered');
   });
 

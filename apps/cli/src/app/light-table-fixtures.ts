@@ -3,6 +3,7 @@ import { ConfigProvider, Effect } from 'effect';
 import { serveLightTable } from '../features/light-table/server.ts';
 import { fake } from './command-fixtures.ts';
 import { fakeToolsLayer } from './fake-tools.ts';
+import { publishingLayer } from './publishing.ts';
 
 type Options = Partial<Omit<Parameters<typeof serveLightTable>[0], 'port'>>;
 
@@ -26,6 +27,7 @@ export const whileServing = <A>(
       );
     }).pipe(
       Effect.scoped,
+      Effect.provide(publishingLayer),
       Effect.provide(fakeToolsLayer),
       Effect.provide(BunServices.layer),
       Effect.provide(
@@ -56,10 +58,8 @@ export const send = (
 
 export const change = {
   photo: 'B',
-  kind: 'change',
   note: ' Remove the chair ',
   boxes: [{ left: 0.1, top: 0.1, right: 0.2, bottom: 0.2 }],
-  other: null,
 };
 
 export const shootOf = async (address: string) =>
