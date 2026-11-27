@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { existsSync } from 'node:fs';
 import process from 'node:process';
 import {
   asked,
@@ -15,13 +14,6 @@ import {
 } from './command-fixtures.ts';
 import { fakeModels } from './fake-models.ts';
 import { handedOver, mark, spentSoFar } from './mark-fixtures.ts';
-
-const until = async (isSo: () => boolean): Promise<void> => {
-  if (!isSo()) {
-    await Bun.sleep(5);
-    await until(isSo);
-  }
-};
 
 const notHandedOver = { handedOverAt: null };
 const answered = {
@@ -47,7 +39,7 @@ describe('keepsake marks', () => {
     expect(new Set(all)).toEqual(new Set(['first', 'open', 'over', 'second']));
   });
 
-  it('says where an agent finds the photos of a mark', async () => {
+  it('says where the photos of a mark are', async () => {
     await pickLisbon();
     await editLisbon();
     await runOk('publish', 'lisbon');
@@ -76,17 +68,6 @@ describe('keepsake marks', () => {
     expect(marks[0].link).toBe(`${address}lisbon/photos/B`);
   });
 
-  it('waits until there are some', async () => {
-    await pickLisbon();
-    await mark('one', notHandedOver);
-    const waiting = runOk('marks', 'lisbon', '--wait');
-    await until(() => existsSync(shootFile('waiting.json')));
-    expect((await shootJson('waiting.json')).process).toBe(process.pid);
-    await mark('one');
-    expect(idsOf(await waiting)).toEqual(['one']);
-    expect(existsSync(shootFile('waiting.json'))).toBe(false);
-  });
-
   it('says that the album is ordered, until it is made', async () => {
     await pickLisbon();
     await editLisbon('A1');
@@ -104,72 +85,9 @@ describe('keepsake marks', () => {
       album: null,
     });
   });
-
-  it('waits only for new ones', async () => {
-    await pickLisbon();
-    const failure = await failureOf('marks', 'lisbon', '--wait', '--all');
-    expect(failure.message).toBe(
-      'Give --wait alone, or --all and --hand-over.',
-    );
-  });
 });
 
 describe('a hand-over', () => {
-  it('waits for all of a hand-over, not for part of it', async () => {
-    await pickLisbon();
-    await mark('one', notHandedOver);
-    await mark('two', { ...notHandedOver, photo: 'C' });
-    const waiting = runOk('marks', 'lisbon', '--wait');
-    await until(() => existsSync(shootFile('waiting.json')));
-    // As a writer that stopped after the first of its marks left them.
-    const one = shootFile('marks', 'one.json');
-    const handed = { handedOverAt: '2026-04-01T11:00:00Z' };
-    await Bun.write(
-      one,
-      JSON.stringify({ ...(await shootJson('marks', 'one.json')), ...handed }),
-    );
-    await handedOver('budget', { dollars: 1.5 });
-    await Bun.sleep(1500);
-    expect(existsSync(shootFile('waiting.json'))).toBe(true);
-    await handedOver('both', { dollars: 1.5, marks: ['one', 'two'] });
-    const listed = await waiting;
-    expect(new Set(idsOf(listed))).toEqual(new Set(['one', 'two']));
-    expect(listed.agreedDollars).toBe(1.5);
-  });
-
-  it('gives an agent that waits only what it took', async () => {
-    await pickLisbon();
-    await mark('one', notHandedOver);
-    await mark('two', { ...notHandedOver, photo: 'C' });
-    await handedOver('first', { dollars: 0.75, marks: ['one'] });
-    const busy = await runOk('marks', 'lisbon', '--wait');
-    await handedOver('second', { dollars: 0.5, marks: ['two'] });
-    const other = await runOk('marks', 'lisbon', '--wait');
-    expect(busy).toMatchObject({ handOvers: ['first'], agreedDollars: 0.75 });
-    expect(idsOf(busy)).toEqual(['one']);
-    expect(other).toMatchObject({ handOvers: ['second'], agreedDollars: 0.5 });
-    expect(idsOf(other)).toEqual(['two']);
-    const named = await runOk('marks', 'lisbon', '--hand-over', 'second');
-    expect(idsOf(named)).toEqual(['two']);
-    expect(idsOf(await runOk('marks', 'lisbon'))).toEqual(['one', 'two']);
-  });
-
-  it('lists all of a hand-over that was named, also when it is done', async () => {
-    await pickLisbon();
-    await mark('one', { ...notHandedOver, ...answered });
-    await mark('two', { ...notHandedOver, photo: 'C' });
-    await handedOver('first', { marks: ['one'] });
-    await handedOver('second', { marks: ['two'] });
-    const named = await runOk(
-      'marks',
-      'lisbon',
-      '--all',
-      '--hand-over',
-      'first',
-    );
-    expect(idsOf(named)).toEqual(['one']);
-  });
-
   it('counts what was spent since against what was agreed', async () => {
     await pickLisbon();
     await handedOver('order', { dollars: 1.5, album: ['A1', 'B'] });
@@ -201,10 +119,6 @@ describe('a hand-over', () => {
       dollars: 1,
       marks: ['two'],
     });
-    const both = ['--hand-over', 'first', '--hand-over', 'second'];
-    expect(await runOk('marks', 'lisbon', ...both)).toMatchObject({
-      agreedDollars: 1,
-    });
     expect(await runOk('marks', 'lisbon')).toMatchObject({ agreedDollars: 1 });
   });
 
@@ -220,52 +134,6 @@ describe('a hand-over', () => {
       agreedDollars: 0,
       album: null,
     });
-  });
-});
-
-describe('keepsake answer', () => {
-  it('tells the owner what came of a mark', async () => {
-    await pickLisbon();
-    await mark('one');
-    await mark('two');
-    const done = ['--done', 'The chair is gone.'];
-    const result = await runOk('answer', 'lisbon', 'one', ...done);
-    expect(result.left).toEqual(['two']);
-    expect((await shootJson('marks', 'one.json')).answer).toMatchObject({
-      outcome: 'done',
-      note: 'The chair is gone.',
-    });
-    const not = ['--not-done', 'The beak came out wrong.'];
-    expect(await runOk('answer', 'lisbon', 'two', ...not)).toMatchObject({
-      mark: {
-        answer: { outcome: 'not-done', note: 'The beak came out wrong.' },
-      },
-      left: [],
-    });
-  });
-
-  it.each([[], ['--done', 'Yes.', '--not-done', 'No.']])(
-    'needs to know whether it was done: %p',
-    async (...flags) => {
-      await pickLisbon();
-      await mark('one');
-      const failure = await failureOf('answer', 'lisbon', 'one', ...flags);
-      expect(failure.message).toBe('Give either --done or --not-done.');
-    },
-  );
-
-  it('leaves alone what the owner may still change', async () => {
-    await pickLisbon();
-    await mark('one', notHandedOver);
-    const failure = await failureOf('answer', 'lisbon', 'one', '--done', 'Yes');
-    expect(failure.message).toContain('isn’t handed over yet');
-    expect((await shootJson('marks', 'one.json')).answer).toBeNull();
-  });
-
-  it.each(['three', '../shoot'])('knows no mark %p', async (id) => {
-    await pickLisbon();
-    const failure = await failureOf('answer', 'lisbon', id, '--done', 'Yes');
-    expect(failure.message).toBe(`There is no mark ${id}.`);
   });
 });
 

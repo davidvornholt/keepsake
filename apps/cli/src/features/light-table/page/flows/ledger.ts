@@ -1,7 +1,9 @@
-import type { Mark, PhotoView } from '../../contract.ts';
+import type { CarryingOut, Mark, PhotoView } from '../../contract.ts';
+import { limitFor } from '../../headroom.ts';
+import { newsOf } from '../../news-of.ts';
 import { type Index, isChosen } from '../data/derive.ts';
 
-// The changes an agent is to act on, as a list to go over before they are
+// The changes keepsake is to carry out, as a list to go over before they are
 // handed over, and to follow afterwards; and what handing over costs, with
 // the order of the chosen photos' edits.
 
@@ -17,7 +19,7 @@ export type Ledger = {
   readonly open: ReadonlyArray<Line>;
   /** Handed over, and not answered yet. */
   readonly waiting: ReadonlyArray<Line>;
-  /** Answers that weren't looked at yet. */
+  /** The photos with something new to look at. */
   readonly news: number;
   /**
    * Whether handing over orders the album too: the chosen photos are edited
@@ -33,6 +35,8 @@ export type Ledger = {
   /** The photos edited when everything is handed over, and about what they cost. */
   readonly edits: number;
   readonly dollars: number;
+  /** The most the owner agrees to pay for them, which leaves room for surprises. */
+  readonly limit: number;
 };
 
 const none: ReadonlySet<string> = new Set();
@@ -122,15 +126,14 @@ export const ledgerOf = (
   return {
     open,
     waiting: lines.filter((line) => !isOpen(line)),
-    news: shoot.marks.filter(
-      ({ answer, seenAt }) => answer !== null && seenAt === null,
-    ).length,
+    news: newsOf(shoot.marks, shoot.added, shoot.carrying).length,
     ordersAlbum,
     isFirst: !index.hasAlbum,
     picked,
     firstEdits,
     edits,
     dollars: edits * shoot.dollars.perEdit,
+    limit: limitOf(shoot, edits),
   };
 };
 
@@ -141,61 +144,47 @@ export const staggerOf = (
   most: number,
 ): number => (marks <= 1 ? 0 : Math.min(most, whole / (marks - 1)));
 
-/** How far an agent that was to be started has got. */
-export type AgentState =
-  /** One waits for marks, or was started and is at work. */
-  | { readonly is: 'at-work'; readonly link: string | null }
-  /** The page asked for one, and it hasn't said anything yet. */
-  | { readonly is: 'starting' }
-  /**
-   * None can be started, starting one failed, or the one asked for never
-   * said a word, so the owner has to ask one.
-   */
+/** How what was handed over is carried out, as the page shows it. */
+export type CarryingState =
+  /** keepsake works on it, or is about to. */
+  | { readonly is: 'at-work' }
+  /** It can't go on without the owner. */
   | {
-      readonly is: 'ask';
-      readonly failed: string | null;
-      readonly isLate: boolean;
+      readonly is: 'stopped';
+      readonly stopped: NonNullable<CarryingOut['stopped']>;
+      /** What going on agrees to pay more, if it waits for money. */
+      readonly more: number;
     }
   /** Nothing is handed over. */
   | { readonly is: 'idle' };
 
-/** How long an agent may take to say that it is there, in milliseconds. */
-export const agentPatience = 25_000;
+/** What finishing so many photos may cost at most, as the owner agrees to it. */
+export const limitOf = ({ dollars }: Index['shoot'], photos: number): number =>
+  limitFor(photos * dollars.perEdit, dollars);
 
 /**
- * Who acts on what was handed over. `since` is when the last of it was
- * handed over, or null when nothing waits for an agent; `now` is the time
- * in milliseconds.
+ * How what was handed over goes. `since` is when the last of it was handed
+ * over, or null when nothing waits.
  */
-export const agentStateOf = (
-  { agent }: Index['shoot'],
+export const carryingStateOf = (
+  shoot: Index['shoot'],
+  carrying: CarryingOut,
   since: string | null,
-  now: number,
-): AgentState => {
-  if (since === null) {
-    return { is: 'idle' };
+): CarryingState => {
+  const { stopped } = carrying;
+  if (stopped !== null) {
+    const more =
+      stopped.needs === 'money'
+        ? limitOf(shoot, Math.max(1, stopped.photos.length))
+        : 0;
+    return { is: 'stopped', stopped, more };
   }
-  const { started } = agent;
-  // An agent started before the hand-over was started for an earlier one.
-  const isForThis = started !== null && started.at >= since;
-  if (isForThis && started.failed !== null) {
-    return { is: 'ask', failed: started.failed, isLate: false };
-  }
-  if (isForThis) {
-    return { is: 'at-work', link: started.link };
-  }
-  if (agent.waitsSince !== null) {
-    return { is: 'at-work', link: null };
-  }
-  if (!agent.canStart) {
-    return { is: 'ask', failed: null, isLate: false };
-  }
-  return now - Date.parse(since) > agentPatience
-    ? { is: 'ask', failed: null, isLate: true }
-    : { is: 'starting' };
+  return since === null && carrying.since === null
+    ? { is: 'idle' }
+    : { is: 'at-work' };
 };
 
-/** When the last of what waits for an agent was handed over. */
+/** When the last of what waits was handed over. */
 export const handedOverSince = (
   { ordered }: Index['shoot'],
   waiting: ReadonlyArray<Line>,

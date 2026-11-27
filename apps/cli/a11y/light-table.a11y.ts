@@ -14,6 +14,8 @@ const laidOut =
   /^Photo 15 of 43.*Its stack is laid out.*Space puts the stack together$/u;
 const behindInStack = /^Photo 16 of 43.*Its stack is laid out/u;
 const editName = /^Edit \d+ photos?, about \$/u;
+const atMost = /[Aa]bout \$\d+\.\d\d, at most \$\d+\.\d\d/u;
+const usageLimit = /Claude Code reached its usage limit/u;
 
 /** A way to look at the table, with how many stacks it shows and its key. */
 const viewOf = (name: string, stacks: number) =>
@@ -113,7 +115,7 @@ test('takes a photo out on the table with the keyboard and puts it back', async 
   await expect(frame(page)).toBeFocused();
 });
 
-test('hands marks over to an agent that is started for them', async ({
+test('hands marks over, which wait behind what stopped before', async ({
   page,
 }) => {
   await open(page, '/lisbon/photos/D111');
@@ -131,7 +133,8 @@ test('hands marks over to an agent that is started for them', async ({
     .getByRole('region', { name: 'To hand over' })
     .getByRole('button', { name: 'Take back: To be changed, photo 24' });
   await expect(takeBack).toBeVisible();
-  await expect(handing).toContainText('An agent is started for it');
+  await expect(handing).toContainText('Keepsake starts at once');
+  await expect(handing).toContainText(atMost);
   await scan(page);
 
   await takeBack.click();
@@ -141,17 +144,20 @@ test('hands marks over to an agent that is started for them', async ({
 
   await handing.getByRole('button', { name: editName }).click();
   await expect(title(page)).toHaveText('Handed over');
-  // The page starts the agent itself; nothing is left to copy.
+  // What was handed over before stopped, and the new marks wait behind it
+  // until the owner says to go on.
+  await expect(page.getByText('Waits for you').first()).toBeVisible();
+  await expect(page.getByText(usageLimit).first()).toBeVisible();
   await expect(
-    page.getByRole('link', { name: 'Read along' }).first(),
-  ).toHaveAttribute('href', 'https://agents.example.com/threads/lisbon');
-  await expect(page.getByRole('button', { name: 'Copy' })).toHaveCount(0);
+    page.getByRole('button', { name: 'Go on' }).first(),
+  ).toBeVisible();
   await scan(page);
   await page.keyboard.press('Escape');
   await expect(title(page)).toHaveText('Lisbon');
   await expect(handing).toBeHidden();
-  // One chosen photo wasn't in the album yet, so it is ordered with the marks.
-  await expect(
-    page.getByRole('region', { name: 'More photos are being edited' }),
-  ).toContainText('An agent is at work');
+  // One chosen photo wasn't in the album yet, so it is ordered with the marks,
+  // and never said to be edited while it waits.
+  const ordered = page.getByRole('region', { name: 'The order', exact: true });
+  await expect(ordered.getByRole('alert')).toHaveText(usageLimit);
+  await expect(ordered.getByRole('button', { name: 'Go on' })).toBeVisible();
 });

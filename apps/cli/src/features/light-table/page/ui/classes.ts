@@ -13,8 +13,8 @@ export const mainButton =
 export const sideButton =
   'type-label inline-flex h-10 items-center gap-2.5 border border-rule px-4 text-print transition-colors duration-150 hover:border-quiet hover:text-lamp active:translate-y-px';
 
-/** A button that leads to what an agent did, in its blue pencil. */
-export const agentButton =
+/** A button that leads to what keepsake did, in its blue pencil. */
+export const pencilButton =
   'type-label inline-flex h-10 items-center gap-2.5 border border-pencil-blue px-4 text-pencil-blue transition-colors duration-150 hover:bg-pencil-blue hover:text-sheet active:translate-y-px';
 
 /** A square button that holds one icon. */

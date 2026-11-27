@@ -236,13 +236,16 @@ describe('keepsake take-out', () => {
 });
 
 describe('keepsake take-out, with what Immich does', () => {
-  it('takes out the upload of a photo that waits for the trash', async () => {
+  it('takes out a photo whose earlier upload went to the trash', async () => {
     await publishLisbon();
     await Bun.write(shootFile('edits', 'B', 'B-keepsake.jpg'), 'another');
     await runOk('publish', 'lisbon');
+    expect(fakeTools.trashed).toEqual(['asset-3']);
     const because = ['--because', 'It is blurred.'];
     await runOk('take-out', 'lisbon', 'B', ...because);
-    expect(firstAlbum()?.map(({ id }) => id)).toEqual(['asset-1', 'asset-5']);
+    expect(
+      firstAlbum()?.flatMap(({ id, trashed }) => (trashed ? [] : [id])),
+    ).toEqual(['asset-1', 'asset-5']);
     const { standing } = await runOk('show', 'lisbon', 'B');
     expect(standing).toMatchObject({
       kind: 'taken-out',

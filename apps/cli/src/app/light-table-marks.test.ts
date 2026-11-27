@@ -65,9 +65,17 @@ describe('marks on the light table', () => {
       album: null,
       marks: [{ photo: 'B', note: 'Remove the chair' }],
     });
-    const { id } = handed[0];
-    await runOk('answer', 'lisbon', id, '--done', 'The chair is gone.');
-    expect(await runOk('marks', 'lisbon')).toMatchObject({ agreedDollars: 0 });
+  });
+
+  it('leave no more to spend than was agreed, in whole cents', async () => {
+    await markable();
+    await whileServing(async (address) => {
+      await send('PUT', `${address}/api/shoots/lisbon/marks`, change);
+      return handOver(address, { dollars: 0.759 });
+    });
+    expect(await runOk('marks', 'lisbon')).toMatchObject({
+      agreedDollars: 0.75,
+    });
   });
 
   it('can’t be handed over when there are none', async () => {
@@ -92,25 +100,6 @@ describe('marks on the light table', () => {
     expect(statuses).toEqual([204, 400, 1]);
   });
 
-  it('are news once they are answered, until they were looked at', async () => {
-    await markable();
-    const news = await whileServing(async (address) => {
-      const path = `${address}/api/shoots/lisbon`;
-      const { id } = await (await send('PUT', `${path}/marks`, change)).json();
-      await handOver(address);
-      await runOk('answer', 'lisbon', id, '--done', 'The chair is gone.');
-      const [before] = await marksOf(address);
-      await send('POST', `${path}/marks/${id}/seen`);
-      const [after] = await marksOf(address);
-      return [before, after];
-    });
-    expect(news[0]).toMatchObject({
-      answer: { outcome: 'done', note: 'The chair is gone.' },
-      seenAt: null,
-    });
-    expect(news[1].seenAt).not.toBeNull();
-  });
-
   it.each([
     { ...change, photo: 'D' },
     { ...change, boxes: [{ left: 0 }] },
@@ -130,21 +119,18 @@ describe('marks on the light table', () => {
 describe('a hand-over on the light table', () => {
   it('hands over only the marks that were looked over', async () => {
     await markable();
-    const [status, marks] = await whileServing(
-      async (address) => {
-        const path = `${address}/api/shoots/lisbon/marks`;
-        await send('PUT', path, change);
-        const reviewed = await openMarksOf(address);
-        // Another tab puts something else in its place.
-        await send('PUT', path, { ...change, note: 'Brighter' });
-        const handed = handOver(address, { dollars: 0.75, marks: reviewed });
-        return [await statusOf(handed), await marksOf(address)];
-      },
-      { agent: 'start-agent' },
-    );
+    const [status, marks] = await whileServing(async (address) => {
+      const path = `${address}/api/shoots/lisbon/marks`;
+      await send('PUT', path, change);
+      const reviewed = await openMarksOf(address);
+      // Another tab puts something else in its place.
+      await send('PUT', path, { ...change, note: 'Brighter' });
+      const handed = handOver(address, { dollars: 0.75, marks: reviewed });
+      return [await statusOf(handed), await marksOf(address)];
+    });
     expect(status).toBe(409);
     expect(
-      fakeTools.runs.filter(({ command }) => command === 'start-agent'),
+      fakeTools.runs.filter(({ command }) => command === 'keepsake'),
     ).toEqual([]);
     expect(marks).toMatchObject([{ note: 'Brighter', handedOverAt: null }]);
     expect(await runOk('marks', 'lisbon')).toMatchObject({

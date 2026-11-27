@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Box, NewMark, PhotoView, Picture } from '../../contract.ts';
 import { useShootContext } from '../app/shoot-context.ts';
 import { favoriteHint } from '../app/use-table.ts';
-import { isFavorite, markedIn, type Pile } from '../data/derive.ts';
+import { isFavorite, newPhotos, type Pile } from '../data/derive.ts';
 import {
   actionFor,
   offeredFor,
@@ -18,6 +18,7 @@ import type { Entry } from './control.ts';
 import { wasAskedToCompose } from './intent.ts';
 import type { FrameOnTable } from './stage.tsx';
 import { usePrepared } from './use-picture.ts';
+import { newsShownOf } from './word.ts';
 
 // What the owner does with a photo that is looked at: which picture of it
 // is shown, the change being written, the marks, and the keys for it all.
@@ -49,7 +50,7 @@ export type Around = {
   readonly onClose: () => void;
   readonly onPull: (share: number) => void;
   readonly onInfo: (isShown: boolean) => void;
-  /** Called when the owner has looked at what an agent answered. */
+  /** Called when the owner has looked at what is new about the photo. */
   readonly onSeen: () => void;
 };
 
@@ -253,11 +254,13 @@ export const useMarking = (
   around: Around,
   doing: { readonly shown: Showing; readonly composing: Composing },
 ) => {
-  const { index, store } = useShootContext();
+  const { index, state, store } = useShootContext();
 
   const lookedAt = () => {
-    for (const mark of markedIn(index, photo.id).news) {
-      store.seen(mark.id).catch(() => undefined);
+    if (newPhotos(index, state.carrying).includes(photo.id)) {
+      store
+        .seen(newsShownOf(index, photo.id, state.carrying))
+        .catch(() => undefined);
     }
   };
 

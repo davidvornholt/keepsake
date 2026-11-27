@@ -30,11 +30,12 @@ export const useRooms = (
 ) => {
   const { index, state } = useShootContext();
   const { isComposing, measured, saidHeights } = about;
-  /** What an agent or the owner says about a photo that is looked at. */
+  /** What keepsake or the owner says about a photo that is looked at. */
   const wordFor = (asked: PhotoView, isWriting: boolean): Word | null =>
     wordOf(index, asked, {
       isWorkedOn: state.activity?.photos.includes(asked.id) ?? false,
       isComposing: isWriting,
+      carrying: state.carrying,
     });
   /** The room what stands above the pencils of a photo takes. */
   const aboveOf = (asked: PhotoView): number =>

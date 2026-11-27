@@ -1,5 +1,5 @@
 // The address of everything the page shows. A photo's address is the one
-// agents link to: /<shoot>/photos/<photo>.
+// keepsake links to: /<shoot>/photos/<photo>.
 
 export const shows = ['all', 'album', 'left'] as const;
 export type Show = (typeof shows)[number];
@@ -28,9 +28,14 @@ export type Route =
   /** Making an album: of a folder still to be chosen, or of this one. */
   | { readonly screen: 'new'; readonly folder: string | null }
   | {
-      readonly screen: 'sheet' | 'hand-over' | 'answers' | 'rate';
+      readonly screen: 'sheet' | 'hand-over' | 'news' | 'rate';
       readonly shoot: string;
       readonly filters: Filters;
+      /**
+       * Whether what is new here is part of a walk through all the albums,
+       * which goes on to the next album with something new afterwards.
+       */
+      readonly across?: boolean;
     }
   | {
       readonly screen: 'photo';
@@ -73,7 +78,16 @@ const decoded = (part: string): string => {
   }
 };
 
-const screens = ['hand-over', 'answers', 'rate'] as const;
+const screens = ['hand-over', 'news', 'rate'] as const;
+
+/** What a walk through all the albums shows: what is new, and what waits for the owner. */
+const isWalked = (screen: string) =>
+  screen === 'news' || screen === 'hand-over';
+
+/** Where the walk through what is new was, before it was called that. */
+const formerly: Readonly<Record<string, (typeof screens)[number]>> = {
+  answers: 'news',
+};
 
 /** What an address shows. */
 export const routeOf = (pathname: string, query: string): Route => {
@@ -99,7 +113,11 @@ export const routeOf = (pathname: string, query: string): Route => {
       isPlaced: search.has('show'),
     };
   }
-  return { screen: oneOf(screens, kind ?? null) ?? 'sheet', shoot, filters };
+  const screen =
+    oneOf(screens, kind ?? null) ?? formerly[kind ?? ''] ?? 'sheet';
+  return isWalked(screen) && search.has('across')
+    ? { screen, shoot, filters, across: true }
+    : { screen, shoot, filters };
 };
 
 const queryOf = (filters: Filters, isPlaced: boolean): string => {
@@ -135,7 +153,11 @@ export const hrefOf = (route: Route): string => {
     return `${shoot}/photos/${encodeURIComponent(route.photo)}${queryOf(route.filters, route.isPlaced)}`;
   }
   const tail = route.screen === 'sheet' ? '' : `/${route.screen}`;
-  return `${shoot}${tail}${queryOf(route.filters, false)}`;
+  const query = queryOf(route.filters, false);
+  if (isWalked(route.screen) && route.across === true) {
+    return `${shoot}${tail}${query === '' ? '?' : `${query}&`}across`;
+  }
+  return `${shoot}${tail}${query}`;
 };
 
 /** The same place with other photos on the table. */

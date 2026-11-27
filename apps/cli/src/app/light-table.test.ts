@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { readdir, readlink, rm } from 'node:fs/promises';
+import { mkdir, readdir, readlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
-import { BunServices } from '@effect/platform-bun';
-import { Effect } from 'effect';
-import { serveLightTable } from '../features/light-table/server.ts';
+import { asTheRunner } from '../shared/lock.ts';
 import {
   editLisbon,
+  fake,
   pickLisbon,
   runOk,
   setUp,
   shootFile,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeTools, fakeToolsLayer } from './fake-tools.ts';
+import { fakeTools } from './fake-tools.ts';
 import {
   change,
   send,
@@ -20,7 +20,8 @@ import {
   statusOf,
   whileServing,
 } from './light-table-fixtures.ts';
-import { publishingLayer } from './publishing.ts';
+import { whileHeld } from './lock-fixtures.ts';
+import { handedOver } from './mark-fixtures.ts';
 
 beforeEach(() => setUp(spyOn));
 afterEach(tearDown);
@@ -57,7 +58,9 @@ describe('the light table', () => {
         activity: null,
         isOrdered: false,
         openMarks: 0,
-        newAnswers: 0,
+        carrying: { since: null, stopped: null },
+        news: 0,
+        newSince: null,
       },
     ]);
     expect(shoots[0].covers).toHaveLength(3);
@@ -74,7 +77,8 @@ describe('the light table', () => {
       picked: { minimumScore: 6, maximum: null },
       activity: null,
       preparation: null,
-      agent: { waitsSince: null, canStart: false, started: null },
+      carrying: { since: null, stopped: null },
+      added: [],
       ordered: null,
       rating: null,
       photos: [
@@ -144,22 +148,40 @@ describe('the light table', () => {
 });
 
 describe('what the light table is doing', () => {
-  it('says who waits for a hand-over, also when no file changed', async () => {
+  it('says what another server carries out, and when nothing does', async () => {
     await pickLisbon();
     const since = '2026-05-02T10:00:00.000Z';
-    const waiting = shootFile('waiting.json');
     const seen = await whileServing(async (address) => {
       const path = `${address}/api/shoots/lisbon`;
-      const first = await fetch(path);
-      const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
-      const waitsSince = async () => (await shootOf(address)).agent.waitsSince;
-      await Bun.write(waiting, JSON.stringify({ process: process.pid, since }));
-      const asked = await fetch(path, { headers });
-      const waits = await waitsSince();
-      await rm(waiting);
-      return [asked.status, waits, await waitsSince()];
+      const now = async () => (await shootOf(address)).carrying;
+      // Another server, which holds the shoot's runner lock while it works.
+      const [asked, working] = await whileHeld(
+        async () => {
+          await handedOver('order', { dollars: 1.5, album: ['B'] });
+          const first = await fetch(path);
+          const headers = { 'if-none-match': first.headers.get('etag') ?? '' };
+          await Bun.write(
+            shootFile('carrying-out.json'),
+            JSON.stringify({
+              since,
+              stopped: null,
+              marks: {},
+              toExplain: false,
+            }),
+          );
+          return [(await fetch(path, { headers })).status, await now()];
+        },
+        'lisbon',
+        asTheRunner,
+      );
+      // Once it let go, and nothing here was asked to go on.
+      return [asked, working, await now()];
     });
-    expect(seen).toEqual([200, since, null]);
+    expect(seen).toMatchObject([
+      200,
+      { since, stopped: null },
+      { since: null, stopped: { id: 'nobody', needs: 'retry', photos: [] } },
+    ]);
   });
 });
 
@@ -282,23 +304,35 @@ describe('who the light table answers', () => {
   });
 
   it('says that something else uses its port', async () => {
-    const serving = whileServing((address) =>
-      Effect.runPromise(
-        serveLightTable({
-          port: Number(new URL(address).port),
-          address: undefined,
-          photos: [],
-          agent: undefined,
-          keepsake: [],
-        }).pipe(
-          Effect.scoped,
-          Effect.provide(publishingLayer),
-          Effect.provide(fakeToolsLayer),
-          Effect.provide(BunServices.layer),
-        ),
-      ),
+    const other = Bun.serve({ port: 0, fetch: () => new Response() });
+    try {
+      const serving = whileServing(() => Promise.resolve(), {
+        port: other.port ?? 0,
+      });
+      await expect(serving).rejects.toThrow('Leave out --port');
+    } finally {
+      await other.stop(true);
+    }
+  });
+
+  it('doesn’t start while another server runs on the machine', async () => {
+    const second = whileServing(() => whileServing(() => Promise.resolve()));
+    await expect(second).rejects.toThrow(
+      `Another keepsake serve (process ${process.pid}) is running`,
     );
-    await expect(serving).rejects.toThrow('Leave out --port');
+    // Once that one has ended, the next one starts.
+    expect(
+      await whileServing(async (address) => (await fetch(address)).status),
+    ).toBe(200);
+  });
+
+  it('takes over the lock of a server that died', async () => {
+    const lock = join(fake.home, 'data', 'keepsake', 'locks', '.serve');
+    await mkdir(dirname(lock), { recursive: true });
+    await writeFile(lock, '4194303\n');
+    expect(
+      await whileServing(async (address) => (await fetch(address)).status),
+    ).toBe(200);
   });
 });
 

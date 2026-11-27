@@ -29,6 +29,8 @@ export type FakeImmich = {
   readonly albums: Array<FakeAlbum>;
   /** Assets Immich refuses to put into an album or take out of one. */
   readonly refused: ReadonlySet<string>;
+  /** Assets moved to the trash, in the order they were. */
+  readonly trashed: Array<string>;
 };
 
 const baseOf = (file: string) => file.slice(file.lastIndexOf('/') + 1);
@@ -163,6 +165,27 @@ const markFavorite = (
   return {};
 };
 
+/** Moves assets to the trash, where albums no longer show them. */
+const trash = (immich: FakeImmich, ids: ReadonlyArray<string>) => {
+  const before = new Set(
+    immich.albums.flatMap(({ assets }) =>
+      assets.flatMap(({ id, trashed }) => (trashed ? [id] : [])),
+    ),
+  );
+  for (const album of immich.albums) {
+    album.assets = album.assets.map((asset) =>
+      ids.includes(asset.id) ? { ...asset, trashed: true } : asset,
+    );
+  }
+  immich.trashed.push(...ids.filter((id) => !before.has(id)));
+  return {
+    trashed: ids.filter((id) => !before.has(id)).map((id) => ({ id })),
+    alreadyInTrash: ids.filter((id) => before.has(id)),
+    trashDays: 30,
+    restoreWith: `photos restore ${ids.join(' ')}`,
+  };
+};
+
 /** What the photos command answers, from the Immich that it reaches. */
 export const answerPhotos = (
   immich: FakeImmich,
@@ -189,6 +212,9 @@ export const answerPhotos = (
     default:
       if (args[0] === 'update') {
         return markFavorite(immich, args);
+      }
+      if (args[0] === 'trash') {
+        return trash(immich, args.slice(1));
       }
       return args[0] === 'upload' ? upload(immich, args) : {};
   }

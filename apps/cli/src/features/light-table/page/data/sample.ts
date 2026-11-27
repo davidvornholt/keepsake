@@ -105,7 +105,7 @@ export const sampleShoot = (
   revision: 'one',
   album: null,
   picked: { minimumScore: 7, maximum: 170 },
-  dollars: { spent: 0, perEdit: 0.75 },
+  dollars: { spent: 0, perEdit: 0.75, hold: 0.74 },
   photos,
   stacks: [...Map.groupBy(photos, (photo) => photo.stack)].map(
     ([front, own]) => ({ front, photos: own.map((photo) => photo.id) }),
@@ -114,7 +114,8 @@ export const sampleShoot = (
   choices,
   activity: null,
   preparation: null,
-  agent: { waitsSince: null, canStart: true, started: null },
+  carrying: { since: null, stopped: null },
+  added: [],
   ordered: null,
   rating: null,
 });

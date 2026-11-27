@@ -23,7 +23,7 @@ const storeFailed = (error: { readonly message: string }) =>
 
 /**
  * A mark as it may be saved: marks had a kind once, and those of the kinds
- * that are done on the page now are no longer for an agent.
+ * that are done on the page now are no longer acted on.
  */
 const StoredMark = Schema.Struct({
   ...SavedMark.fields,
@@ -89,7 +89,7 @@ const remove = (files: ShootFiles, { id }: Mark) =>
 export const isOpen = ({ handedOverAt }: Mark): boolean =>
   handedOverAt === null;
 
-/** Marks an agent is to act on. */
+/** Marks that are handed over and not answered yet. */
 export const isWaiting = ({ handedOverAt, answer }: Mark): boolean =>
   handedOverAt !== null && answer === null;
 
@@ -119,7 +119,7 @@ export const makeMark = Effect.fn('makeMark')(function* (
       message: 'The mark is about a photo the shoot doesn’t have.',
     });
   }
-  // An agent can't know what to change, also where boxes show the place.
+  // keepsake can't know what to change, also where boxes show the place.
   if (note.trim() === '') {
     return yield* new InvalidInput({ message: 'Say what should change.' });
   }
@@ -183,7 +183,7 @@ export const withdrawOpen = Effect.fn('withdrawOpen')(function* (
   yield* Effect.forEach(open, (mark) => remove(files, mark));
 });
 
-/** Notes what an agent did about a mark. */
+/** Notes what came of a mark. */
 export const answerMark = Effect.fn('answerMark')(function* (
   files: ShootFiles,
   id: string,
@@ -205,12 +205,4 @@ export const answerMark = Effect.fn('answerMark')(function* (
   };
   yield* saveMark(files, answered);
   return answered;
-});
-
-/** Notes that the owner looked at what came of a mark. */
-export const seeMark = Effect.fn('seeMark')(function* (
-  files: ShootFiles,
-  id: string,
-) {
-  yield* seeAll(files, [yield* markWith(files, id)]);
 });

@@ -51,7 +51,7 @@ export const Composer = ({
   onRemove,
 }: Props) => {
   const noteRef = useRef<HTMLTextAreaElement>(null);
-  // Boxes show only where; an agent needs the words to know what.
+  // Boxes show only where; keepsake needs the words to know what.
   const hasNoNote = draft.note.trim() === '';
   const words = canDraw
     ? { asked: 'What should change?', saves: 'Mark the change' }

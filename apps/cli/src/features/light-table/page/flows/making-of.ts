@@ -2,7 +2,7 @@ import type { Preparation } from '../../contract.ts';
 import type { Index } from '../data/derive.ts';
 
 // An album is made in three parts: keepsake gets it ready, the owner goes
-// over the choice and orders it, an agent has it edited.
+// over the choice and orders it, and keepsake has it edited.
 
 export type MakingPart = 'ready' | 'chosen' | 'ordered';
 

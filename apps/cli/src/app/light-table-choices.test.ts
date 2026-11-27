@@ -57,12 +57,12 @@ const publishLisbon = async () => {
   await runOk('publish', 'lisbon');
 };
 
-/** Whatever the page served, nothing started an agent. */
 const serving = <A>(visit: (address: string) => Promise<A>) =>
-  whileServing(visit, { agent: 'start-agent' });
+  whileServing(visit);
 
-const agentStarts = () =>
-  fakeTools.runs.filter(({ command }) => command === 'start-agent');
+/** What the page ran keepsake for, which a choice alone never needs. */
+const keepsakeRuns = () =>
+  fakeTools.runs.filter(({ command }) => command === 'keepsake');
 
 const choicesOf = async (address: string) => (await shootOf(address)).choices;
 
@@ -77,7 +77,7 @@ describe('taking a photo out on the page', () => {
     expect([status, marks, choices]).toEqual([204, [], []]);
     expect(inImmich()).toEqual(['A1', 'C']);
     expect(await standingOf('B')).toMatchObject({ kind: 'taken-out', because });
-    expect(agentStarts()).toEqual([]);
+    expect(keepsakeRuns()).toEqual([]);
   });
 
   it('takes it out of the choice when there is no album yet', async () => {
@@ -89,7 +89,7 @@ describe('taking a photo out on the page', () => {
     expect(picked).toEqual(['A1', 'C']);
     expect(await standingOf('B')).toMatchObject({ kind: 'taken-out', because });
     expect(fakeTools.uploads).toEqual([]);
-    expect(agentStarts()).toEqual([]);
+    expect(keepsakeRuns()).toEqual([]);
   });
 
   it('says so when Immich refuses, and the photo stays in', async () => {
@@ -123,7 +123,7 @@ describe('putting a photo in on the page', () => {
     const { picks } = await shootJson('picks.json');
     expect(picks.at(-1)).toMatchObject({ photo: 'A2', moment: 'A1' });
     expect(fakeTools.uploads).toEqual([]);
-    expect(agentStarts()).toEqual([]);
+    expect(keepsakeRuns()).toEqual([]);
   });
 
   it('puts a finished photo straight into the album', async () => {
@@ -132,7 +132,7 @@ describe('putting a photo in on the page', () => {
     await serving((address) => choose(address, { photo: 'A2', wants: 'in' }));
     expect(inImmich()).toEqual(['A1', 'B', 'C', 'A2']);
     expect(await standingOf('A2')).toMatchObject({ kind: 'album' });
-    expect(agentStarts()).toEqual([]);
+    expect(keepsakeRuns()).toEqual([]);
   });
 
   it('publishes nothing while there is no album', async () => {

@@ -13,7 +13,7 @@ import {
 
 const activity = { step: 'edit', done: 3, total: 12, photos: [] };
 
-describe('what an agent is doing', () => {
+describe('what keepsake is doing', () => {
   it('names the steps it knows, and calls the others working', () => {
     expect(stepName(activity)).toBe('Editing');
     expect(stepName({ ...activity, step: 'something-new' })).toBe('Working');

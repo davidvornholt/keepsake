@@ -4,12 +4,14 @@ import type {
   Favorite,
   FolderList,
   FolderLook,
+  GoOn,
   HandOver,
   Mark,
   NewChoice,
   NewLabels,
   NewMark,
   NewShoot,
+  Seen,
   ShootList,
   ShootView,
 } from '../../contract.ts';
@@ -94,8 +96,9 @@ export const takeBackMark = async (
   await send('DELETE', pathOf(shoot, `/marks/${encodeURIComponent(id)}`));
 };
 
-export const seeMark = async (shoot: string, id: string): Promise<void> => {
-  await send('POST', pathOf(shoot, `/marks/${encodeURIComponent(id)}/seen`));
+/** Notes that the owner looked at everything new about a photo. */
+export const seePhoto = async (shoot: string, seen: Seen): Promise<void> => {
+  await send('POST', pathOf(shoot, '/seen'), seen);
 };
 
 export const handOverMarks = async (
@@ -104,9 +107,12 @@ export const handOverMarks = async (
 ): Promise<ReadonlyArray<Mark>> =>
   (await send('POST', pathOf(shoot, '/hand-over'), agreed)).json();
 
-/** Has an agent act on what was handed over before. */
-export const askForAgent = async (shoot: string): Promise<void> => {
-  await send('POST', pathOf(shoot, '/agent'));
+/** Goes on with what was handed over, where it stopped. */
+export const goOnCarrying = async (
+  shoot: string,
+  agreed: GoOn,
+): Promise<void> => {
+  await send('POST', pathOf(shoot, '/go-on'), agreed);
 };
 
 /** Sets or takes away the favorite heart of a photo in Immich. */

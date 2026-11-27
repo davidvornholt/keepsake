@@ -15,7 +15,9 @@ const shoot = (change: Partial<ShootSummary> = {}): ShootSummary => ({
   activity: null,
   isOrdered: false,
   openMarks: 0,
-  newAnswers: 0,
+  carrying: { since: null, stopped: null },
+  news: 0,
+  newSince: null,
   covers: [],
   ...change,
 });
@@ -38,8 +40,8 @@ describe('what is printed under an album', () => {
   });
 
   it('puts it all in one sentence', () => {
-    expect(sentenceOf(shoot({ newAnswers: 1 }))).toBe(
-      'The harbor, 1 May to 4 May 2026, 43 photos, 8 in the album, 1 new answer',
+    expect(sentenceOf(shoot({ news: 1 }))).toBe(
+      'The harbor, 1 May to 4 May 2026, 43 photos, 8 in the album, 1 new thing to look at',
     );
   });
 });
@@ -102,7 +104,12 @@ describe('what waits at an album', () => {
     expect(texts({ inAlbum: 0, picked: 12 })).toEqual([
       '12 chosen, ready for your look',
     ]);
-    const ordered = { inAlbum: 0, picked: 12, isOrdered: true };
+    const ordered = {
+      inAlbum: 0,
+      picked: 12,
+      isOrdered: true,
+      carrying: { since, stopped: null },
+    };
     expect(texts(ordered)).toEqual(['Being edited']);
     expect(
       texts({
@@ -113,17 +120,43 @@ describe('what waits at an album', () => {
     expect(isBusy(shoot(ordered))).toBe(true);
   });
 
-  it('lists what an agent does, then answers, then marks', () => {
+  it('says what an order waits for, and never that it is being edited then', () => {
+    const stopped = {
+      id: 'stop1',
+      at: since,
+      reason: 'What you agreed to pay is used up.',
+      needs: 'money' as const,
+      photos: ['a'],
+      seenAt: null,
+    };
+    const waiting = shoot({
+      inAlbum: 0,
+      picked: 12,
+      isOrdered: true,
+      carrying: { since: null, stopped },
+    });
+    expect(waitsOf(waiting)).toEqual([
+      {
+        text: 'Waits for you',
+        more: 'What you agreed to pay is used up.',
+        who: 'owner',
+      },
+    ]);
+    expect(isBusy(waiting)).toBe(false);
+    expect(texts({ picked: 12, isOrdered: true })).toEqual(['Ordered']);
+  });
+
+  it('lists what keepsake does, then what is new, then marks', () => {
     const waits = waitsOf(
       shoot({
         activity: { step: 'publish', done: 0, total: 0, photos: [] },
-        newAnswers: 2,
+        news: 2,
         openMarks: 1,
       }),
     );
     expect(waits.map(({ text, who }) => [text, who])).toEqual([
-      ['Publishing to Immich', 'agent'],
-      ['2 new answers', 'agent'],
+      ['Publishing to Immich', 'pencil'],
+      ['2 new things to look at', 'pencil'],
       ['1 mark to hand over', 'owner'],
     ]);
   });

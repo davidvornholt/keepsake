@@ -1,19 +1,24 @@
 import { Effect, Layer, Option } from 'effect';
 import { Argument, Command } from 'effect/cli';
 import { cull as cullShoot } from '../features/cull/cull.ts';
-import { edit as editShoot } from '../features/edit/edit.ts';
+import {
+  type EditSummary,
+  edit as editShoot,
+  type Keep,
+} from '../features/edit/edit.ts';
 import { ImageModel } from '../features/edit/image-model.ts';
 import { explain as explainShoot } from '../features/explain/explain.ts';
+import { allowanceOf } from '../features/light-table/carry-out.ts';
 import { pick as pickShoot } from '../features/pick/pick.ts';
-import { tellOutdated } from '../features/publish/outdated.ts';
-import { publish as publishShoot } from '../features/publish/publish.ts';
-import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
-import { withChoice } from '../shared/lock.ts';
-import { defaultImageModel, defaultReviewModel } from '../shared/models.ts';
+import {
+  defaultImageModel,
+  defaultReviewModel,
+  defaultVersions,
+} from '../shared/models.ts';
 import { askReviewer, ReviewVision } from '../shared/review-vision.ts';
 import { Spending } from '../shared/spending.ts';
-import { openShoot } from '../shared/store.ts';
+import { type OpenShoot, openShoot } from '../shared/store.ts';
 import { Vision } from '../shared/vision.ts';
 import { workOn } from '../shared/work.ts';
 import {
@@ -25,8 +30,9 @@ import {
   shootArgument,
   visionModel,
 } from './command-inputs.ts';
-import { emit, emitWithCost } from './output.ts';
-import { markOfChosen, whatToEdit } from './what-to-edit.ts';
+import { keepingEdit, operationOf, resultOf } from './operations.ts';
+import { emit, emitWithCost, withCost } from './output.ts';
+import { whatToEdit } from './what-to-edit.ts';
 
 const lowestScore = 1;
 const highestScore = 10;
@@ -34,7 +40,6 @@ const defaultMinimum = 6;
 const mostPicks = 10_000;
 const defaultBudget = 25;
 const mostDollars = 10_000;
-const defaultVersions = 2;
 const mostVersions = 4;
 
 const again = flag('again', 'Start over instead of keeping what is done');
@@ -171,6 +176,30 @@ export const pick = Command.make(
   ),
 );
 
+/**
+ * Edits under the shoot's lock, unless an edit given the same operation id
+ * ended meanwhile, such as one a server started before it stopped: then
+ * what that came to. What an edit with an id came to is noted before it
+ * forgets how far it got.
+ */
+const editOnce = <E, R>(
+  open: OpenShoot,
+  operation: { readonly id: string; readonly about: string } | null,
+  editing: (keep?: Keep) => Effect.Effect<EditSummary, E, R>,
+) =>
+  Effect.gen(function* () {
+    if (operation === null) {
+      return yield* withCost(yield* editing());
+    }
+    const ended = yield* resultOf(open.files, operation);
+    if (ended !== null) {
+      return ended;
+    }
+    const { keep, kept } = keepingEdit(open, operation);
+    const summary = yield* editing(keep);
+    return kept.value ?? (yield* withCost(summary));
+  });
+
 export const edit = Command.make(
   'edit',
   {
@@ -186,11 +215,43 @@ export const edit = Command.make(
       'mark',
       'Edit the photo that a mark of the owner is about, with its note as the wish and at the places it marks. `keepsake marks` lists the marks.',
     ),
+    order: optionalString(
+      'order',
+      'The id of the order handed over that this edit is for: under the shoot’s lock, the budget is cut to what is left of what the owner agreed to pay for it',
+    ),
+    operation: optionalString(
+      'operation',
+      'An id for this edit: it notes what it came to under the id before it prints it, and an edit given the same id again prints that without editing again',
+    ),
     again,
   },
-  ({ shoot, photos, model, wish, mark, again: startOver, ...flags }) =>
+  ({
+    shoot,
+    photos,
+    model,
+    wish,
+    mark,
+    again: startOver,
+    operation: id,
+    order,
+    ...flags
+  }) =>
     Effect.gen(function* () {
       const input = yield* editInput(flags);
+      const operation = Option.isSome(id)
+        ? {
+            id: yield* operationOf(id.value),
+            about: Option.isSome(mark)
+              ? `the mark ${mark.value}`
+              : `the photos ${photos.join(', ')}`,
+          }
+        : null;
+      const { files } = yield* openShoot(shoot);
+      const saved =
+        operation === null ? null : yield* resultOf(files, operation);
+      if (saved !== null) {
+        return yield* emit(saved);
+      }
       const asked = yield* whatToEdit(shoot, {
         photos,
         wish,
@@ -199,14 +260,28 @@ export const edit = Command.make(
         budget: flags.budget,
       });
       yield* workOn(shoot, (open) =>
-        editShoot(open, asked.photos, {
-          ...input,
-          again: startOver,
-          wish: asked.wish,
-          areas: asked.areas,
+        Effect.gen(function* () {
+          // What an edit that ended since the runner planned charged counts.
+          const budget = Option.isSome(order)
+            ? Math.min(input.budget, yield* allowanceOf(open, order.value))
+            : input.budget;
+          return yield* editOnce(open, operation, (keep) =>
+            editShoot(
+              open,
+              asked.photos,
+              {
+                ...input,
+                budget,
+                again: startOver,
+                wish: asked.wish,
+                areas: asked.areas,
+              },
+              keep,
+            ),
+          );
         }),
       ).pipe(
-        Effect.flatMap(emitWithCost),
+        Effect.flatMap(emit),
         Effect.provide(editLayer(flags)),
         withVision(shoot, model),
       );
@@ -214,47 +289,6 @@ export const edit = Command.make(
 ).pipe(
   Command.withDescription(
     'Crop the picked photos, edit them with an image model, and keep the version that passes a review, or the camera’s own picture when none does. Photos edited before are kept. `--model` is the one that crops.',
-  ),
-);
-
-export const publish = Command.make(
-  'publish',
-  {
-    shoot: shootArgument,
-    photos: photosArgument('Photos to publish instead of the picked ones'),
-    album: optionalString(
-      'album',
-      'Publish to the album with this name instead, made if there is none (default: the album published to before, or else a new album named after the shoot’s title)',
-    ),
-    mark: optionalString(
-      'mark',
-      'Publish the photo a mark is about, unless the owner took it out meanwhile',
-    ),
-  },
-  ({ shoot, photos, album, mark }) =>
-    workOn(shoot, (open) =>
-      Effect.gen(function* () {
-        if (Option.isSome(mark) && photos.length > 0) {
-          return yield* new InvalidInput({
-            message: 'Name no photos with --mark, which is about one already.',
-          });
-        }
-        const names = Option.isSome(mark)
-          ? [(yield* markOfChosen(open, mark.value)).photo]
-          : photos;
-        const published = yield* publishShoot(open, names, album);
-        yield* tellOutdated(open, published.outdated, (outdated) =>
-          emit({ ...published, outdated }),
-        );
-      }).pipe(
-        // Until it told, so the page publishes nothing in between, and
-        // takes out no photo of a mark while it is published.
-        withChoice(open.files),
-      ),
-    ).pipe(Effect.provide(Spending.layer)),
-).pipe(
-  Command.withDescription(
-    'Upload the finished photos to an album in Immich with the photos command, each stacked on top of the camera’s own picture. Photos published before are not sent again.',
   ),
 );
 

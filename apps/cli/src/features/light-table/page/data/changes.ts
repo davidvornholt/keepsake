@@ -1,4 +1,5 @@
 import type {
+  CarryingOut,
   Choice,
   Mark,
   NewChoice,
@@ -116,12 +117,41 @@ export const withSaved = (
 ): ReadonlyArray<Mark> =>
   marks.map((mark) => (mark.id === draft ? saved : mark));
 
-export const withSeen = (
-  marks: ReadonlyArray<Mark>,
-  id: string,
+/** What waits for the owner, noted as seen once they looked at its photo. */
+export const carryingSeen = (
+  carrying: CarryingOut,
+  keys: ReadonlySet<string>,
   now: string,
-): ReadonlyArray<Mark> =>
-  marks.map((mark) => (mark.id === id ? { ...mark, seenAt: now } : mark));
+): CarryingOut => {
+  const { stopped } = carrying;
+  return stopped === null ||
+    stopped.seenAt !== null ||
+    !keys.has(`stop:${stopped.id}`)
+    ? carrying
+    : { ...carrying, stopped: { ...stopped, seenAt: now } };
+};
+
+/** What is new and was shown, by the keys of `newsItemsOf`, noted as seen. */
+export const withSeen = (
+  shoot: ShootView,
+  keys: ReadonlySet<string>,
+  now: string,
+): ShootView => ({
+  ...shoot,
+  marks: shoot.marks.map((mark) =>
+    mark.answer !== null &&
+    mark.seenAt === null &&
+    keys.has(`answer:${mark.id}:${mark.answer.at}`)
+      ? { ...mark, seenAt: now }
+      : mark,
+  ),
+  added: shoot.added.map((one) =>
+    one.seenAt === null && keys.has(`added:${one.photo}:${one.at}`)
+      ? { ...one, seenAt: now }
+      : one,
+  ),
+  carrying: carryingSeen(shoot.carrying, keys, now),
+});
 
 export const withLabels = (
   shoot: ShootView,

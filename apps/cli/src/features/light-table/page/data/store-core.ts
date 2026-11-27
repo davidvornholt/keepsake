@@ -60,7 +60,7 @@ export const makeCore = (name: string) => {
     if (inFlight > 0) {
       return;
     }
-    const { activity, preparation, agent } = shoot;
+    const { activity, preparation, carrying } = shoot;
     const { problem } = get();
     known = shoot;
     isAhead = false;
@@ -69,7 +69,7 @@ export const makeCore = (name: string) => {
       index: indexOf(shoot),
       activity,
       preparation,
-      agent,
+      carrying,
       // It answers again, so the notice that it doesn't has had its day,
       // unless a change was lost meanwhile.
       problem: problem === unreachable ? lost : problem,

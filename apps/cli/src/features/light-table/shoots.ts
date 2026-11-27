@@ -64,13 +64,16 @@ const makeWarming = () => {
   });
 };
 
+/** Whether the server works on what was handed over of a shoot now. */
+type IsWorking = (name: string) => boolean;
+
 /**
- * The view of a shoot. What a command, the page's program or an agent is doing
- * changes without a file the revision knows of, such as when an agent that
- * waits stops, so it is read every time.
+ * The view of a shoot. What a command or the server is doing changes without
+ * a file the revision knows of, such as when a command stops, so it is read
+ * every time.
  */
 const makeView = (
-  canStartAgent: boolean,
+  isWorking: IsWorking,
   views: Map<string, View>,
   warmOnce: ReturnType<typeof makeWarming>,
 ) => {
@@ -82,7 +85,7 @@ const makeView = (
     if (known?.revision === revision) {
       return known.made;
     }
-    const made = yield* shootView(gallery, canStartAgent);
+    const made = yield* shootView(gallery, isWorking(gallery.open.shoot.name));
     yield* saveLooks(gallery);
     yield* warmOnce(gallery);
     return made;
@@ -92,7 +95,7 @@ const makeView = (
     const { name } = gallery.open.shoot;
     const { revision, ...now } = yield* changedSince(
       gallery.open,
-      canStartAgent,
+      isWorking(name),
     );
     const live = JSON.stringify(now);
     const known = views.get(name);
@@ -147,7 +150,7 @@ const readable = Effect.gen(function* () {
 
 /** The shoots as the server has them, so it needn't read them every time. */
 export const makeShoots = Effect.fn('makeShoots')(function* (
-  canStartAgent: boolean,
+  isWorking: IsWorking,
   workers: Semaphore.Semaphore,
 ) {
   const galleries = new Map<string, Gallery>();
@@ -176,7 +179,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     }
     const open = yield* openShoot(name);
     yield* refreshAlbum(open);
-    const current = yield* changedSince(open, canStartAgent);
+    const current = yield* changedSince(open, isWorking(name));
     changes.set(name, { at: now, changed: current });
     return current;
   });
@@ -188,10 +191,10 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
       (name) =>
         Effect.gen(function* () {
           const gallery = yield* galleryOf(name);
-          const inShort = yield* shootInShort({
-            ...gallery,
-            workers: forCovers,
-          });
+          const inShort = yield* shootInShort(
+            { ...gallery, workers: forCovers },
+            isWorking(name),
+          );
           yield* saveLooks(gallery);
           return [inShort];
         }).pipe(
@@ -210,7 +213,7 @@ export const makeShoots = Effect.fn('makeShoots')(function* (
     };
   });
 
-  const viewOf = makeView(canStartAgent, views, warmOnce);
+  const viewOf = makeView(isWorking, views, warmOnce);
   const view = (name: string) => Effect.flatMap(galleryOf(name), viewOf);
 
   return {

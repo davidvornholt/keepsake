@@ -5,7 +5,7 @@
 // another account shares one with it.
 import process from 'node:process';
 
-const [, , asked = '', what = ''] = process.argv;
+const [, , asked = '', ...rest] = process.argv;
 const albums = [
   {
     id: 'tavira',
@@ -22,10 +22,16 @@ const albums = [
     owner: 'Friend',
   },
 ];
-const answers: Record<string, unknown> = {
+const answers: Readonly<Record<string, unknown>> = {
   status: { server: 'https://photos.example.com', user: 'Owner' },
   'albums list': albums,
+  trash: {
+    trashed: rest.map((id) => ({ id })),
+    alreadyInTrash: [],
+    trashDays: 30,
+    restoreWith: 'photos restore',
+  },
 };
 process.stdout.write(
-  JSON.stringify(answers[asked] ?? answers[`${asked} ${what}`] ?? {}),
+  JSON.stringify(answers[asked] ?? answers[`${asked} ${rest[0] ?? ''}`] ?? {}),
 );

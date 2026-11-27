@@ -34,8 +34,10 @@ type Props = {
   readonly onGone: () => void;
   readonly onTurn: (photo: string) => void;
   readonly onClose: () => void;
-  /** Whether the photos are answers of an agent, gone through one by one. */
+  /** Whether the photos are what is new, gone through one by one. */
   readonly isPile: boolean;
+  /** Called when the last of what is new was looked at. */
+  readonly onEnd: () => void;
 };
 
 const remembered = 'keepsake:about-photo';
@@ -233,6 +235,7 @@ export const PhotoView = ({
   onTurn,
   onClose,
   isPile,
+  onEnd,
 }: Props) => {
   const { index, filters } = useShootContext();
   const size = useWindowSize();
@@ -334,13 +337,13 @@ export const PhotoView = ({
           onClose,
           onPull: (share) => pull(viewRef.current, engineRef.current, share),
           onInfo: info.set,
-          // What was looked at makes way for the next answer.
+          // What was looked at makes way for the next new thing.
           onSeen: () => {
             if (isPile && !turn(1)) {
-              onClose();
+              onEnd();
             }
           },
-          place: `${isPile ? 'Answer ' : ''}${at + 1} of ${order.length}`,
+          place: `${isPile ? 'New ' : ''}${at + 1} of ${order.length}`,
         }}
         handleRef={bodyRef}
         key={photo.id}

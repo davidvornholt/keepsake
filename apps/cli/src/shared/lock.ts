@@ -14,7 +14,7 @@ import {
 import { dirname } from 'node:path';
 import process from 'node:process';
 import { Context, type Duration, Effect, Option } from 'effect';
-import { ShootBusy, StoreFailed } from './errors/errors.ts';
+import { ServerRunning, ShootBusy, StoreFailed } from './errors/errors.ts';
 import type { ShootFiles } from './store.ts';
 
 // The kernel holds the locks, with flock(2), so a lock can't be taken from a
@@ -23,6 +23,9 @@ import type { ShootFiles } from './store.ts';
 
 // LOCK_EX | LOCK_NB of <sys/file.h>: alone, and without waiting for it.
 const exclusiveAtOnce = 6;
+// LOCK_SH | LOCK_NB: beside others like it, and without waiting. LOCK_UN.
+const sharedAtOnce = 5;
+const unlock = 8;
 const ownerOnly = 0o600;
 
 let library: { readonly flock: (fd: number, how: number) => number } | null =
@@ -153,6 +156,68 @@ const holding =
       );
     });
 
+/**
+ * Whether some process holds a lock now, without taking it for longer than
+ * a look or making its file. Within one process nothing takes it meanwhile.
+ */
+export const isHeld = (path: string) =>
+  Effect.sync(() => {
+    let fd: number;
+    try {
+      fd = openSync(path, 'r');
+    } catch {
+      return false;
+    }
+    try {
+      if (flock(fd, sharedAtOnce) !== 0) {
+        return true;
+      }
+      flock(fd, unlock);
+      return false;
+    } finally {
+      closeSync(fd);
+    }
+  });
+
+/**
+ * Takes a lock for as long as this process runs, unless another holds it,
+ * as a stand-in for a server that works on a shoot.
+ */
+export const holdWhileRunning = (path: string) => tryToHold(path) !== null;
+
+/**
+ * Runs what the page's server carries out in a shoot while it alone does,
+ * or gives none when another server does it now.
+ */
+export const asTheRunner = (files: ShootFiles) => holding(files.runnerLock);
+
+/**
+ * Holds the page's server lock for as long as the scope is open, so only one
+ * server on the machine carries out what is handed over and changes what is
+ * noted about it. A server that died let it go when it ended, so the next
+ * one takes it over.
+ */
+export const asTheOnlyServer = (path: string) =>
+  Effect.acquireRelease(
+    Effect.try({
+      try: () => tryToHold(path),
+      catch: (error) =>
+        new StoreFailed({ message: `Could not use ${path}: ${error}` }),
+    }).pipe(
+      Effect.flatMap((fd) =>
+        fd === null
+          ? Effect.fail(
+              new ServerRunning({
+                message: `Another keepsake serve${holderOf(path)} is running on this machine. Use its page, or stop it first.`,
+              }),
+            )
+          : Effect.succeed(fd),
+      ),
+    ),
+    (fd) =>
+      Effect.ignore(Effect.try({ try: () => letGo(path, fd), catch: String })),
+  );
+
 const busy = (path: string) =>
   new ShootBusy({
     message: `Another keepsake command${holderOf(path)} is working on this shoot. Wait for it, or stop it.`,
@@ -195,7 +260,7 @@ const waitingFor =
             triesLeft === 0
               ? Effect.fail(
                   new ShootBusy({
-                    message: `Another keepsake command${holderOf(path)} has been changing ${what} of this shoot for long. Try again later.`,
+                    message: `Another keepsake command${holderOf(path)} has been ${what} for long. Try again later.`,
                   }),
                 )
               : Effect.andThen(
@@ -213,7 +278,12 @@ const waitingFor =
 export const withAlbum =
   (files: ShootFiles) =>
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    waitingFor(files.albumLock, albumPause, albumTries, 'the album')(work);
+    waitingFor(
+      files.albumLock,
+      albumPause,
+      albumTries,
+      'changing the album of this shoot',
+    )(work);
 
 /**
  * Runs work that looks for the album of a name and makes it if there is none,
@@ -226,7 +296,7 @@ export const withAlbumName =
       files.albumNameLock(key),
       albumPause,
       albumTries,
-      'an album',
+      'changing an album of this shoot',
     )(work);
 
 /** The same, or none when such work is going on now. */
@@ -239,7 +309,12 @@ export const withAlbumIfFree = (files: ShootFiles) => holding(files.albumLock);
 export const withChoice =
   (files: ShootFiles) =>
   <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    waitingFor(files.choiceLock, choicePause, choiceTries, 'the choice')(work);
+    waitingFor(
+      files.choiceLock,
+      choicePause,
+      choiceTries,
+      'changing the choice of this shoot',
+    )(work);
 
 /** The same, or none when such work is going on now. */
 export const withChoiceIfFree = (files: ShootFiles) =>
@@ -256,5 +331,22 @@ export const withPhoto =
       files.photoLock(photo),
       choicePause,
       choiceTries,
-      `the photo ${photo}`,
+      `changing the photo ${photo} of this shoot`,
+    )(work);
+
+/**
+ * Runs work that uploads to Immich and notes what it uploaded, or that looks
+ * whether another shoot names an upload and trashes it, after such work of
+ * any shoot: so no shoot trashes an upload that another one just got as its
+ * own. Take it inside the shoot's lock and its choice, never the other way
+ * round: inside it, only the shoot's album lock is taken.
+ */
+export const withUploads =
+  (files: ShootFiles) =>
+  <A, E, R>(work: Effect.Effect<A, E, R>) =>
+    waitingFor(
+      files.uploadsLock,
+      albumPause,
+      choiceTries,
+      'uploading to Immich or trashing what it replaced',
     )(work);

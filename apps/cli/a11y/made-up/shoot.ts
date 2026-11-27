@@ -11,6 +11,7 @@ import type {
   Shoot,
   Verdict,
 } from '../../src/shared/domain.ts';
+import { ordering, orderOf, stoppedAt } from './carrying.ts';
 import { handed, marks } from './marks.ts';
 import { type MadeUp, moments } from './moments.ts';
 import { drawn } from './pictures.ts';
@@ -27,8 +28,8 @@ export type Wanted = {
   readonly toRate?: boolean;
   /** Why getting it ready stopped, when the page was doing that. */
   readonly stopped?: string;
-  /** Whether the owner ordered the album of what was chosen. */
-  readonly isOrdered?: boolean;
+  /** Whether the owner ordered the album of what was chosen, and how that goes. */
+  readonly isOrdered?: 'at-work' | 'waits-for-money';
   /** The year and month it was taken in. */
   readonly month: string;
   /** Makes its pictures different from those of other shoots. */
@@ -240,24 +241,23 @@ const writeCulled = (root: string) =>
 
 const perEdit = 0.75;
 
-const writeChosen = (root: string, wanted: Wanted) =>
-  Promise.all([
+const writeChosen = (root: string, wanted: Wanted) => {
+  const toEdit = picksOf().picks.map(({ photo }) => photo);
+  return Promise.all([
     write(root, 'picks.json', picksOf()),
     write(root, 'reasons.json', reasons),
-    ...(wanted.isOrdered === true
-      ? [
-          write(root, join('hand-overs', 'order.json'), {
-            id: 'order',
-            at: readAt,
-            dollars: edited.length * perEdit,
-            spentBefore: 0,
-            marks: [],
-            album: picksOf().picks.map(({ photo }) => photo),
-            fulfilledAt: null,
-          }),
-        ]
-      : []),
+    ...(wanted.isOrdered === undefined
+      ? []
+      : [
+          write(root, 'carrying-out.json', ordering(root, wanted, toEdit)),
+          write(
+            root,
+            join('hand-overs', 'order.json'),
+            orderOf(toEdit, { at: readAt, dollars: edited.length * perEdit }),
+          ),
+        ]),
   ]);
+};
 
 const writeEdited = (root: string, wanted: Wanted) =>
   Promise.all([
@@ -290,6 +290,7 @@ const writePublished = (root: string, wanted: Wanted) =>
         photo: shownOf(mark.photo),
       }),
     ),
+    write(root, 'carrying-out.json', stoppedAt(root, shownOf('D160'))),
     write(root, join('hand-overs', 'marks.json'), {
       id: 'marks',
       at: handed,

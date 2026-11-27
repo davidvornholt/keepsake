@@ -31,7 +31,7 @@ const stampOf = (photo: string, pencil: Pencil, since: number): Stamp => {
   };
 };
 
-/** The mark a photo shows large: the one that can be taken back, or the one an agent has. */
+/** The mark a photo shows large: the one that can be taken back, or the one keepsake has. */
 const markOf = (index: Index, photo: string) => {
   const { open, waiting } = markedIn(index, photo);
   return open ?? waiting.at(-1) ?? null;

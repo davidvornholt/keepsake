@@ -2,13 +2,7 @@ import { DateTime, Effect, Schema } from 'effect';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import type { Standings } from '../../shared/standing.ts';
 import { exists, type ShootFiles } from '../../shared/store.ts';
-import {
-  claim,
-  claimOn,
-  readHandOvers,
-  saveHandOver,
-  spentOn,
-} from './handed.ts';
+import { readHandOvers, saveHandOver, spentOn } from './handed.ts';
 import { isOpen, isWaiting, readMarks } from './marks.ts';
 import type { HandOver, HandOverRecord, Mark } from './schemas.ts';
 
@@ -21,6 +15,11 @@ export class Outdated extends Schema.TaggedError<Outdated>()('Outdated', {
 const idLength = 8;
 const cents = 100;
 const inCents = (dollars: number) => Math.round(dollars * cents) / cents;
+/** What floating point takes off a whole number of cents. */
+const roundingSlack = 1e-6;
+/** Whole cents, never more than there is. */
+const downToCents = (dollars: number) =>
+  Math.floor(dollars * cents + roundingSlack) / cents;
 
 const pickedOf = (known: Standings): ReadonlyArray<string> =>
   [...known.of].flatMap(([photo, { kind }]) =>
@@ -28,10 +27,10 @@ const pickedOf = (known: Standings): ReadonlyArray<string> =>
   );
 
 /**
- * Whether what the owner wrote about a photo is for an agent: a photo that
- * went out of the album is edited no more.
+ * Whether what the owner wrote about a photo is still to be acted on: a
+ * photo that went out of the album is edited no more.
  */
-export const isForAgent =
+export const isStillChosen =
   (known: Standings) =>
   ({ photo }: Mark): boolean => {
     const kind = known.of.get(photo)?.kind;
@@ -39,13 +38,13 @@ export const isForAgent =
   };
 
 /** Whether a photo has a finished edit, which a change changes. */
-const isEdited = (files: ShootFiles, photo: string) =>
+export const isEdited = (files: ShootFiles, photo: string) =>
   Effect.gen(function* () {
     const edit = files.edit(photo);
     return (yield* exists(edit.record)) && (yield* exists(edit.final));
   });
 
-const isOrder = ({ album, fulfilledAt }: HandOverRecord) =>
+export const isOrder = ({ album, fulfilledAt }: HandOverRecord) =>
   album !== null && fulfilledAt === null;
 
 /**
@@ -80,97 +79,81 @@ export const orderOf = Effect.fn('orderOf')(function* (
   const order = (yield* handOversOf(files, known)).findLast(isOrder);
   return order === undefined
     ? null
-    : { at: order.at, dollars: order.dollars, photos: order.album ?? [] };
+    : {
+        id: order.id,
+        at: order.at,
+        dollars: order.dollars,
+        photos: order.album ?? [],
+      };
 });
 
-/** Which hand-overs an agent is about: those it was given, or all. */
-export type Only = ReadonlySet<string> | null;
+/** Whether the owner paid more for a stop already. */
+export const isApproved = (record: HandOverRecord, stop: string) =>
+  (record.approved ?? []).includes(stop);
 
-/** The hand-overs an agent still has to act on. */
+/**
+ * Lets the owner pay more for a hand-over that stopped for want of money,
+ * once for each stop: what they paid and that they did are one write.
+ */
+export const agreeToMore = Effect.fn('agreeToMore')(function* (
+  files: ShootFiles,
+  { handOver: id, stop }: { readonly handOver: string; readonly stop: string },
+  dollars: number,
+) {
+  const record = (yield* readHandOvers(files)).find((one) => one.id === id);
+  if (record !== undefined && !isApproved(record, stop)) {
+    yield* saveHandOver(files, {
+      ...record,
+      dollars: inCents(record.dollars + Math.max(0, dollars)),
+      approved: [...(record.approved ?? []), stop],
+    });
+  }
+});
+
+/**
+ * The hand-overs still to be acted on, oldest first: orders whose photos
+ * aren't all in the album, and those with a mark that has no answer yet.
+ * A mark of a photo that was taken out counts too, since it gets the answer
+ * that it was.
+ */
 export const unsettledOf = Effect.fn('unsettledOf')(function* (
   files: ShootFiles,
   known: Standings,
-  only: Only = null,
 ) {
   const waiting = new Set(
-    (yield* readMarks(files))
-      .filter((mark) => isWaiting(mark) && isForAgent(known)(mark))
-      .map(({ id }) => id),
+    (yield* readMarks(files)).filter(isWaiting).map(({ id }) => id),
   );
   return (yield* handOversOf(files, known)).filter(
-    (record) =>
-      (only === null || only.has(record.id)) &&
-      (isOrder(record) || record.marks.some((id) => waiting.has(id))),
+    (record) => isOrder(record) || record.marks.some((id) => waiting.has(id)),
   );
 });
 
-/** The order among those hand-overs, if one of them is one. */
-export const orderAmong = Effect.fn('orderAmong')(function* (
-  files: ShootFiles,
-  known: Standings,
-  only: Only,
-) {
-  const order = (yield* unsettledOf(files, known, only)).findLast(isOrder);
-  return order === undefined
-    ? null
-    : { at: order.at, photos: order.album ?? [] };
-});
-
 /**
- * Takes for an agent that waits what is still to be done and no agent took
- * yet, so that nothing handed over is acted on twice. Says what it took.
+ * The hand-overs still to be acted on as their files say, without asking
+ * where the photos stand, for what is read often: an order counts until it
+ * was noted as fulfilled, which `unsettledOf` does.
  */
-export const claimUnsettled = Effect.fn('claimUnsettled')(function* (
+export const roughlyUnsettled = Effect.fn('roughlyUnsettled')(function* (
   files: ShootFiles,
-  known: Standings,
 ) {
-  const unsettled = yield* unsettledOf(files, known);
-  const taken = yield* Effect.forEach(unsettled, ({ id }) =>
-    Effect.map(claim(files, id, 'waiter'), (isTaken) => (isTaken ? [id] : [])),
+  const waiting = new Set(
+    (yield* readMarks(files)).filter(isWaiting).map(({ id }) => id),
   );
-  return taken.flat();
+  return (yield* readHandOvers(files)).filter(
+    (record) => isOrder(record) || record.marks.some((id) => waiting.has(id)),
+  );
 });
 
 /**
- * What the page is to start an agent for: what the page took and no program
- * said it started an agent for, unless one is being started for it now, and,
- * when it `mayTake` more, what is still to be done and that nobody took. An
- * agent that waits takes that itself.
- */
-export const toLaunch = Effect.fn('toLaunch')(function* (
-  files: ShootFiles,
-  known: Standings,
-  {
-    launching,
-    mayTake,
-  }: { readonly launching: ReadonlySet<string>; readonly mayTake: boolean },
-) {
-  const unsettled = yield* unsettledOf(files, known);
-  const found = yield* Effect.forEach(unsettled, ({ id }) =>
-    Effect.gen(function* () {
-      const taken = yield* claimOn(files, id);
-      if (taken === null) {
-        return mayTake && (yield* claim(files, id, 'page')) ? [id] : [];
-      }
-      const isUnstarted =
-        taken.by === 'page' && !taken.isAcknowledged && !launching.has(id);
-      return isUnstarted ? [id] : [];
-    }),
-  );
-  return found.flat();
-});
-
-/**
- * What is left of what the owner agreed to pay for what an agent still has to
- * do. What was spent on the shoot counts against what was agreed before it,
+ * What is left of what the owner agreed to pay for what is still to be
+ * done. What was spent on the shoot counts against what was agreed before it,
  * oldest first, and never against what was agreed only later.
  */
 export const agreedDollars = Effect.fn('agreedDollars')(function* (
   files: ShootFiles,
   known: Standings,
-  only: Only = null,
 ) {
-  const unsettled = yield* unsettledOf(files, known, only);
+  const unsettled = yield* unsettledOf(files, known);
   const [first] = unsettled;
   if (first === undefined) {
     return 0;
@@ -185,7 +168,7 @@ export const agreedDollars = Effect.fn('agreedDollars')(function* (
     { dollars: 0, spent: first.spentBefore },
   );
   const spentSince = (yield* spentOn(files)) - atLast.spent;
-  return inCents(Math.max(0, atLast.dollars - spentSince));
+  return downToCents(Math.max(0, atLast.dollars - spentSince));
 });
 
 const keyOf = (ids: ReadonlyArray<string> | null) =>
@@ -197,7 +180,7 @@ const isSame = (
 ) => keyOf(left) === keyOf(right);
 
 /**
- * Hands every open mark over to an agent, and orders the chosen photos if the
+ * Hands every open mark over, and orders the chosen photos if the
  * owner did and no order waits for them. Only what the owner looked over: when
  * that changed in the meantime, nothing is handed over.
  */
@@ -215,7 +198,7 @@ export const handOver = Effect.fn('handOver')(function* (
   const ordered = new Set([...(order?.photos ?? []), ...(album ?? [])]);
   const marks = yield* Effect.filter(
     (yield* readMarks(files)).filter(
-      (mark) => isOpen(mark) && isForAgent(known)(mark),
+      (mark) => isOpen(mark) && isStillChosen(known)(mark),
     ),
     ({ photo }) =>
       ordered.has(photo) ? Effect.succeed(true) : isEdited(files, photo),

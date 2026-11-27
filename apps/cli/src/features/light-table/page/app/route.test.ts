@@ -10,7 +10,9 @@ describe('routeOf', () => {
       filters: everything,
     });
     expect(routeOf('/lisbon/hand-over', '').screen).toBe('hand-over');
-    expect(routeOf('/lisbon/answers', '').screen).toBe('answers');
+    expect(routeOf('/lisbon/news', '').screen).toBe('news');
+    // As it was called before.
+    expect(routeOf('/lisbon/answers', '').screen).toBe('news');
     expect(routeOf('/lisbon/rate', '').screen).toBe('rate');
     expect(routeOf('/lisbon/anything', '').screen).toBe('sheet');
   });
@@ -28,7 +30,31 @@ describe('routeOf', () => {
     });
   });
 
-  it('reads the photo an agent links to', () => {
+  it('reads a walk through what is new in all the albums', () => {
+    const walk = routeOf('/lisbon/news', '?show=album&across');
+    expect(walk).toEqual({
+      screen: 'news',
+      shoot: 'lisbon',
+      filters: { ...everything, show: 'album' },
+      across: true,
+    });
+    expect(hrefOf(walk)).toBe('/lisbon/news?show=album&across');
+    expect(
+      hrefOf({
+        screen: 'news',
+        shoot: 'lisbon',
+        filters: everything,
+        across: true,
+      }),
+    ).toBe('/lisbon/news?across');
+    // Only what is new is walked through.
+    expect(routeOf('/lisbon/rate', '?across')).not.toHaveProperty('across');
+    const decision = routeOf('/lisbon/hand-over', '?across');
+    expect(decision).toMatchObject({ screen: 'hand-over', across: true });
+    expect(hrefOf(decision)).toBe('/lisbon/hand-over?across');
+  });
+
+  it('reads the photo keepsake links to', () => {
     expect(routeOf('/lisbon/photos/_DSC0001', '')).toEqual({
       screen: 'photo',
       shoot: 'lisbon',

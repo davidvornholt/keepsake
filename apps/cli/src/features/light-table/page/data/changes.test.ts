@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { newsItemsOf } from '../../news-of.ts';
 import {
   draftOf,
   isDraft,
@@ -21,6 +22,7 @@ import {
 } from './sample.ts';
 
 const now = '2026-05-22T08:00:00.000Z';
+const later = '2026-05-22T09:00:00.000Z';
 
 describe('draftOf', () => {
   it('is the mark as keepsake will save it', () => {
@@ -109,14 +111,54 @@ describe('what keepsake answers', () => {
     expect(withoutMark([other, draft], 'draft-1')).toEqual([other]);
   });
 
-  it('notes that an answer was seen', () => {
-    const [seen, unseen] = withSeen(
-      [sampleMark('one'), sampleMark('two')],
-      'one',
-      now,
-    );
-    expect(seen?.seenAt).toBe(now);
-    expect(unseen?.seenAt).toBeNull();
+  it('notes as seen only what was shown of a photo', () => {
+    const answer = { at: now, outcome: 'done' as const, note: 'Done.' };
+    const stopped = {
+      id: 'stop1',
+      at: now,
+      reason: 'It stopped.',
+      needs: 'retry' as const,
+      photos: ['a'],
+      seenAt: null,
+    };
+    const shoot = {
+      ...sampleShoot(
+        [samplePhoto('a'), samplePhoto('b')],
+        [
+          sampleMark('one', { photo: 'a', answer }),
+          sampleMark('two', { photo: 'b', answer }),
+        ],
+      ),
+      added: [
+        { photo: 'a', at: now, seenAt: null },
+        { photo: 'b', at: now, seenAt: null },
+      ],
+      carrying: { since: null, stopped },
+    };
+    const keysOf = (photo: string) =>
+      new Set(
+        newsItemsOf(shoot.marks, shoot.added, shoot.carrying).flatMap((item) =>
+          item.photo === photo ? [item.key] : [],
+        ),
+      );
+    const seen = withSeen(shoot, keysOf('a'), later);
+    expect(seen.marks.map(({ seenAt }) => seenAt)).toEqual([later, null]);
+    expect(seen.added.map(({ seenAt }) => seenAt)).toEqual([later, null]);
+    expect(seen.carrying.stopped?.seenAt).toBe(later);
+    expect(withSeen(shoot, keysOf('b'), later).carrying).toBe(shoot.carrying);
+    // What came after the page showed the photo stays new.
+    const answeredAgain = {
+      ...shoot,
+      marks: shoot.marks.map((mark) =>
+        mark.id === 'one'
+          ? { ...mark, answer: { ...answer, at: later } }
+          : mark,
+      ),
+      added: [{ photo: 'a', at: later, seenAt: null }],
+    };
+    const late = withSeen(answeredAgain, keysOf('a'), later);
+    expect(late.marks.map(({ seenAt }) => seenAt)).toEqual([null, null]);
+    expect(late.added.map(({ seenAt }) => seenAt)).toEqual([null]);
   });
 });
 

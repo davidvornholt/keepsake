@@ -155,5 +155,5 @@ describe('the folders of photos on the page', () => {
     for (const files of named) {
       expect(Buffer.byteLength(files.join('\0'))).toBeLessThan(256 * 1024);
     }
-  });
+  }, 30_000); // Writing 3000 files takes a while on a slow machine.
 });

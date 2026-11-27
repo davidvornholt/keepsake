@@ -6,9 +6,9 @@ import type {
   NewMark,
 } from '../../contract.ts';
 import {
-  askForAgent,
   dismissChoice,
   forgetShoot,
+  goOnCarrying,
   goOnPreparing,
   handOverMarks,
   listenTo,
@@ -17,11 +17,12 @@ import {
   saveFavorite,
   saveLabels,
   saveRating,
-  seeMark,
+  seePhoto,
   sendChoice,
   takeBackMark,
 } from './api.ts';
 import {
+  carryingSeen,
   draftOf,
   draftPrefix,
   replacedBy,
@@ -214,13 +215,24 @@ const answering = (core: Core) => ({
     }
     await core.send(() => dismissChoice(core.name, action));
   },
-  seen: async (id: string) => {
-    core.setMarks((marks) => withSeen(marks, id, new Date().toISOString()));
-    await core.send(() => seeMark(core.name, id));
+  /**
+   * Notes that the owner looked at what is new: the items the page showed,
+   * by their keys, so what came later stays new.
+   */
+  seen: async (items: ReadonlyArray<string>) => {
+    const shoot = core.get().index?.shoot;
+    if (shoot === undefined || items.length === 0) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const keys = new Set(items);
+    core.setShoot(withSeen(shoot, keys, now));
+    core.set({ carrying: carryingSeen(core.get().carrying, keys, now) });
+    await core.send(() => seePhoto(core.name, { items }));
   },
   /**
    * Hands the marks over, and agrees to what acting on them costs at most.
-   * Says how many marks went to an agent, or null when it failed.
+   * Says how many marks were handed over, or null when it failed.
    */
   handOver: async (agreed: HandOver): Promise<number | null> => {
     core.setUndos([]);
@@ -236,9 +248,12 @@ const answering = (core: Core) => ({
     });
     return handed?.length ?? null;
   },
-  /** Has an agent act on what was handed over before. */
-  startAgent: async (): Promise<void> => {
-    await core.send(() => askForAgent(core.name));
+  /**
+   * Goes on with what was handed over, where it stopped, and agrees to pay
+   * up to `dollars` more when it stopped for money.
+   */
+  goOnCarrying: async (stop: string, dollars: number): Promise<void> => {
+    await core.send(() => goOnCarrying(core.name, { stop, dollars }));
   },
   /** Goes on with getting the album ready, after it stopped. */
   goOn: async (): Promise<void> => {
@@ -281,8 +296,13 @@ const answering = (core: Core) => ({
 
 const listening = (core: Core) => {
   let stop: (() => void) | null = null;
-  const onChanged = ({ revision, activity, preparation, agent }: Changed) => {
-    core.set({ activity, preparation, agent });
+  const onChanged = ({
+    revision,
+    activity,
+    preparation,
+    carrying,
+  }: Changed) => {
+    core.set({ activity, preparation, carrying });
     if (!core.isBusy() && revision !== core.get().index?.shoot.revision) {
       core.load();
     }

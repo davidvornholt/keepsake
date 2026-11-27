@@ -26,10 +26,11 @@ export type Waits = {
   /** More about it, such as why it stopped. */
   readonly more: string | null;
   /**
-   * Who it concerns: the owner has to do something, an agent or keepsake is
-   * at it, or it is only worth knowing.
+   * Who it concerns: the owner has to do something, keepsake carries out
+   * what they handed over (its blue pencil) or gets the album ready, or it
+   * is only worth knowing.
    */
-  readonly who: 'owner' | 'agent' | 'keepsake' | 'nobody';
+  readonly who: 'owner' | 'pencil' | 'keepsake' | 'nobody';
 };
 
 const waits = (
@@ -65,17 +66,27 @@ const gettingReady = (shoot: ShootSummary): Waits => {
     : waits('Stopped', 'owner', stopped);
 };
 
-/** What an agent does there, in a few words. */
+/** What keepsake does there about what was handed over, in a few words. */
 const atWork = (shoot: ShootSummary): ReadonlyArray<Waits> => {
-  const { activity } = shoot;
-  if (shoot.isOrdered) {
+  const { activity, carrying } = shoot;
+  if (carrying.stopped !== null) {
+    return [waits('Waits for you', 'owner', carrying.stopped.reason)];
+  }
+  const isWorking = carrying.since !== null || activity !== null;
+  if (shoot.isOrdered && isWorking) {
     const far =
       activity?.step === 'edit' && activity.total > 0
         ? `, ${progressOf(activity)}`
         : '';
-    return [waits(`Being edited${far}`, 'agent')];
+    return [waits(`Being edited${far}`, 'pencil')];
   }
-  return activity === null ? [] : [waits(stepName(activity), 'agent')];
+  if (activity !== null) {
+    return [waits(stepName(activity), 'pencil')];
+  }
+  if (shoot.isOrdered) {
+    return [waits('Ordered', 'pencil')];
+  }
+  return carrying.since === null ? [] : [waits('Being carried out', 'pencil')];
 };
 
 /**
@@ -104,8 +115,8 @@ export const waitsOf = (shoot: ShootSummary): ReadonlyArray<Waits> => {
           ),
         ]
       : []),
-    ...(shoot.newAnswers > 0
-      ? [waits(count(shoot.newAnswers, 'new answer'), 'agent')]
+    ...(shoot.news > 0
+      ? [waits(`${count(shoot.news, 'new thing')} to look at`, 'pencil')]
       : []),
     ...(shoot.openMarks > 0
       ? [waits(`${count(shoot.openMarks, 'mark')} to hand over`, 'owner')]
@@ -115,7 +126,8 @@ export const waitsOf = (shoot: ShootSummary): ReadonlyArray<Waits> => {
 
 /** Whether something goes on at an album that the shelf should follow. */
 export const isBusy = (shoot: ShootSummary): boolean =>
-  shoot.isOrdered ||
+  (shoot.isOrdered && shoot.carrying.stopped === null) ||
+  shoot.carrying.since !== null ||
   shoot.activity !== null ||
   (shoot.preparation !== null && shoot.preparation.stopped === null);
 

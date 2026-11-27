@@ -1,4 +1,11 @@
-import type { Choice, Mark, PhotoView, ShootView } from '../../contract.ts';
+import type {
+  CarryingOut,
+  Choice,
+  Mark,
+  PhotoView,
+  ShootView,
+} from '../../contract.ts';
+import { newsOf } from '../../news-of.ts';
 import { type Filters, type Why, whys } from '../app/route.ts';
 import type { Pencil } from '../marks/kinds.ts';
 import { dayOf } from './format.ts';
@@ -9,7 +16,7 @@ import { dayOf } from './format.ts';
 export type Marked = {
   /** Not handed over yet, so it can be taken back. */
   readonly open: Mark | null;
-  /** Handed over; an agent hasn't answered. */
+  /** Handed over; keepsake hasn't answered. */
   readonly waiting: ReadonlyArray<Mark>;
   /** Answered, and not looked at since. */
   readonly news: ReadonlyArray<Mark>;
@@ -285,7 +292,7 @@ export const countsOf = (index: Index, day: string | null): Counts => {
   };
 };
 
-/** What waits for the owner or for an agent. */
+/** What waits for the owner or for keepsake. */
 export type Attention = {
   /** Answered, and not looked at yet. */
   readonly news: ReadonlyArray<Mark>;
@@ -360,8 +367,14 @@ export const marksOfPile = (
   { photos }: Pile,
 ): ReadonlyArray<Shown> => photos.flatMap(({ id }) => shownOn(index, id));
 
-/** The photos with an answer the owner hasn't looked at, in the order of the shoot. */
-export const answeredPhotos = (index: Index): ReadonlyArray<string> =>
-  index.shoot.photos
-    .filter(({ id }) => markedIn(index, id).news.length > 0)
-    .map(({ id }) => id);
+/**
+ * The photos with something new the owner hasn't looked at, oldest first:
+ * an answer, a photo an order put in, or what waits for their word.
+ */
+export const newPhotos = (
+  { shoot, byId }: Index,
+  carrying: CarryingOut = shoot.carrying,
+): ReadonlyArray<string> =>
+  newsOf(shoot.marks, shoot.added, carrying)
+    .map(({ photo }) => photo)
+    .filter((photo) => byId.has(photo));

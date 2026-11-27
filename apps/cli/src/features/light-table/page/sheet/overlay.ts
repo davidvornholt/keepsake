@@ -15,7 +15,7 @@ import {
   topOf,
 } from './table.ts';
 
-// What is drawn on the frames: the owner's wax, the agent's blue pencil, the
+// What is drawn on the frames: the owner's wax, keepsake's blue pencil, the
 // crop of the finished photo, and the print along the edge of the film.
 
 export type OverlayState = {
@@ -91,7 +91,7 @@ const pulseLeast = 0.55;
 const cursorGrow = 3;
 const cursorEdge = 4;
 
-/** The frame under the pointer, the one the keys act on, and those an agent works on. */
+/** The frame under the pointer, the one the keys act on, and those keepsake works on. */
 const drawOutlines = (
   { pencil, now }: Drawn,
   state: OverlayState,

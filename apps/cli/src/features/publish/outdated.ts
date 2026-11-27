@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { Publication } from '../../shared/domain.ts';
-import { withChoice } from '../../shared/lock.ts';
+import { trashPhotos } from '../../shared/immich.ts';
+import { withChoice, withUploads } from '../../shared/lock.ts';
 import {
   assetsInUse,
   madeFor,
@@ -58,18 +59,40 @@ const stillOutdated = Effect.fn('stillOutdated')(function* (
   );
 });
 
+/** Why the uploads couldn't go to the trash, or null once they are there. */
+const trashed = (assets: ReadonlyArray<string>) =>
+  assets.length === 0
+    ? Effect.succeed(null)
+    : trashPhotos(assets).pipe(
+        Effect.as(null),
+        Effect.catch(({ message }) => Effect.succeed(message)),
+      );
+
 /**
- * Tells of the replaced uploads that are still outdated and forgets them once
- * told. Run it on the shoot it holds, so no publish changes them in between;
- * it holds the choice too, so the page publishes nothing meanwhile.
+ * Moves the replaced uploads that are still outdated to Immich's trash, since
+ * the owner asked for the better photo and not for two, tells of them, and
+ * forgets them once told. Those the trash didn't take stay noted, so the next
+ * publish tries again. Run it on the shoot it holds, so no publish changes
+ * them in between; it holds the choice too, so the page publishes nothing
+ * meanwhile.
  */
 export const tellOutdated = <E, R>(
   open: OpenShoot,
   candidates: ReadonlyArray<string>,
-  tell: (outdated: ReadonlyArray<string>) => Effect.Effect<void, E, R>,
+  tell: (
+    outdated: ReadonlyArray<string>,
+    trashFailed: string | null,
+  ) => Effect.Effect<void, E, R>,
 ) =>
-  stillOutdated(open, candidates).pipe(
-    Effect.tap(tell),
-    Effect.flatMap((outdated) => forgetOutdated(open, outdated)),
-    withChoice(open.files),
-  );
+  Effect.gen(function* () {
+    // While no shoot uploads, so none gets one of these as its own between
+    // the look and the trash.
+    const [outdated, failed] = yield* Effect.gen(function* () {
+      const still = yield* stillOutdated(open, candidates);
+      return [still, yield* trashed(still)] as const;
+    }).pipe(withUploads(open.files));
+    yield* tell(outdated, failed);
+    if (failed === null) {
+      yield* forgetOutdated(open, outdated);
+    }
+  }).pipe(withChoice(open.files));

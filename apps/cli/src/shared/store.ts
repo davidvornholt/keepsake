@@ -98,11 +98,26 @@ export const readBytes = (path: string) =>
     return yield* fs.readFile(path).pipe(Effect.mapError(storeFailed(path)));
   });
 
+/** The SHA-256 of a file, which tells one version of it from another. */
+export const digestOf = (file: string) =>
+  Effect.map(readBytes(file), (bytes) =>
+    createHash('sha256').update(bytes).digest('hex'),
+  );
+
 /** Where every shoot has its folder. */
 export const shootsDirectory = Effect.gen(function* () {
   const path = yield* Path.Path;
   const data = yield* xdgDirectory('XDG_DATA_HOME', '.local/share');
   return path.join(data, 'keepsake', 'shoots');
+});
+
+/**
+ * The lock the page's server holds while it runs. No shoot's name starts
+ * with a dot, so it is no shoot's lock.
+ */
+export const serverLock = Effect.gen(function* () {
+  const path = yield* Path.Path;
+  return path.join(yield* shootsDirectory, '..', 'locks', '.serve');
 });
 
 /** Where the edit of a photo of the shoot keeps everything. */
@@ -193,6 +208,11 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
     photoLock: (photo: string) =>
       path.join(locks, `${name}.photo-${editFolderName(photo)}`),
     /**
+     * Held by the page's server for as long as it carries out what was
+     * handed over in the shoot, which tells the page that it does.
+     */
+    runnerLock: path.join(locks, `${name}.runner`),
+    /**
      * Held while the album of a name is looked for and made, by any shoot.
      * Shoot names have no dot, so it is no shoot's lock.
      */
@@ -201,13 +221,27 @@ export const shootFiles = Effect.fn('shootFiles')(function* (name: string) {
         locks,
         `album.${createHash('sha256').update(key).digest('hex')}`,
       ),
+    /**
+     * Held by any shoot while it uploads to Immich, up to noting what it
+     * uploaded, and while it looks whether another shoot names an upload it
+     * replaced and trashes it. Taken inside the shoot's lock and choice.
+     */
+    uploadsLock: path.join(locks, '.immich'),
     /** What the command that holds the lock is doing. */
     activity: path.join(root, 'activity.json'),
-    /** The agent that waits for marks, and the one the page started last. */
-    waiting: path.join(root, 'waiting.json'),
-    agent: path.join(root, 'agent.json'),
-    /** What the owner handed over, a file for each time, and who took it. */
+    /** What the owner handed over, a file for each time. */
     handOvers: path.join(root, 'hand-overs'),
+    /** How the page's server carries out what was handed over. */
+    carrying: path.join(root, 'carrying-out.json'),
+    /**
+     * What a step of the page's server came to, by the id it was given, so
+     * the step is never paid for twice when the server stopped before it
+     * noted it.
+     */
+    operation: (id: string) => path.join(root, 'operations', `${id}.json`),
+    operations: path.join(root, 'operations'),
+    /** The photos an order put into the album, until the owner saw them. */
+    added: path.join(root, 'added.json'),
     /** The program that gets the shoot ready for the owner. */
     preparation: path.join(root, 'preparation.json'),
     previews: path.join(root, 'previews'),

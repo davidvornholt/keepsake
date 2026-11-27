@@ -78,8 +78,17 @@ const wanted: ReadonlyArray<Wanted> = [
     about: 'Óbidos, October 2026',
     month: '2026-10',
     step: 'chosen',
-    isOrdered: true,
+    isOrdered: 'at-work',
     seed: 19,
+  },
+  {
+    name: 'sintra',
+    title: 'Sintra',
+    about: 'Sintra, October 2026',
+    month: '2026-10',
+    step: 'chosen',
+    isOrdered: 'waits-for-money',
+    seed: 37,
   },
   {
     name: 'cascais',
@@ -126,7 +135,6 @@ await mkdir(tools);
 await standIn('magick', 'magick.ts');
 await standIn('exiftool', 'exiftool.ts');
 await standIn('photos', 'photos.ts');
-const agent = await standIn('agent', 'agent.ts');
 await writeFolders(photos);
 
 const serveOn = (at: number) =>
@@ -139,8 +147,6 @@ const serveOn = (at: number) =>
       String(at),
       '--photos',
       photos,
-      '--agent',
-      agent,
     ],
     {
       // Built from entries because environment variable names are not camelCase.

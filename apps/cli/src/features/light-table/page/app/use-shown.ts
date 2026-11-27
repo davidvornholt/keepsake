@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import type { CarryingOut } from '../../contract.ts';
 import { type Index, pileAround } from '../data/derive.ts';
 import { orderOf } from '../sheet/content.ts';
 import { everything, type Within } from './route.ts';
-import { useAnswers } from './use-answers.ts';
+import { useNews } from './use-news.ts';
 
 // Which photo is shown large, if any, and the photos gone through from it.
 
@@ -32,9 +33,22 @@ const useHeld = (open: string | null) => {
   };
 };
 
-export const useShown = (route: Within, index: Index) => {
+export const useShown = (
+  route: Within,
+  index: Index,
+  {
+    carrying,
+    onSeen,
+  }: {
+    readonly carrying: CarryingOut;
+    readonly onSeen: (items: ReadonlyArray<string>) => Promise<void>;
+  },
+) => {
   const { filters } = route;
-  const answers = useAnswers(index, route.screen === 'answers');
+  const answers = useNews(index, carrying, {
+    isOn: route.screen === 'news',
+    onSeen,
+  });
   const held = useHeld(
     route.screen === 'photo' ? route.photo : answers.current,
   );
@@ -52,5 +66,6 @@ export const useShown = (route: Within, index: Index) => {
       ? shown
       : orderOf(index, everything);
   }, [index, filters, large, pile]);
-  return { held, large, order, pile, answers };
+  const isAcross = route.screen === 'news' && route.across === true;
+  return { held, large, order, pile, answers, isAcross };
 };

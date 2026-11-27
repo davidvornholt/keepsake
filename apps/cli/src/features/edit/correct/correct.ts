@@ -188,9 +188,10 @@ export const correct = Effect.fn('correct')(function* (job: Correction) {
     const files = { ...job.files, input: job.files.inputOf(attempts) };
     const start: Start = { number: attempts, base, changes: left };
     const result = yield* tryOnce(job, files, start).pipe(
-      // When the photo is refused, or what is left of the budget doesn't
-      // cover another attempt, the places left stay as they are.
-      Effect.catchTag(['PhotoRefused', 'OverBudget'], ({ message }) =>
+      // When the photo is refused, the places left stay as they are. What is
+      // left of the budget not covering another attempt stops the change
+      // instead, with what it made kept for when it goes on.
+      Effect.catchTag('PhotoRefused', ({ message }) =>
         Effect.succeed({
           base: start.base,
           left: start.changes.map(

@@ -192,6 +192,18 @@ export const ensureTag = Effect.fn('ensureTag')(function* (tag: string) {
   }
 });
 
+const Trashed = Schema.Struct({
+  trashed: Schema.Array(Schema.Struct({ id: Schema.String })),
+  alreadyInTrash: Schema.Array(Schema.String),
+});
+
+/**
+ * Moves uploads to Immich's trash, which keeps them for a while and from
+ * which `photos restore` brings them back. Nothing is deleted for good.
+ */
+export const trashPhotos = (assets: ReadonlyArray<string>) =>
+  photos(Trashed, ['trash', ...assets]);
+
 export const tagPhoto = (tag: string, asset: string) =>
   photos(Schema.Unknown, ['tags', 'add', tag, asset]);
 

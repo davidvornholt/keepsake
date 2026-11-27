@@ -9,6 +9,7 @@ import {
 } from './command-fixtures.ts';
 import {
   change,
+  eventually,
   handOver,
   marksOf,
   pickedOf,
@@ -93,17 +94,27 @@ describe('a shoot from before hand-overs had a file each', () => {
 
   it('is handed over to again, and the album ordered anew', async () => {
     await oldShoot();
-    const [ordered, statuses] = await whileServing(async (address) => {
+    const [ordered, statuses, pending] = await whileServing(async (address) => {
+      // Nothing was agreed for the mark that waited, so it waits for the
+      // owner to pay for it.
+      const { stopped } = await eventually(
+        async () => (await shootOf(address)).carrying,
+        (carrying) => carrying.stopped !== null,
+      );
       const before = (await shootOf(address)).ordered;
       await send('PUT', `${address}/api/shoots/lisbon/marks`, change);
       const first = await statusOf(
         handOver(address, { dollars: 1, album: await pickedOf(address) }),
       );
-      return [before, [first, await statusOf(handOver(address))]];
+      return [before, [first, await statusOf(handOver(address))], stopped];
     });
     expect(ordered).toBeNull();
     expect(statuses).toEqual([200, 400]);
+    expect(pending).toMatchObject({ needs: 'money' });
     const waiting = await runOk('marks', 'lisbon');
+    expect(waiting.marks.map(({ id }: { id: string }) => id)).toContain(
+      'pending',
+    );
     expect(waiting.marks).toHaveLength(2);
     expect(waiting.album).not.toBeNull();
     expect(waiting.agreedDollars).toBe(1);

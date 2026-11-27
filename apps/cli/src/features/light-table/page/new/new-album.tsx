@@ -12,7 +12,7 @@ import { Folders } from './folders.tsx';
 import { useLoaded } from './use-loaded.ts';
 
 // Making an album, which the owner does alone: they choose the folder, say
-// what it is about, and keepsake looks through it. No agent is needed.
+// what it is about, and keepsake looks through it. Nothing is handed over.
 
 const iconSize = 20;
 const shelf: Route = { screen: 'shoots' };

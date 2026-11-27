@@ -1,6 +1,6 @@
 import type {
   Activity,
-  Agent,
+  CarryingOut,
   Mark,
   NewChoice,
   NewMark,
@@ -17,7 +17,8 @@ export type ShootState = {
   readonly index: Index | null;
   readonly activity: Activity | null;
   readonly preparation: Preparation | null;
-  readonly agent: Agent;
+  /** How what was handed over is carried out, as keepsake last said. */
+  readonly carrying: CarryingOut;
   readonly isConnected: boolean;
   /** What went wrong last, until it is dismissed. */
   readonly problem: string | null;
@@ -50,7 +51,7 @@ const initial: ShootState = {
   index: null,
   activity: null,
   preparation: null,
-  agent: { waitsSince: null, canStart: false, started: null },
+  carrying: { since: null, stopped: null },
   isConnected: true,
   problem: null,
   hint: null,

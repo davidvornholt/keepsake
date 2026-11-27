@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { Effect, FileSystem, Option } from 'effect';
 import { adoptBeforeLeaving } from '../../shared/adoption.ts';
 import { readAlbum, refreshAlbum } from '../../shared/album.ts';
@@ -33,6 +32,7 @@ import {
   withAlbumName,
   withChoice,
   withPhoto,
+  withUploads,
 } from '../../shared/lock.ts';
 import { photoNamed } from '../../shared/photo-names.ts';
 import { inSteps } from '../../shared/progress.ts';
@@ -46,9 +46,9 @@ import {
 } from '../../shared/publication.ts';
 import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import {
+  digestOf,
   exists,
   type OpenShoot,
-  readBytes,
   readJson,
   readPicks,
   writeJson,
@@ -82,11 +82,6 @@ type Job = {
   /** The upload the photo is in the album now, also one taken on. */
   readonly earlier: Upload | undefined;
 };
-
-const digestOf = (file: string) =>
-  Effect.map(readBytes(file), (bytes) =>
-    createHash('sha256').update(bytes).digest('hex'),
-  );
 
 /** The photos named, or those that were picked and not taken out since. */
 const photosToSend = Effect.fn('photosToSend')(function* (
@@ -339,7 +334,8 @@ const publishNow = Effect.fn('publish')(function* (
   let publication = publicationFor(known, album, albums);
   yield* switchTo(open, publication);
   yield* ensureTag(tag);
-  // One at a time, and noted right away, so nothing is uploaded twice.
+  // One at a time, and noted right away, so nothing is uploaded twice, and
+  // no other shoot trashes an upload before this one named it.
   const sent = yield* inSteps('publish', todo, 1, (job) =>
     Effect.gen(function* () {
       const done = yield* send(open, job, {
@@ -352,7 +348,7 @@ const publishNow = Effect.fn('publish')(function* (
       publication = withSent(publication, done, job.earlier);
       yield* writeJson(Publication, open.files.publication, publication);
       return done;
-    }),
+    }).pipe(withUploads(open.files)),
   );
   publication = { ...publication, outdated: outdatedOf(publication) };
   yield* writeJson(Publication, open.files.publication, publication);

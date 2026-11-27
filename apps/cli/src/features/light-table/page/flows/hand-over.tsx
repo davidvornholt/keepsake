@@ -3,30 +3,31 @@ import { type RefObject, useEffect, useId, useRef, useState } from 'react';
 import type { Place } from '../app/route.ts';
 import { go, goBack } from '../app/router.ts';
 import { useShootContext } from '../app/shoot-context.ts';
+import { walkPastDecision } from '../app/walk.ts';
 import type { Index } from '../data/derive.ts';
 import { count, dollarsOf } from '../data/format.ts';
 import { drawingTime } from '../marks/wax.ts';
 import type { Engine } from '../sheet/engine.ts';
-import { agentButton, iconButton } from '../ui/classes.ts';
+import { iconButton, pencilButton } from '../ui/classes.ts';
 import { Key } from '../ui/controls.tsx';
 import { type Keys, useKeys } from '../ui/keys.ts';
 import { prefersReducedMotion } from '../ui/theme.ts';
 import { useLingering } from '../ui/use-lingering.ts';
 import { useTitle } from '../ui/use-title.ts';
-import { AgentStatus } from './agent-status.tsx';
+import { CarryingStatus } from './carrying-status.tsx';
 import { HandOverFoot } from './hand-over-foot.tsx';
 import { type Ledger, ledgerOf, staggerOf } from './ledger.ts';
 import { LedgerRow } from './ledger-row.tsx';
 import { useFlip } from './use-flip.ts';
 import { useLights } from './use-lights.ts';
 
-// The marks for an agent, as a sheet laid over the table: gone over, handed
-// over, and followed while the agent works. Nothing here changes a photo.
+// The marks to carry out, as a sheet laid over the table: gone over, handed
+// over, and followed while keepsake works. Nothing here changes a photo.
 
 const iconSize = 20;
 /** How bright the table stays under the list. */
 const lights = 0.16;
-/** The agent's pencil goes down the list in about this time, in milliseconds. */
+/** The blue pencil goes down the list in about this time, in milliseconds. */
 const wholeTime = 900;
 const slowest = 90;
 /** How long the rings are looked at before the list moves on. */
@@ -44,7 +45,7 @@ const pickedOf = ({ shoot }: Index): ReadonlyArray<string> =>
     .filter(({ standing }) => standing.kind === 'picked')
     .map(({ id }) => id);
 
-/** The marks, and handing them over while the agent's pencil goes around each. */
+/** The marks, and handing them over while the blue pencil goes around each. */
 const useLedger = () => {
   const { index, store } = useShootContext();
   const [going, setGoing] = useState<Going | null>(null);
@@ -70,7 +71,7 @@ const useLedger = () => {
       });
       Promise.all([
         store.handOver({
-          dollars: ledger.dollars,
+          dollars: ledger.limit,
           marks: ledger.open.map(({ mark }) => mark.id),
           album: ledger.ordersAlbum ? pickedOf(index) : null,
         }),
@@ -115,19 +116,19 @@ const titleOf = (ledger: Ledger, isOrdered: boolean): string => {
   return ledger.waiting.length > 0 ? 'Handed over' : 'Nothing to hand over';
 };
 
-/** What an agent does with so many chosen photos, and what that costs. */
+/** What keepsake does with so many chosen photos, and what that costs. */
 const workOf = (ledger: Ledger, chosen: number, each: string): string => {
   const into = ledger.isFirst ? 'a new album in Immich' : 'the album';
   const them = chosen === 1 ? 'it' : 'them';
   const owed = ledger.isFirst ? ledger.edits : ledger.firstEdits;
   if (owed === 0) {
-    return `${chosen === 1 ? 'It is' : 'They are'} edited already, so an agent only puts ${them} into ${into}, which costs nothing.`;
+    return `${chosen === 1 ? 'It is' : 'They are'} edited already, so keepsake only puts ${them} into ${into}, which costs nothing.`;
   }
   const which =
     owed >= chosen
       ? `${chosen === 1 ? 'it' : 'each one'}`
       : `the ${count(owed, 'photo')} that ${owed === 1 ? 'isn’t' : 'aren’t'} edited yet`;
-  return `An agent has an image model edit ${which}, which costs about ${each} a photo, and puts ${them} into ${into}.`;
+  return `Keepsake has an image model edit ${which}, which costs about ${each} a photo, and puts ${them} into ${into}.`;
 };
 
 /** What ordering the album leads to, said before it costs anything. */
@@ -215,7 +216,7 @@ const Lists = ({
   );
 };
 
-/** What there is besides the list: answers to look at. */
+/** What there is besides the list: what is new to look at. */
 const Notes = ({
   ledger,
   sheet,
@@ -226,11 +227,11 @@ const Notes = ({
   ledger.news > 0 ? (
     <div className="pt-5 pb-2">
       <button
-        className={agentButton}
-        onClick={() => go({ ...sheet, screen: 'answers' }, 'replace')}
+        className={pencilButton}
+        onClick={() => go({ ...sheet, screen: 'news' }, 'replace')}
         type="button"
       >
-        Look at {count(ledger.news, 'answer')}
+        Look at {count(ledger.news, 'new thing')}
       </button>
     </div>
   ) : null;
@@ -261,11 +262,14 @@ const noKeys: Keys = [];
 type Props = {
   readonly sheet: Place;
   readonly engineRef: RefObject<Engine | null>;
+  /** Shown on a walk through all the albums, which goes on when it closes. */
+  readonly isAcross: boolean;
 };
 
 const Sheet = ({
   sheet,
   engineRef,
+  isAcross,
   isLeaving,
 }: Props & {
   /** True once the owner has left, while the sheet goes away. */
@@ -278,7 +282,8 @@ const Sheet = ({
   const viewRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [isShown, setIsShown] = useState(false);
-  const close = () => goBack(sheet);
+  const close = () =>
+    isAcross ? walkPastDecision(sheet.shoot) : goBack(sheet);
   useLights(engineRef, isLeaving ? null : lights);
   useFlip(listRef);
   useScrollKept(listRef, sheet.shoot);
@@ -323,7 +328,7 @@ const Sheet = ({
               {title}
             </h1>
             <div aria-live="polite" className="mt-3 empty:hidden">
-              <AgentStatus />
+              <CarryingStatus />
             </div>
           </div>
           <button
@@ -348,7 +353,7 @@ const Sheet = ({
           index.shoot.ordered === null ? (
             <p className="max-w-[36rem] text-print">
               No photo carries a mark. Mark what should change with{' '}
-              <Named letter="C" says="Change" />, and an agent edits it.{' '}
+              <Named letter="C" says="Change" />, and keepsake edits it.{' '}
               <span className="text-quiet">
                 <Named letter="X" says="Take out" />,{' '}
                 <Named letter="P" says="Put in" /> and{' '}

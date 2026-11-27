@@ -48,12 +48,8 @@ export const serve = Command.make(
       ),
       Flag.atMost(mostFolders),
     ),
-    agent: optionalString(
-      'agent',
-      'A program that starts an agent when the owner hands something over and none waits. It gets the name of the shoot, and may print {"link":"<where to read along>"}.',
-    ),
   },
-  ({ port, address, photos, agent }) =>
+  ({ port, address, photos }) =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
       const chosenPort = yield* bounded('port', port, {
@@ -68,7 +64,6 @@ export const serve = Command.make(
         port: chosenPort,
         address: reachedAt,
         photos: photos.map((folder) => path.resolve(folder)),
-        agent: Option.getOrUndefined(agent) || undefined,
         keepsake,
       });
       const url = reachedAt?.href ?? `http://127.0.0.1:${server.port}/`;
@@ -78,6 +73,6 @@ export const serve = Command.make(
     }).pipe(Effect.scoped, Effect.provide(publishingLayer)),
 ).pipe(
   Command.withDescription(
-    'Serve the light table, a page on this machine where the owner of the photos sees what was chosen and why, compares each edit with the camera’s picture, marks what should change, and rates photos. Runs until it is stopped.',
+    'Serve the light table, a page on this machine where the owner of the photos sees what was chosen and why, compares each edit with the camera’s picture, marks what should change, and rates photos. It carries out what they hand over itself, with the commands of keepsake, and goes on with what it didn’t get through when it is started again. Runs until it is stopped.',
   ),
 );

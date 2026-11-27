@@ -9,26 +9,11 @@ import type { Ledger } from './ledger.ts';
 
 const iconSize = 16;
 
-/** Who acts on it, said before it is handed over. */
-const whoOf = ({
-  waitsSince,
-  canStart,
-}: {
-  readonly waitsSince: string | null;
-  readonly canStart: boolean;
-}): string => {
-  if (waitsSince !== null) {
-    return 'An agent waits and starts at once';
-  }
-  return canStart
-    ? 'An agent is started for it'
-    : 'You get a sentence to give to an agent';
-};
-
 /** What the button says and what pressing it costs at most. */
 const askOf = (ledger: Ledger): { readonly says: string; cost: string } => {
   const marks = ledger.open.length;
   const about = `about ${dollarsOf(ledger.dollars)}`;
+  const most = `at most ${dollarsOf(ledger.limit)}`;
   if (ledger.edits === 0) {
     const says = ledger.isFirst ? 'Make the album' : 'Put into the album';
     return {
@@ -39,11 +24,11 @@ const askOf = (ledger: Ledger): { readonly says: string; cost: string } => {
   return ledger.ordersAlbum
     ? {
         says: `Edit ${count(ledger.edits, 'photo')}, ${about}`,
-        cost: `About ${dollarsOf(ledger.dollars)} at most`,
+        cost: `About ${dollarsOf(ledger.dollars)}, ${most}`,
       }
     : {
         says: `Hand over ${count(marks, 'mark')}`,
-        cost: `${count(ledger.edits, 'edit')}, ${about}`,
+        cost: `${count(ledger.edits, 'edit')}, ${about}, ${most}`,
       };
 };
 
@@ -74,11 +59,11 @@ export const HandOverFoot = ({
       {hasSomething ? (
         <p className="type-edge tabular mr-auto flex flex-wrap gap-x-4 gap-y-1 text-quiet">
           <span>{ask.cost}</span>
-          <span>{whoOf(state.agent)}</span>
+          <span>Keepsake starts at once</span>
         </p>
       ) : (
         <p className="type-edge mr-auto text-quiet">
-          Nothing changes until an agent has acted
+          Nothing changes until it is handed over
         </p>
       )}
       {state.undoable === null ? null : (

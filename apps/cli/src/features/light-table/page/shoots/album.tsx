@@ -128,7 +128,7 @@ const depart = (shoot: string, pile: HTMLElement) => {
 
 const tones: Readonly<Record<Waits['who'], string>> = {
   owner: 'text-wax-yellow',
-  agent: 'text-pencil-blue',
+  pencil: 'text-pencil-blue',
   keepsake: 'text-lamp',
   nobody: 'text-quiet',
 };
