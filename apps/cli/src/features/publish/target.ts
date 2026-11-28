@@ -10,7 +10,7 @@ import {
 } from '../../shared/immich.ts';
 import { withAlbum } from '../../shared/lock.ts';
 import { readPublication } from '../../shared/publication.ts';
-import { readAllRemoved } from '../../shared/standing.ts';
+import { isOutOf, readAllRemoved } from '../../shared/standing.ts';
 import { type OpenShoot, writeJson } from '../../shared/store.ts';
 
 /**
@@ -129,6 +129,24 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
     );
   }
 });
+
+export const bringBackNamed = (
+  open: OpenShoot,
+  photos: ReadonlySet<string>,
+  album: string,
+) =>
+  Effect.gen(function* () {
+    const all = yield* readAllRemoved(open, undefined);
+    const isBack = (one: Removed) =>
+      photos.has(one.photo) && isOutOf(album)(one);
+    if (all.some(isBack)) {
+      yield* writeJson(
+        Schema.Array(Removed),
+        open.files.removed,
+        all.filter((one) => !isBack(one)),
+      );
+    }
+  }).pipe(withAlbum(open.files));
 
 /**
  * The album keepsake published to before, unless another is named. Albums are

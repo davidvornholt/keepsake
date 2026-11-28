@@ -19,6 +19,7 @@ import {
 import { fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 import { send, statusOf, whileServing } from './light-table-fixtures.ts';
+import { mark } from './mark-fixtures.ts';
 
 const first = 'Lisbon';
 
@@ -224,6 +225,42 @@ describe('keepsake publish, after the album changed in Immich', () => {
     const result = await runOk('publish', 'lisbon', '--album', 'Second');
     expect(result).toMatchObject({ album: { id: 'album-2' }, published: 2 });
     expect(assetsOf('album-2')).toEqual(['asset-1', 'asset-3']);
+  });
+});
+
+describe('keepsake publish, to several albums, of a photo taken out for a reason', () => {
+  it('keeps a photo taken out for a reason out when it is still in an earlier album', async () => {
+    await publishLisbon('--album', first);
+    await runOk('publish', 'lisbon', '--album', 'Second');
+    await runOk('take-out', 'lisbon', 'B', '--because', 'Keep private');
+    await runOk('publish', 'lisbon', '--album', first);
+    expect(await shootJson('removed.json')).toEqual([
+      expect.objectContaining({ photo: 'B', because: 'Keep private' }),
+    ]);
+    const third = await runOk('publish', 'lisbon', '--album', 'Third');
+    expect(third).toMatchObject({ published: 2 });
+    const names = albumWithId('album-3')?.assets.map((one) => one.fileName);
+    expect(names).toEqual(['A1-keepsake.jpg', 'C-keepsake.jpg']);
+  });
+
+  it('does nothing for a mark on it while it is still in an earlier album', async () => {
+    await publishLisbon('--album', first);
+    await runOk('publish', 'lisbon', '--album', 'Second');
+    await mark('one');
+    await runOk('take-out', 'lisbon', 'B', '--because', 'Keep private');
+    await runOk('publish', 'lisbon', '--album', first);
+    const failed = await failureOf('publish', 'lisbon', '--mark', 'one');
+    expect(failed.message).toContain('B was taken out meanwhile');
+    await runOk('publish', 'lisbon', '--album', 'Third');
+    const names = albumWithId('album-3')?.assets.map((one) => one.fileName);
+    expect(names).toEqual(['A1-keepsake.jpg', 'C-keepsake.jpg']);
+  });
+
+  it('lets a photo taken out for a reason into another album when it is named', async () => {
+    await publishLisbon('--album', first);
+    await runOk('take-out', 'lisbon', 'B', '--because', 'It is blurred.');
+    await runOk('publish', 'lisbon', 'B', '--album', 'Second');
+    expect(await shootJson('removed.json')).toEqual([]);
   });
 });
 

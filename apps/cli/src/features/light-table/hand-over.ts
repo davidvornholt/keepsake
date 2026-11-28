@@ -28,13 +28,17 @@ const pickedOf = (known: Standings): ReadonlyArray<string> =>
 
 /**
  * Whether what the owner wrote about a photo is still to be acted on: a
- * photo that went out of the album is edited no more.
+ * photo that went out of the album is edited no more, nor one they took out
+ * of every album that is still in one it wasn't taken out of.
  */
 export const isStillChosen =
   (known: Standings) =>
   ({ photo }: Mark): boolean => {
     const kind = known.of.get(photo)?.kind;
-    return kind === 'album' || kind === 'picked';
+    return (
+      (kind === 'album' || kind === 'picked') &&
+      !known.removed.some((one) => one.photo === photo)
+    );
   };
 
 /** Whether a photo has a finished edit, which a change changes. */

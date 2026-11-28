@@ -1,4 +1,5 @@
 import { Effect, Option } from 'effect';
+import { isStillChosen } from '../features/light-table/hand-over.ts';
 import { markWith } from '../features/light-table/marks.ts';
 import { readAlbum } from '../shared/album.ts';
 import { InvalidInput } from '../shared/errors/errors.ts';
@@ -18,8 +19,7 @@ export const markOfChosen = Effect.fn('markOfChosen')(function* (
   // From Immich, where the owner may have taken it out, and never the cache.
   yield* readAlbum(open);
   const known = yield* standings(open, yield* judgeOf(open, Option.none()));
-  const kind = known.of.get(mark.photo)?.kind;
-  if (kind !== 'album' && kind !== 'picked') {
+  if (!isStillChosen(known)(mark)) {
     return yield* new InvalidInput({
       message: `${mark.photo} was taken out meanwhile, so nothing was done for the mark ${id}.`,
     });

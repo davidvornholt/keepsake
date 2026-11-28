@@ -63,6 +63,7 @@ import {
 import { rollBack, type Sending } from './take-back.ts';
 import {
   albumOfName,
+  bringBackNamed,
   giveRemovalsTheirAlbum,
   knownPublication,
   type Target,
@@ -352,6 +353,13 @@ const publishNow = Effect.fn('publish')(function* (
   );
   publication = { ...publication, outdated: outdatedOf(publication) };
   yield* writeJson(Publication, open.files.publication, publication);
+  if (names.length > 0) {
+    yield* bringBackNamed(
+      open,
+      new Set(ready.map(({ photo }) => photo)),
+      album.id,
+    );
+  }
   yield* readAlbum(open);
   return {
     shoot: name,
