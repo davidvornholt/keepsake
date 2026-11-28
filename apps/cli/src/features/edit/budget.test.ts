@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Deferred, Effect, Fiber, Option, Ref } from 'effect';
+import { Deferred, Effect, Fiber, Option, Ref, Scheduler } from 'effect';
 import { Spending } from '../../shared/spending.ts';
 import { makeBudget } from './edit.ts';
 
@@ -50,5 +50,49 @@ describe('the budget of a batch edit', () => {
       }).pipe(Effect.provideService(Spending, spendingWith(left, held)));
     }).pipe(Effect.runPromise);
     expect(Option.isSome(started)).toBe(true);
+  });
+
+  it('lets the next photo start when one is stopped as it starts', async () => {
+    // Stops the first photo at each step after it looked at the budget.
+    for (let step = 1; step <= 14; step += 1) {
+      let isRead = false;
+      let steps = 0;
+      const scheduler = new Scheduler.MixedScheduler();
+      scheduler.shouldYield = (fiber) => {
+        steps += isRead ? 1 : 0;
+        if (isRead && steps === step) {
+          queueMicrotask(() => fiber.interruptUnsafe());
+          return true;
+        }
+        return false;
+      };
+      const spending = Spending.of({
+        ...spendingWith(
+          Ref.makeUnsafe(0.5),
+          Ref.makeUnsafe<Deferred.Deferred<void> | null>(null),
+        ),
+        left: Effect.sync(() => {
+          isRead = true;
+          return 0.5;
+        }),
+      });
+      // biome-ignore lint/performance/noAwaitInLoops: one step after the other
+      const withinBudget = await Effect.runPromise(
+        makeBudget().pipe(Effect.provideService(Spending, spending)),
+      );
+      const first = Effect.runFork(
+        withinBudget(Effect.void).pipe(
+          Effect.provideService(Scheduler.Scheduler, scheduler),
+        ),
+      );
+      await Effect.runPromise(Fiber.await(first));
+      const second = await Effect.runPromise(
+        withinBudget(Effect.void).pipe(Effect.timeoutOption('100 millis')),
+      );
+      expect({ step, isStarted: Option.isSome(second) }).toEqual({
+        step,
+        isStarted: true,
+      });
+    }
   });
 });

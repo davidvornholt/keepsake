@@ -115,7 +115,8 @@ export const makeBudget = Effect.fn('makeBudget')(function* () {
       },
     );
     if (answer === 'wait') {
-      yield* Deferred.await(ended);
+      // Only the wait, as a photo starts within an acquisition.
+      yield* Effect.interruptible(Deferred.await(ended));
     }
     return answer === 'wait' || answer === 'again'
       ? yield* start
@@ -131,13 +132,14 @@ export const makeBudget = Effect.fn('makeBudget')(function* () {
     ),
   );
   return <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    Effect.gen(function* () {
-      if (!(yield* start)) {
-        return Option.none<A>();
-      }
-      const result = yield* work.pipe(Effect.ensuring(end));
-      return Option.some(result);
-    });
+    Effect.acquireUseRelease(
+      start,
+      (isStarted) =>
+        isStarted
+          ? Effect.map(work, Option.some)
+          : Effect.succeed(Option.none<A>()),
+      (isStarted) => (isStarted ? end : Effect.void),
+    );
 });
 
 /** Stops before anything is sent to a model whose cost a budget can't know. */
