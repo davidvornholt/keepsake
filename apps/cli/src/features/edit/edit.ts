@@ -1,4 +1,11 @@
-import { Effect, type FileSystem, Option, type Path, Ref } from 'effect';
+import {
+  Deferred,
+  Effect,
+  type FileSystem,
+  Option,
+  type Path,
+  Ref,
+} from 'effect';
 import { during } from '../../shared/activity.ts';
 import type { EditRecord } from '../../shared/domain.ts';
 import { InvalidInput, type StoreFailed } from '../../shared/errors/errors.ts';
@@ -72,28 +79,67 @@ type Outcome =
       readonly reason: string;
     };
 
+/** The photos being edited, and what tells when the next of them ends. */
+type Running = {
+  readonly count: number;
+  readonly ended: Deferred.Deferred<void>;
+};
+
 /**
  * Starts photos while the budget lasts, counting those that are being edited
- * right now at what they usually cost. Each paid request is checked again.
+ * right now at what they usually cost. A photo that doesn't fit beside them
+ * waits until one is done, as they often cost less, and is stopped only when
+ * none runs. Each paid request is checked again.
  */
-const makeBudget = Effect.fn('makeBudget')(function* () {
+export const makeBudget = Effect.fn('makeBudget')(function* () {
   const spending = yield* Spending;
-  const running = yield* Ref.make(0);
-  const isLeft = Effect.gen(function* () {
-    const left = yield* spending.left;
-    return (yield* Ref.get(running)) * dollarsForOneEdit < left;
+  // A photo that ends gives the next their own `ended`, in the same step.
+  const running = yield* Ref.make<Running>({
+    count: 0,
+    ended: yield* Deferred.make<void>(),
   });
+  const start: Effect.Effect<boolean> = Effect.gen(function* () {
+    const { ended } = yield* Ref.get(running);
+    const left = yield* spending.left;
+    const answer = yield* Ref.modify(
+      running,
+      (now): ['start' | 'stop' | 'wait' | 'again', Running] => {
+        if (now.ended !== ended) {
+          // A photo ended since `left` was read, which may have left more.
+          return ['again', now];
+        }
+        if (now.count * dollarsForOneEdit < left) {
+          return ['start', { ...now, count: now.count + 1 }];
+        }
+        return [now.count === 0 ? 'stop' : 'wait', now];
+      },
+    );
+    if (answer === 'wait') {
+      // Only the wait, as a photo starts within an acquisition.
+      yield* Effect.interruptible(Deferred.await(ended));
+    }
+    return answer === 'wait' || answer === 'again'
+      ? yield* start
+      : answer === 'start';
+  });
+  const end = Effect.flatMap(Deferred.make<void>(), (fresh) =>
+    Effect.flatMap(
+      Ref.modify(running, (now): [Deferred.Deferred<void>, Running] => [
+        now.ended,
+        { count: now.count - 1, ended: fresh },
+      ]),
+      (ended) => Deferred.succeed(ended, undefined),
+    ),
+  );
   return <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    Effect.gen(function* () {
-      if (!(yield* isLeft)) {
-        return Option.none<A>();
-      }
-      yield* Ref.update(running, (count) => count + 1);
-      const result = yield* work.pipe(
-        Effect.ensuring(Ref.update(running, (count) => count - 1)),
-      );
-      return Option.some(result);
-    });
+    Effect.acquireUseRelease(
+      start,
+      (isStarted) =>
+        isStarted
+          ? Effect.map(work, Option.some)
+          : Effect.succeed(Option.none<A>()),
+      (isStarted) => (isStarted ? end : Effect.void),
+    );
 });
 
 /** Stops before anything is sent to a model whose cost a budget can't know. */

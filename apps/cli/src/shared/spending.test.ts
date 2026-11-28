@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BunServices } from '@effect/platform-bun';
-import { Deferred, Effect, Fiber } from 'effect';
+import { Deferred, Effect, Fiber, Option } from 'effect';
 import { mostCostOf } from './prices.ts';
 import { Spending } from './spending.ts';
 
@@ -147,5 +147,93 @@ describe('a budget', () => {
       }),
     );
     expect((await spent(path))[model].dollars).toBeCloseTo(most);
+  });
+});
+
+describe('a budget, while another request holds part of it', () => {
+  const most = mostCostOf(model, nothingSent) ?? 0;
+  const budget = 1.5 * most;
+
+  /**
+   * Asks while a request holds its most, or was answered and counted at it,
+   * which then costs what it used.
+   */
+  const askWhileHeld = (cost: typeof used | undefined, isAnswered = false) =>
+    run(
+      Effect.gen(function* () {
+        const spending = yield* Spending;
+        return yield* Effect.gen(function* () {
+          const go = yield* Deferred.make<void>();
+          const running = yield* spending
+            .paying(model, nothingSent, (paid) =>
+              Effect.andThen(
+                isAnswered ? paid.answered : Effect.void,
+                Effect.andThen(Deferred.await(go), paid.settle(cost)),
+              ),
+            )
+            .pipe(Effect.forkChild);
+          while ((yield* spending.left) > budget - most) {
+            yield* Effect.yieldNow;
+          }
+          const asking = yield* Effect.result(request(spending)).pipe(
+            Effect.forkChild,
+          );
+          yield* Effect.sleep('10 millis');
+          const isWaiting = asking.pollUnsafe() === undefined;
+          yield* Deferred.succeed(go, undefined);
+          yield* Fiber.join(running);
+          return { isWaiting, result: yield* Fiber.join(asking) };
+        }).pipe(spending.within(budget));
+      }),
+    );
+
+  it('waits for it, and asks when it cost less', async () => {
+    const asked = await askWhileHeld(used);
+    expect(asked.isWaiting).toBe(true);
+    expect(asked.result._tag).toBe('Success');
+  });
+
+  it('waits for it once it was answered, and asks when it cost less', async () => {
+    const asked = await askWhileHeld(used, true);
+    expect(asked.isWaiting).toBe(true);
+    expect(asked.result._tag).toBe('Success');
+  });
+
+  it('can be stopped while it waits', async () => {
+    const outcome = await run(
+      Effect.gen(function* () {
+        const spending = yield* Spending;
+        return yield* Effect.gen(function* () {
+          const go = yield* Deferred.make<void>();
+          const running = yield* spending
+            .paying(model, nothingSent, () => Deferred.await(go))
+            .pipe(Effect.forkChild);
+          while ((yield* spending.left) > budget - most) {
+            yield* Effect.yieldNow;
+          }
+          let isSent = false;
+          const send = Effect.sync(() => {
+            isSent = true;
+          });
+          const asking = yield* spending
+            .paying(model, nothingSent, () => send)
+            .pipe(Effect.forkChild);
+          yield* Effect.sleep('10 millis');
+          const stopped = yield* Fiber.interrupt(asking).pipe(
+            Effect.timeoutOption('1 second'),
+          );
+          yield* Deferred.succeed(go, undefined);
+          yield* Fiber.join(running);
+          return { isStopped: Option.isSome(stopped), isSent };
+        }).pipe(spending.within(budget));
+      }),
+    );
+    expect(outcome).toEqual({ isStopped: true, isSent: false });
+  });
+
+  it('stops once it cost what the other needs', async () => {
+    const asked = await askWhileHeld(undefined);
+    expect(asked.isWaiting).toBe(true);
+    expect(asked.result._tag).toBe('Failure');
   });
 });

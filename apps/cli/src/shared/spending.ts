@@ -1,5 +1,6 @@
 import {
   Context,
+  Deferred,
   Effect,
   type FileSystem,
   Layer,
@@ -11,6 +12,7 @@ import {
 } from 'effect';
 import { OverBudget, type StoreFailed } from './errors/errors.ts';
 import { costOf, mostCostOf, type RequestSize, type Usage } from './prices.ts';
+import { makeSignal, type Signal } from './signal.ts';
 import { readJson, writeJson } from './store.ts';
 
 /** About what editing or changing one photo costs. */
@@ -53,8 +55,15 @@ const merge = (left: SpendingRecord, right: SpendingRecord): SpendingRecord => {
   return merged;
 };
 
-/** What this command spent, and what the requests that run may still cost. */
-type State = { readonly total: SpendingRecord; readonly held: number };
+/**
+ * What this command spent, what the requests that run may still cost, and
+ * how many of them hold part of a budget.
+ */
+type State = {
+  readonly total: SpendingRecord;
+  readonly held: number;
+  readonly holding: number;
+};
 
 /** A budget, and what was spent before it began. */
 type Limit = { readonly dollars: number; readonly from: number };
@@ -82,9 +91,13 @@ const save = (path: string, spent: SpendingRecord) =>
     );
   });
 
-/** Holds the most a request can cost, if what is left of the budget covers it. */
+/**
+ * `holding` counts a request until it ends, also once it was answered and
+ * counted at its most, as what it settles at may still be less.
+ */
 const hold = (
   state: Ref.Ref<State>,
+  changes: Signal,
   {
     model,
     most,
@@ -96,17 +109,29 @@ const hold = (
   },
 ) =>
   Effect.gen(function* () {
-    const short = yield* Ref.modify(state, (now) =>
-      most <= leftOf(now, budget)
-        ? [null, { ...now, held: now.held + most }]
-        : [leftOf(now, budget), now],
-    );
-    if (short !== null) {
-      return yield* new OverBudget({
-        message: `A request to ${model} can cost up to ${inDollars(most)}, and ${inDollars(short)} is left of the budget.`,
-      });
+    while (true) {
+      const changed = yield* changes.next;
+      const short = yield* Ref.modify(
+        state,
+        (now): [{ left: number; isAlone: boolean } | null, State] =>
+          most <= leftOf(now, budget)
+            ? [
+                null,
+                { ...now, held: now.held + most, holding: now.holding + 1 },
+              ]
+            : [{ left: leftOf(now, budget), isAlone: now.holding === 0 }, now],
+      );
+      if (short === null) {
+        return most;
+      }
+      if (short.isAlone) {
+        return yield* new OverBudget({
+          message: `A request to ${model} can cost up to ${inDollars(most)}, and ${inDollars(short.left)} is left of the budget.`,
+        });
+      }
+      // Only the wait, as `paying` holds within an acquisition.
+      yield* Effect.interruptible(Deferred.await(changed));
     }
-    return most;
   });
 
 /** A paid request, while it runs. */
@@ -135,7 +160,8 @@ type Ledger = {
     entry: ModelSpending,
     release: number,
   ) => Effect.Effect<void, StoreFailed>;
-  readonly release: (held: number) => Effect.Effect<void>;
+  /** Ends a request that held this much, freeing it unless it was counted. */
+  readonly end: (held: number, isCounted: boolean) => Effect.Effect<void>;
 };
 
 /**
@@ -187,9 +213,7 @@ const paymentFor = (
       }).pipe(Effect.uninterruptible),
   };
   // One that was never counted cost nothing, so what it held is free again.
-  const release = Effect.suspend(() =>
-    stage === 'held' ? ledger.release(held) : Effect.void,
-  );
+  const release = Effect.suspend(() => ledger.end(held, stage !== 'held'));
   return { paid, release };
 };
 
@@ -199,8 +223,8 @@ export class Spending extends Context.Service<
   {
     /**
      * Sends a paid request only when what is left of the budget covers the
-     * most it can cost, and holds that much until the request counts what
-     * it cost with `paid`.
+     * most it can cost, waiting while other requests hold part of it, and
+     * holds that much until the request counts what it cost with `paid`.
      */
     readonly paying: <A, E, R>(
       model: string,
@@ -229,7 +253,8 @@ export class Spending extends Context.Service<
       const services = yield* Effect.context<
         FileSystem.FileSystem | Path.Path
       >();
-      const state = yield* Ref.make<State>({ total: {}, held: 0 });
+      const state = yield* Ref.make<State>({ total: {}, held: 0, holding: 0 });
+      const changes = yield* makeSignal;
       const unsaved = yield* Ref.make<SpendingRecord>({});
       const target = yield* Ref.make(Option.none<string>());
       const limit = yield* Ref.make(Option.none<Limit>());
@@ -256,16 +281,24 @@ export class Spending extends Context.Service<
       const ledger: Ledger = {
         charge: (model, entry, release) =>
           Ref.update(state, (now) => ({
+            ...now,
             total: merge(now.total, { [model]: entry }),
             held: now.held - release,
           })).pipe(
+            Effect.andThen(changes.changed),
             Effect.andThen(
               Ref.update(unsaved, (now) => merge(now, { [model]: entry })),
             ),
             Effect.andThen(flush),
           ),
-        release: (held) =>
-          Ref.update(state, (now) => ({ ...now, held: now.held - held })),
+        end: (held, isCounted) =>
+          held === 0
+            ? Effect.void
+            : Ref.update(state, (now) => ({
+                ...now,
+                held: isCounted ? now.held : now.held - held,
+                holding: now.holding - 1,
+              })).pipe(Effect.andThen(changes.changed)),
       };
 
       return Spending.of({
@@ -281,7 +314,7 @@ export class Spending extends Context.Service<
             const holding =
               Option.isNone(budget) || most === undefined || most === 0
                 ? Effect.succeed(0)
-                : hold(state, { model, most, budget });
+                : hold(state, changes, { model, most, budget });
             return yield* Effect.acquireUseRelease(
               Effect.map(holding, (held) =>
                 paymentFor(model, { most: most ?? 0, held }, ledger),
