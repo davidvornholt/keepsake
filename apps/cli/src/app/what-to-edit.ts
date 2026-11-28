@@ -3,7 +3,7 @@ import { markWith } from '../features/light-table/marks.ts';
 import { readAlbum } from '../shared/album.ts';
 import { InvalidInput } from '../shared/errors/errors.ts';
 import { judgeOf } from '../shared/judge.ts';
-import { standings } from '../shared/standing.ts';
+import { readRemoved, standings } from '../shared/standing.ts';
 import { type OpenShoot, openShoot } from '../shared/store.ts';
 
 /**
@@ -19,7 +19,11 @@ export const markOfChosen = Effect.fn('markOfChosen')(function* (
   yield* readAlbum(open);
   const known = yield* standings(open, yield* judgeOf(open, Option.none()));
   const kind = known.of.get(mark.photo)?.kind;
-  if (kind !== 'album' && kind !== 'picked') {
+  // One taken out of every album may still be in one it wasn't taken out of.
+  const isRemoved = (yield* readRemoved(open)).some(
+    ({ photo }) => photo === mark.photo,
+  );
+  if ((kind !== 'album' && kind !== 'picked') || isRemoved) {
     return yield* new InvalidInput({
       message: `${mark.photo} was taken out meanwhile, so nothing was done for the mark ${id}.`,
     });

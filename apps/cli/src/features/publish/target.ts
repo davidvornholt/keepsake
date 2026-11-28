@@ -130,10 +130,6 @@ const giveTheirAlbum = Effect.fn('giveRemovalsTheirAlbum')(function* (
   }
 });
 
-/**
- * Lets the photos that were named and are in the album now count for it
- * again, also those the owner took out of every album.
- */
 export const bringBackNamed = (
   open: OpenShoot,
   photos: ReadonlySet<string>,
