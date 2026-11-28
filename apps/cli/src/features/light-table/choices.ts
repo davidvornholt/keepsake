@@ -91,6 +91,10 @@ const isDone =
 const isWaiting = (progress: Progress) => (choice: Choice) =>
   choice.failed === null && !isDone(progress)(choice);
 
+/** Whether a choice is noted for the shoot, done or not. */
+export const hasChoices = (files: ShootFiles) =>
+  Effect.map(readChoices(files), (all) => all.length > 0);
+
 /**
  * What is still to be done, and what couldn't be, as the page shows it: a
  * choice is on its way until the page has noted all of it.
