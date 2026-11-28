@@ -1,6 +1,6 @@
-import { DateTime, Effect, FileSystem, Option, Schema } from 'effect';
+import { DateTime, Effect, Option, Schema } from 'effect';
 import { readActivity } from '../../shared/activity.ts';
-import { InvalidInput, StoreFailed } from '../../shared/errors/errors.ts';
+import { InvalidInput } from '../../shared/errors/errors.ts';
 import { judgeOf } from '../../shared/judge.ts';
 import { withChoiceIfFree } from '../../shared/lock.ts';
 import { readPublication } from '../../shared/publication.ts';
@@ -31,24 +31,16 @@ import { Choice, type NewChoice } from './schemas.ts';
 const Choices = Schema.Array(Choice);
 const idLength = 8;
 
-const storeFailed = (error: { readonly message: string }) =>
-  new StoreFailed({ message: `Could not use the choices: ${error.message}` });
-
 const readChoices = (files: ShootFiles) =>
   Effect.map(
     readJson(Choices, files.choices),
     Option.getOrElse((): ReadonlyArray<Choice> => []),
   );
 
+// Kept when empty: a choice taken back before it was done leaves the file
+// changed, so the page doesn't show a view made while it was there.
 const saveChoices = (files: ShootFiles, all: ReadonlyArray<Choice>) =>
-  all.length > 0
-    ? writeJson(Choices, files.choices, all)
-    : Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs
-          .remove(files.choices, { force: true })
-          .pipe(Effect.mapError(storeFailed));
-      });
+  writeJson(Choices, files.choices, all);
 
 const isInNow = (known: Standings, photo: string) => {
   const kind = known.of.get(photo)?.kind;
@@ -98,6 +90,10 @@ const isDone =
 /** Whether a choice waits: it isn't so yet, and nothing kept it from being done. */
 const isWaiting = (progress: Progress) => (choice: Choice) =>
   choice.failed === null && !isDone(progress)(choice);
+
+/** Whether a choice is noted for the shoot, done or not. */
+export const hasChoices = (files: ShootFiles) =>
+  Effect.map(readChoices(files), (all) => all.length > 0);
 
 /**
  * What is still to be done, and what couldn't be, as the page shows it: a
@@ -222,9 +218,13 @@ export const choose = Effect.fn('choose')(function* (
       .filter((one) => parts.some(({ photo }) => photo === one.photo))
       .map((one) => one.action),
   );
+  // A photo that is out now stays as it stood: going out, it takes back
+  // what waited to put it in, rather than being noted as taken out.
+  const isChange = (one: Choice) =>
+    one.wants === 'in' || isInNow(known, one.photo);
   yield* saveChoices(files, [
     ...all.filter((one) => !replaced.has(one.action)),
-    ...parts.filter(isWaiting(progress)),
+    ...parts.filter(isWaiting(progress)).filter(isChange),
   ]);
   return action;
 });

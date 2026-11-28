@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { copyFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
 import { BunServices } from '@effect/platform-bun';
@@ -251,4 +251,17 @@ describe('a photo Immich took only part of', () => {
     expect(inImmich()).toEqual(['A1', 'B', 'C']);
     expect(await standingOf('A2')).toEqual(before);
   });
+});
+
+describe('a shoot whose choices were all done', () => {
+  it('is left alone when the page starts again', async () => {
+    await publishLisbon();
+    const file = shootFile('choices.json');
+    await writeFile(file, '[]\n');
+    const long = new Date('2026-11-27T10:00:00.000Z');
+    await utimes(file, long, long);
+    // Longer than the page waits before it goes on with what waited.
+    await whileServing(() => Bun.sleep(2500));
+    expect((await stat(file)).mtime).toEqual(long);
+  }, 10_000);
 });

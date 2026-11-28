@@ -228,11 +228,15 @@ export const withChoice = (
       .map((one) => one.action),
   );
   const others = shoot.choices.filter((one) => !replaced.has(one.action));
-  if (!waits) {
-    return withDone({ ...shoot, choices: others }, parts, now);
-  }
   const isInNow = (one: string) =>
     isIn(shoot.photos.find(({ id }) => id === one));
+  if (!waits) {
+    // A photo that is out stays as it stood, as keepsake keeps it.
+    const changes = parts.filter(
+      (one) => one.wants === 'in' || isInNow(one.photo),
+    );
+    return withDone({ ...shoot, choices: others }, changes, now);
+  }
   return {
     ...shoot,
     choices: [

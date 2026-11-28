@@ -1,12 +1,11 @@
 import { Duration, Effect, FiberMap, type Semaphore } from 'effect';
 import {
-  exists,
   type OpenShoot,
   openShoot,
   shootFiles,
   shootNames,
 } from '../../shared/store.ts';
-import { settle } from './choices.ts';
+import { hasChoices, settle } from './choices.ts';
 
 const pause = Duration.seconds(2);
 
@@ -32,7 +31,7 @@ export const makeSettling = Effect.fn('makeSettling')(function* (
   const once = (name: string) =>
     Effect.gen(function* () {
       // Nothing waits in a shoot that was forgotten.
-      if (!(yield* exists((yield* shootFiles(name)).choices))) {
+      if (!(yield* hasChoices(yield* shootFiles(name)))) {
         return false;
       }
       return yield* settleIn(yield* openShoot(name));
@@ -73,7 +72,7 @@ export const makeSettling = Effect.fn('makeSettling')(function* (
         names,
         (name) =>
           Effect.gen(function* () {
-            if (yield* exists((yield* shootFiles(name)).choices)) {
+            if (yield* hasChoices(yield* shootFiles(name))) {
               yield* start(name);
             }
           }).pipe(Effect.ignore),
