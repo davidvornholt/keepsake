@@ -92,9 +92,10 @@ const imageInput = Effect.fn('imageInput')(function* (
   files: EditFiles,
   crop: Crop,
 ) {
-  const size = outputSize(crop.aspect);
+  const camera = yield* sizeOf(files.camera);
+  const size = outputSize(crop.box, camera);
   if (!(yield* exists(files.input))) {
-    const frame = exactFrame(crop.box, yield* sizeOf(files.camera), size);
+    const frame = exactFrame(crop.box, camera, size);
     yield* atomically(files.input, (draft) =>
       renderExactly(files.camera, draft, {
         frame,

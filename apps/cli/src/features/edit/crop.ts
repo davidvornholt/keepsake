@@ -8,16 +8,15 @@ import {
   widened,
 } from '../../shared/boxes.ts';
 import {
-  type AspectName,
   aspectNames,
   Box,
   type Crop,
   type Shoot,
 } from '../../shared/domain.ts';
-import { frameOf, rendered, type Size, sizeOf } from '../../shared/pictures.ts';
+import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { type Piece, Vision } from '../../shared/vision.ts';
 import { edgesBeyond, frameBox, isMostlyPhoto } from './beyond.ts';
-import { closestAspect, fitAspect, within } from './geometry.ts';
+import { fitAspect, within } from './geometry.ts';
 import { withOwnRoomFirst } from './own-room.ts';
 import { sides, withRoomAhead } from './room-ahead.ts';
 
@@ -70,17 +69,16 @@ const choiceQuestion = (count: number) =>
 
 type Candidate = {
   readonly box: Box;
-  readonly aspect: AspectName;
   readonly reason: string;
 };
 
-const wholePhoto = (size: Size): Candidate => {
-  const aspect = closestAspect(size);
-  return {
-    box: fitAspect(wholePicture, size, aspect),
-    aspect,
-    reason: 'The whole photo is best.',
-  };
+/**
+ * All of the photo in its own shape, also one wider or taller than the image
+ * model makes pictures, which it edits with grey beside it.
+ */
+const whole: Candidate = {
+  box: wholePicture,
+  reason: 'The whole photo is best.',
 };
 
 /** Whether a frame shows almost all of the photo and nothing beyond it. */
@@ -105,7 +103,6 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
 ) {
   const vision = yield* Vision;
   const size = yield* sizeOf(camera);
-  const whole = wholePhoto(size);
   const about = shoot.about === null ? '' : `The shoot: ${shoot.about}. `;
   const wanted =
     wish === null
@@ -143,7 +140,6 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
           ),
           { subject, facing, held },
         ),
-        aspect,
         reason,
       }),
     )
@@ -154,9 +150,8 @@ export const chooseCrop = Effect.fn('chooseCrop')(function* (
         belongings.every((belonging) => holds(box, belonging)),
     );
   const candidates = [whole, ...crops];
-  const asCrop = ({ box, aspect, reason }: Candidate): Crop => ({
+  const asCrop = ({ box, reason }: Candidate): Crop => ({
     box,
-    aspect,
     subject: within(subject, box),
     reason,
   });

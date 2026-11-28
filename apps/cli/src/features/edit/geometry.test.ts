@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { aspectNames, ratioOf } from '../../shared/domain.ts';
 import {
-  closestAspect,
   editableSize,
   exactFrame,
   fitAspect,
+  modelFrame,
+  outOf,
   outputSize,
   within,
 } from './geometry.ts';
@@ -109,27 +110,74 @@ describe('fitAspect with what is to be kept', () => {
   });
 });
 
-describe('closestAspect', () => {
-  it.each([
-    [7008, 4672, '3:2'],
-    [4672, 7008, '2:3'],
-    [6000, 4000, '3:2'],
-    [4032, 3024, '4:3'],
-    [3024, 4032, '3:4'],
-  ] as const)('calls %i by %i %s', (width, height, aspect) => {
-    expect(closestAspect({ width, height })).toBe(aspect);
-  });
-});
-
 describe('outputSize', () => {
   it.each(aspectNames)('is as large as the model takes for %s', (aspect) => {
-    const { width, height } = outputSize(aspect);
+    const { width, height } = outputSize(
+      fitAspect(everything, camera, aspect),
+      camera,
+    );
     expect(width % 16).toBe(0);
     expect(height % 16).toBe(0);
     expect(Math.max(width, height)).toBeLessThanOrEqual(3840);
     expect(width * height).toBeLessThanOrEqual(8_294_400);
     expect(width * height).toBeGreaterThan(8_000_000);
     expect(Math.abs(width / height / ratioOf(aspect) - 1)).toBeLessThan(0.006);
+  });
+
+  it.each([
+    [
+      { width: 6000, height: 2000 },
+      { width: 3840, height: 1280 },
+    ],
+    [
+      { width: 12_000, height: 2000 },
+      { width: 3840, height: 640 },
+    ],
+    [
+      { width: 2000, height: 12_000 },
+      { width: 640, height: 3840 },
+    ],
+  ])('keeps all of a panorama of %o in its shape', (panorama, size) => {
+    expect(outputSize(everything, panorama)).toEqual(size);
+  });
+});
+
+describe('modelFrame', () => {
+  it.each([
+    { width: 3840, height: 2560 },
+    { width: 3840, height: 1280 },
+    { width: 1280, height: 3840 },
+  ])('is a picture of %o that the model makes itself', (size) => {
+    expect(modelFrame(size)).toEqual({ left: 0, top: 0, ...size });
+  });
+
+  it.each([
+    [
+      { width: 3840, height: 640 },
+      { left: 0, top: -320, width: 3840, height: 1280 },
+    ],
+    [
+      { width: 640, height: 3840 },
+      { left: -320, top: 0, width: 1280, height: 3840 },
+    ],
+    [
+      { width: 3840, height: 528 },
+      { left: 0, top: -376, width: 3840, height: 1280 },
+    ],
+  ])('adds as much grey to %o as the model needs', (size, frame) => {
+    expect(modelFrame(size)).toEqual(frame);
+  });
+
+  it('makes a frame the model takes of any panorama', () => {
+    for (let height = 16; height <= 1280; height += 16) {
+      const { width, height: frameHeight } = modelFrame({
+        width: 3840,
+        height,
+      });
+      expect(frameHeight % 16).toBe(0);
+      expect(width / frameHeight).toBeLessThanOrEqual(3);
+      expect(frameHeight - height).toBeLessThan(1280);
+    }
   });
 });
 
@@ -156,7 +204,7 @@ describe('editableSize', () => {
 
 describe('exactFrame', () => {
   it('has the shape of the output and stays inside the crop', () => {
-    const output = outputSize('3:2');
+    const output = outputSize(everything, camera);
     const frame = exactFrame(everything, camera, output);
     expect(frame.width / frame.height).toBeCloseTo(
       output.width / output.height,
@@ -170,9 +218,22 @@ describe('exactFrame', () => {
   it.each(aspectNames)('is never a pixel outside a %s crop', (aspect) => {
     const corner = { left: 0.71, top: 0.67, right: 1, bottom: 1 };
     const crop = fitAspect(corner, camera, aspect);
-    const frame = exactFrame(crop, camera, outputSize(aspect));
+    const frame = exactFrame(crop, camera, outputSize(crop, camera));
     expect(frame.left + frame.width).toBeLessThanOrEqual(camera.width);
     expect(frame.top + frame.height).toBeLessThanOrEqual(camera.height);
+  });
+});
+
+describe('outOf', () => {
+  it('sees a box from inside a crop in the whole picture again', () => {
+    const crop = { left: 0.25, top: 0.5, right: 0.75, bottom: 1 };
+    const box = { left: -0.5, top: 0, right: 1, bottom: 1.5 };
+    expect(outOf(box, crop)).toEqual({
+      left: 0,
+      top: 0.5,
+      right: 0.75,
+      bottom: 1.25,
+    });
   });
 });
 

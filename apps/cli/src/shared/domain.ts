@@ -226,7 +226,6 @@ export const Crop = Schema.Struct({
    * reach beyond the photo, where the image model continues the scene.
    */
   box: Box,
-  aspect: Schema.Literals(aspectNames),
   /** The subject, in fractions of what the finished photo shows. */
   subject: Box,
   reason: Schema.String,

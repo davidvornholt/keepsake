@@ -5,19 +5,15 @@ import { withPhoto } from '../../shared/lock.ts';
 import { frameOf, rendered, sizeOf } from '../../shared/pictures.ts';
 import { askReviewer } from '../../shared/review-vision.ts';
 import { starsFor } from '../../shared/stars.ts';
-import {
-  atomically,
-  readBytes,
-  writeBytes,
-  writeJson,
-} from '../../shared/store.ts';
+import { atomically, writeBytes, writeJson } from '../../shared/store.ts';
 import { edgesBeyond } from './beyond.ts';
 import { shownIn } from './describe.ts';
 import { finish } from './finish.ts';
 import { flawless } from './flawless.ts';
-import { exactFrame } from './geometry.ts';
+import { exactFrame, outOf } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
 import { carriedOut, removedFrom } from './keep-originals.ts';
+import { editedVersions } from './padded.ts';
 import {
   cameraQuality,
   type Prepared,
@@ -46,25 +42,21 @@ const versionsFor = (
   { crop, size, removed, description }: Prepared,
   { number, problems }: Attempt,
 ) =>
-  versionsOf(
-    files,
-    { number, versions },
-    Effect.fn('makeVersions')(function* (count: number) {
-      const image = yield* ImageModel;
-      return yield* image.edit({
-        picture: new Uint8Array(yield* readBytes(files.input)),
-        prompt: editPrompt({
+  versionsOf(files, { number, versions }, (count: number) =>
+    editedVersions({
+      input: files.input,
+      size,
+      versions: count,
+      prompt: (shown) =>
+        editPrompt({
           shoot: open.shoot,
           photo,
           pick: { ...pick, description },
-          crop: crop.box,
+          crop: outOf(shown, crop.box),
           removed,
           wish,
           problems,
         }),
-        size,
-        versions: count,
-      });
     }),
   );
 

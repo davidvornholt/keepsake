@@ -1,10 +1,5 @@
 import { around, clamp, tidyBox, wholePicture } from '../../shared/boxes.ts';
-import {
-  type AspectName,
-  aspectNames,
-  type Box,
-  ratioOf,
-} from '../../shared/domain.ts';
+import { type AspectName, type Box, ratioOf } from '../../shared/domain.ts';
 import type { Frame, Size } from '../../shared/pictures.ts';
 
 const half = 2;
@@ -83,15 +78,6 @@ export const fitAspect = (
   return { left, top, right: left + width, bottom: top + height };
 };
 
-/** The shape in the list that is closest to a picture's own. */
-export const closestAspect = ({ width, height }: Size): AspectName => {
-  const distance = (name: AspectName) =>
-    Math.abs(Math.log(ratioOf(name) / (width / height)));
-  return aspectNames.reduce((best, name) =>
-    distance(name) < distance(best) ? name : best,
-  );
-};
-
 /** A box inside the whole picture, seen from inside a crop of it. */
 export const within = (box: Box, crop: Box): Box => {
   const width = crop.right - crop.left;
@@ -104,10 +90,24 @@ export const within = (box: Box, crop: Box): Box => {
   });
 };
 
+/** A box seen from inside a crop, in fractions of the whole picture again. */
+export const outOf = (box: Box, crop: Box): Box => {
+  const width = crop.right - crop.left;
+  const height = crop.bottom - crop.top;
+  return {
+    left: crop.left + box.left * width,
+    top: crop.top + box.top * height,
+    right: crop.left + box.right * width,
+    bottom: crop.top + box.bottom * height,
+  };
+};
+
 // What the image model takes: both sides multiples of 16, the longer one at
-// most 3840 pixels, and at most 8,294,400 pixels in all.
+// most 3840 pixels and at most 3 times the shorter one, and at most 8,294,400
+// pixels in all.
 const step = 16;
 const longestSide = 3840;
+const widestShape = 3;
 const mostPixels = 8_294_400;
 /** A shape this far off the wanted one can't be told from it. */
 const tolerance = 0.006;
@@ -115,7 +115,11 @@ const tolerance = 0.006;
 const fits = ({ width, height }: Size): boolean =>
   Math.max(width, height) <= longestSide && width * height <= mostPixels;
 
-/** The largest size an image model makes in a shape of that width to height. */
+/**
+ * The largest size in a shape of that width to height that an image model
+ * makes, or, for a shape wider or taller than it makes, that fits into the
+ * largest picture it makes.
+ */
 const largestSize = (ratio: number): Size => {
   let best: Size = { width: step, height: step };
   for (let width = step; width <= longestSide; width += step) {
@@ -133,14 +137,37 @@ const largestSize = (ratio: number): Size => {
   return best;
 };
 
-export const outputSize = (aspect: AspectName): Size =>
-  largestSize(ratioOf(aspect));
+/** The size a crop is edited at, as large as the image model makes its shape. */
+export const outputSize = (box: Box, size: Size): Size =>
+  largestSize(
+    ((box.right - box.left) * size.width) /
+      ((box.bottom - box.top) * size.height),
+  );
 
-/** The size an image model makes of a picture, its own if it can. */
+/** The size a picture is edited at, its own if it can be. */
 export const editableSize = (size: Size): Size =>
   size.width % step === 0 && size.height % step === 0 && fits(size)
     ? size
     : largestSize(size.width / size.height);
+
+/** The smallest multiple of the step that is at least the given length. */
+const stepsFor = (length: number): number => Math.ceil(length / step) * step;
+
+/**
+ * The frame the image model edits a picture of the given size in: the picture
+ * itself, or, when it is wider or taller than the model makes pictures, the
+ * picture with as much grey on both sides as that takes.
+ */
+export const modelFrame = ({ width, height }: Size): Frame => {
+  const frameWidth = Math.max(width, stepsFor(height / widestShape));
+  const frameHeight = Math.max(height, stepsFor(width / widestShape));
+  return {
+    left: Math.ceil((width - frameWidth) / half),
+    top: Math.ceil((height - frameHeight) / half),
+    width: frameWidth,
+    height: frameHeight,
+  };
+};
 
 /**
  * The pixels of a crop, trimmed by a hair so its shape is exactly that of the

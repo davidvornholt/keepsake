@@ -169,7 +169,6 @@ const recordOf = (told: Told): EditRecord => ({
   model: 'azure/gpt-image-2.5-sunburst',
   crop: {
     box: told.crop ?? whole,
-    aspect: '3:2',
     subject,
     reason: 'It leaves out the empty edge and gives the subject room.',
   },
