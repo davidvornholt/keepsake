@@ -222,6 +222,19 @@ describe('keepsake publish, when photos can’t tell whose an album is', () => {
     expect(joined).toMatchObject({ album: { id: 'friends' }, published: 3 });
   });
 
+  it('says to rename several albums of the title when it can’t tell whose they are', async () => {
+    fakeTools.albums = ['mine', 'friends'].map((id) => ({
+      id,
+      name: 'Lisbon',
+      assets: [],
+    }));
+    await pickLisbon();
+    await editLisbon();
+    const failed = await failureOf('publish', 'lisbon');
+    expect(failed.message).toContain('2 albums called Lisbon');
+    expect(fakeTools.uploads).toEqual([]);
+  });
+
   it('makes a new album of the title when photos can’t tell whose one is', async () => {
     const result = await publishLisbon();
     expect(result).toMatchObject({ album: { id: 'album-1' }, published: 3 });

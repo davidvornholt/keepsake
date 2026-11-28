@@ -125,7 +125,6 @@ test('says what Immich has of the name, however it is written', async ({
   // An album another account shares isn't joined.
   await named.fill('Lagos');
   await expect(named).toHaveAccessibleDescription(sharedLagos);
-  // Nor one whose owner photos can't tell, which stops the publish.
   await named.fill('Silves');
   await expect(named).toHaveAccessibleDescription(unknownSilves);
   await scan(page);

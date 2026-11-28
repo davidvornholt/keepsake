@@ -56,6 +56,10 @@ export const albumOfName = Effect.fn('albumOfName')(function* (
   const user = yield* signedInUser;
   const same = albumsNamed(albums, name);
   if (same.some((album) => isOwnAlbum(album, user) === undefined)) {
+    // --album can't name one of several, so the owner tells them apart first.
+    if (same.length > 1) {
+      return yield* uniqueNamed(same, name, otherwise);
+    }
     const why =
       user === null
         ? "photos' key may not read which account it belongs to (`photos status` names the permissions it lacks)"
