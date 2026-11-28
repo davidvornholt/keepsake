@@ -29,7 +29,6 @@ const middleGrey = 128;
 const greyPixel = [middleGrey, middleGrey, middleGrey];
 const rgbaChannels = 4;
 const rgbChannels = 3;
-const cameraSize = '7008 4672';
 /** Small, since pixels of it are computed with. */
 const editSize = '48 32';
 const editBytes = 4608;
@@ -76,6 +75,8 @@ export const fakeTools = {
   user: account as string | null,
   /** RAW files whose pictures can't be read. */
   broken: new Set<string>(),
+  /** How large ImageMagick finds the camera's own pictures. */
+  cameraSize: '7008 4672',
   /** Whether the claude and codex programs are signed in to a subscription. */
   isSubscribed: false,
   /** What the claude and codex programs answer to a question. */
@@ -102,6 +103,7 @@ export const resetTools = () => {
   fakeTools.trashed = [];
   fakeTools.user = account;
   fakeTools.broken = new Set();
+  fakeTools.cameraSize = '7008 4672';
   fakeTools.isSubscribed = false;
   fakeTools.assistant = undefined;
   fakeTools.programs = {};
@@ -163,7 +165,7 @@ const magick = (run: Run): string | Uint8Array => {
   const { args } = run;
   const target = args.at(-1) ?? '';
   if (args[0] === 'identify') {
-    return editPattern.test(target) ? editSize : cameraSize;
+    return editPattern.test(target) ? editSize : fakeTools.cameraSize;
   }
   if (target === 'rgb:-') {
     return pixelsOf(args[0] ?? '', args);
@@ -188,6 +190,9 @@ const magick = (run: Run): string | Uint8Array => {
   }
   if (target === 'jpg:-') {
     return 'a picture';
+  }
+  if (target === 'png:-') {
+    return run.inputBytes;
   }
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, 'a picture');

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { aspectNames, ratioOf } from '../../shared/domain.ts';
 import {
-  closestAspect,
   editableSize,
   exactFrame,
   fitAspect,
+  modelFrame,
+  outOf,
   outputSize,
   within,
 } from './geometry.ts';
@@ -109,21 +110,12 @@ describe('fitAspect with what is to be kept', () => {
   });
 });
 
-describe('closestAspect', () => {
-  it.each([
-    [7008, 4672, '3:2'],
-    [4672, 7008, '2:3'],
-    [6000, 4000, '3:2'],
-    [4032, 3024, '4:3'],
-    [3024, 4032, '3:4'],
-  ] as const)('calls %i by %i %s', (width, height, aspect) => {
-    expect(closestAspect({ width, height })).toBe(aspect);
-  });
-});
-
 describe('outputSize', () => {
   it.each(aspectNames)('is as large as the model takes for %s', (aspect) => {
-    const { width, height } = outputSize(aspect);
+    const { width, height } = outputSize(
+      fitAspect(everything, camera, aspect),
+      camera,
+    );
     expect(width % 16).toBe(0);
     expect(height % 16).toBe(0);
     expect(Math.max(width, height)).toBeLessThanOrEqual(3840);
@@ -131,9 +123,102 @@ describe('outputSize', () => {
     expect(width * height).toBeGreaterThan(8_000_000);
     expect(Math.abs(width / height / ratioOf(aspect) - 1)).toBeLessThan(0.006);
   });
+
+  it.each([
+    [
+      { width: 6000, height: 2000 },
+      { width: 3840, height: 1280 },
+    ],
+    [
+      { width: 12_000, height: 2000 },
+      { width: 3840, height: 640 },
+    ],
+    [
+      { width: 2000, height: 12_000 },
+      { width: 640, height: 3840 },
+    ],
+    [
+      { width: 12_345, height: 2000 },
+      { width: 3840, height: 624 },
+    ],
+    [
+      { width: 10_000, height: 31 },
+      { width: 3840, height: 12 },
+    ],
+    [
+      { width: 31, height: 10_000 },
+      { width: 12, height: 3840 },
+    ],
+  ])('keeps all of a panorama of %o in its shape', (panorama, size) => {
+    expect(outputSize(everything, panorama)).toEqual(size);
+  });
+});
+
+describe('modelFrame', () => {
+  it.each([
+    { width: 3840, height: 2560 },
+    { width: 3840, height: 1280 },
+    { width: 1280, height: 3840 },
+  ])('is a picture of %o that the model makes itself', (size) => {
+    expect(modelFrame(size)).toEqual({ left: 0, top: 0, ...size });
+  });
+
+  it.each([
+    [
+      { width: 3840, height: 640 },
+      { left: 0, top: -320, width: 3840, height: 1280 },
+    ],
+    [
+      { width: 640, height: 3840 },
+      { left: -320, top: 0, width: 1280, height: 3840 },
+    ],
+    [
+      { width: 3840, height: 528 },
+      { left: 0, top: -376, width: 3840, height: 1280 },
+    ],
+    [
+      { width: 3840, height: 12 },
+      { left: 0, top: -634, width: 3840, height: 1280 },
+    ],
+    [
+      { width: 3840, height: 1288 },
+      { left: 0, top: -4, width: 3840, height: 1296 },
+    ],
+    [
+      { width: 1288, height: 3840 },
+      { left: -4, top: 0, width: 1296, height: 3840 },
+    ],
+  ])('adds as much grey to %o as the model needs', (size, frame) => {
+    expect(modelFrame(size)).toEqual(frame);
+  });
+
+  it('makes a frame the model takes of any panorama', () => {
+    for (let height = 1; height <= 1280; height += 1) {
+      const { width, height: frameHeight } = modelFrame({
+        width: 3840,
+        height,
+      });
+      expect(frameHeight % 16).toBe(0);
+      expect(width / frameHeight).toBeLessThanOrEqual(3);
+      expect(frameHeight - height).toBeLessThan(1280);
+    }
+  });
 });
 
 describe('editableSize', () => {
+  it.each([
+    [
+      { width: 10_000, height: 31 },
+      { width: 3840, height: 12 },
+    ],
+    [
+      { width: 31, height: 10_000 },
+      { width: 12, height: 3840 },
+    ],
+  ])('keeps the shape of a long panorama of %o', (panorama, size) => {
+    expect(editableSize(panorama)).toEqual(size);
+  });
+
   it('is a picture’s own if the model makes it', () => {
     const own = { width: 3520, height: 2352 };
     expect(editableSize(own)).toEqual(own);
@@ -156,8 +241,9 @@ describe('editableSize', () => {
 
 describe('exactFrame', () => {
   it('has the shape of the output and stays inside the crop', () => {
-    const output = outputSize('3:2');
-    const frame = exactFrame(everything, camera, output);
+    const almost = { left: 0, top: 0, right: 1, bottom: 0.999 };
+    const output = outputSize(almost, camera);
+    const frame = exactFrame(almost, camera, output);
     expect(frame.width / frame.height).toBeCloseTo(
       output.width / output.height,
       3,
@@ -167,12 +253,32 @@ describe('exactFrame', () => {
     expect(frame.width).toBeGreaterThan(camera.width * 0.99);
   });
 
+  it('takes every pixel of the whole photo', () => {
+    const panorama = { width: 12_345, height: 2048 };
+    expect(
+      exactFrame(everything, panorama, outputSize(everything, panorama)),
+    ).toEqual({ left: 0, top: 0, ...panorama });
+  });
+
   it.each(aspectNames)('is never a pixel outside a %s crop', (aspect) => {
     const corner = { left: 0.71, top: 0.67, right: 1, bottom: 1 };
     const crop = fitAspect(corner, camera, aspect);
-    const frame = exactFrame(crop, camera, outputSize(aspect));
+    const frame = exactFrame(crop, camera, outputSize(crop, camera));
     expect(frame.left + frame.width).toBeLessThanOrEqual(camera.width);
     expect(frame.top + frame.height).toBeLessThanOrEqual(camera.height);
+  });
+});
+
+describe('outOf', () => {
+  it('sees a box from inside a crop in the whole picture again', () => {
+    const crop = { left: 0.25, top: 0.5, right: 0.75, bottom: 1 };
+    const box = { left: -0.5, top: 0, right: 1, bottom: 1.5 };
+    expect(outOf(box, crop)).toEqual({
+      left: 0,
+      top: 0.5,
+      right: 0.75,
+      bottom: 1.25,
+    });
   });
 });
 

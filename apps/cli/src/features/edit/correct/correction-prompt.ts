@@ -1,5 +1,5 @@
-import type { Shoot } from '../../../shared/domain.ts';
-import { sentence } from '../prompt.ts';
+import type { Box, Shoot } from '../../../shared/domain.ts';
+import { continuing, sentence } from '../prompt.ts';
 import { listed } from '../removals.ts';
 import type { Place } from './places.ts';
 
@@ -21,6 +21,8 @@ export const correctionPrompt = (
   shoot: Shoot,
   description: string,
   changes: ReadonlyArray<ToChange>,
+  /** What the picture shows of the photo. */
+  shown: Box,
 ): string => {
   const origin = shoot.about === null ? '' : ` from ${shoot.about}`;
   const removing = changes.some(({ place }) => place.isRemoval)
@@ -28,7 +30,7 @@ export const correctionPrompt = (
     : '';
   return `This is a finished photograph${origin}. ${sentence(description)} Change only the following:
 
-${listed(changes.map(changeOf))}${removing}
+${listed(changes.map(changeOf))}${removing}${continuing(shown)}
 
 Keep everything else exactly as it is, pixel for pixel: the framing, the position and the size of everything, light, colours, contrast, sharpness, texture and grain. Don't improve, sharpen or tidy anything else. Every other person keeps exactly the same face, body, hair and clothes, and every other text and sign the same words. It should look like the same photograph, not a painting or a render.`;
 };

@@ -1,10 +1,5 @@
 import { around, clamp, tidyBox, wholePicture } from '../../shared/boxes.ts';
-import {
-  type AspectName,
-  aspectNames,
-  type Box,
-  ratioOf,
-} from '../../shared/domain.ts';
+import { type AspectName, type Box, ratioOf } from '../../shared/domain.ts';
 import type { Frame, Size } from '../../shared/pictures.ts';
 
 const half = 2;
@@ -83,15 +78,6 @@ export const fitAspect = (
   return { left, top, right: left + width, bottom: top + height };
 };
 
-/** The shape in the list that is closest to a picture's own. */
-export const closestAspect = ({ width, height }: Size): AspectName => {
-  const distance = (name: AspectName) =>
-    Math.abs(Math.log(ratioOf(name) / (width / height)));
-  return aspectNames.reduce((best, name) =>
-    distance(name) < distance(best) ? name : best,
-  );
-};
-
 /** A box inside the whole picture, seen from inside a crop of it. */
 export const within = (box: Box, crop: Box): Box => {
   const width = crop.right - crop.left;
@@ -104,10 +90,24 @@ export const within = (box: Box, crop: Box): Box => {
   });
 };
 
+/** A box seen from inside a crop, in fractions of the whole picture again. */
+export const outOf = (box: Box, crop: Box): Box => {
+  const width = crop.right - crop.left;
+  const height = crop.bottom - crop.top;
+  return {
+    left: crop.left + box.left * width,
+    top: crop.top + box.top * height,
+    right: crop.left + box.right * width,
+    bottom: crop.top + box.bottom * height,
+  };
+};
+
 // What the image model takes: both sides multiples of 16, the longer one at
-// most 3840 pixels, and at most 8,294,400 pixels in all.
+// most 3840 pixels and at most 3 times the shorter one, and at most 8,294,400
+// pixels in all.
 const step = 16;
 const longestSide = 3840;
+const widestShape = 3;
 const mostPixels = 8_294_400;
 /** A shape this far off the wanted one can't be told from it. */
 const tolerance = 0.006;
@@ -115,7 +115,30 @@ const tolerance = 0.006;
 const fits = ({ width, height }: Size): boolean =>
   Math.max(width, height) <= longestSide && width * height <= mostPixels;
 
-/** The largest size an image model makes in a shape of that width to height. */
+const stepsFor = (length: number): number => Math.ceil(length / step) * step;
+
+/**
+ * The frame the image model edits a picture of the given size in: the picture
+ * itself, or, when the model can't make its size, the picture with as much
+ * grey on both sides as that takes.
+ */
+export const modelFrame = ({ width, height }: Size): Frame => {
+  const frameWidth = Math.max(stepsFor(width), stepsFor(height / widestShape));
+  const frameHeight = Math.max(stepsFor(height), stepsFor(width / widestShape));
+  return {
+    left: Math.ceil((width - frameWidth) / half),
+    top: Math.ceil((height - frameHeight) / half),
+    width: frameWidth,
+    height: frameHeight,
+  };
+};
+
+/**
+ * The size a picture of that width to height is edited at: the largest the
+ * image model makes in its shape. A shape so long that sides in steps of 16
+ * can't come close to it in a large size has its short side to the pixel
+ * instead, and grey around it.
+ */
 const largestSize = (ratio: number): Size => {
   let best: Size = { width: step, height: step };
   for (let width = step; width <= longestSide; width += step) {
@@ -130,23 +153,45 @@ const largestSize = (ratio: number): Size => {
       best = { width, height };
     }
   }
-  return best;
+  const short = Math.max(
+    1,
+    Math.round(ratio >= 1 ? longestSide / ratio : longestSide * ratio),
+  );
+  const long =
+    ratio >= 1
+      ? { width: longestSide, height: short }
+      : { width: short, height: longestSide };
+  return fits(modelFrame(long)) &&
+    Math.max(best.width, best.height) < longestSide
+    ? long
+    : best;
 };
 
-export const outputSize = (aspect: AspectName): Size =>
-  largestSize(ratioOf(aspect));
+/** The size a crop is edited at, as large as the image model makes its shape. */
+export const outputSize = (box: Box, size: Size): Size =>
+  largestSize(
+    ((box.right - box.left) * size.width) /
+      ((box.bottom - box.top) * size.height),
+  );
 
-/** The size an image model makes of a picture, its own if it can. */
+/** The size a picture is edited at, its own if it can be. */
 export const editableSize = (size: Size): Size =>
   size.width % step === 0 && size.height % step === 0 && fits(size)
     ? size
     : largestSize(size.width / size.height);
 
+const isWholePicture = (box: Box): boolean =>
+  box.left === 0 && box.top === 0 && box.right === 1 && box.bottom === 1;
+
 /**
  * The pixels of a crop, trimmed by a hair so its shape is exactly that of the
- * output and nothing is stretched.
+ * output and nothing is stretched. All of the photo is never trimmed: its
+ * output has its shape too nearly to tell apart.
  */
 export const exactFrame = (box: Box, size: Size, output: Size): Frame => {
+  if (isWholePicture(box)) {
+    return { left: 0, top: 0, ...size };
+  }
   const ratio = output.width / output.height;
   const boxWidth = (box.right - box.left) * size.width;
   const boxHeight = (box.bottom - box.top) * size.height;

@@ -3,19 +3,14 @@ import { wholePicture } from '../../../shared/boxes.ts';
 import type { Box } from '../../../shared/domain.ts';
 import { renderExactly, type Size, sizeOf } from '../../../shared/pictures.ts';
 import { isOnFace } from '../../../shared/removed.ts';
-import {
-  atomically,
-  exists,
-  readBytes,
-  type ShootFiles,
-} from '../../../shared/store.ts';
+import { atomically, exists, type ShootFiles } from '../../../shared/store.ts';
 import type { Job } from '../best-edit.ts';
 import { descriptionOf } from '../describe.ts';
 import { editableSize } from '../geometry.ts';
-import { ImageModel } from '../image-model.ts';
 import { keptOnFace } from '../keep-originals.ts';
+import { pictureVersions } from '../padded.ts';
 import { peopleAndSigns, remembered } from '../prepare.ts';
-import { mostAttempts, versionsOf, withOriginals } from '../versions.ts';
+import { mostAttempts, withOriginals } from '../versions.ts';
 import { candidatesOf, type Taken, writeWith } from './candidates.ts';
 import { Choice, choose } from './choose.ts';
 import { correctionPrompt, type ToChange } from './correction-prompt.ts';
@@ -85,18 +80,15 @@ const attempt = Effect.fn('attempt')(function* (
   { number, base, changes }: Start,
   { size, about }: { readonly size: Size; readonly about: Known },
 ) {
-  const numbers = yield* versionsOf(
+  const numbers = yield* pictureVersions(
     files,
     { number, versions },
-    Effect.fn('makeVersions')(function* (count: number) {
-      const image = yield* ImageModel;
-      return yield* image.edit({
-        picture: new Uint8Array(yield* readBytes(files.input)),
-        prompt: correctionPrompt(open.shoot, about.description, changes),
-        size,
-        versions: count,
-      });
-    }),
+    {
+      input: files.input,
+      size,
+      prompt: (shown) =>
+        correctionPrompt(open.shoot, about.description, changes, shown),
+    },
   );
   const made = yield* Effect.forEach(numbers, (version) =>
     withOriginals(files, about, version),
