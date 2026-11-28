@@ -1,5 +1,6 @@
 import {
   Context,
+  Deferred,
   Effect,
   type FileSystem,
   Layer,
@@ -91,9 +92,8 @@ const save = (path: string, spent: SpendingRecord) =>
   });
 
 /**
- * Holds the most a request can cost once what is left of the budget covers
- * it. While other requests hold part of the budget it waits for them, since
- * they usually cost less than they hold.
+ * `holding` counts a request until it ends, also once it was answered and
+ * counted at its most, as what it settles at may still be less.
  */
 const hold = (
   state: Ref.Ref<State>,
@@ -129,7 +129,8 @@ const hold = (
           message: `A request to ${model} can cost up to ${inDollars(most)}, and ${inDollars(short.left)} is left of the budget.`,
         });
       }
-      yield* changed;
+      // Only the wait, as `paying` holds within an acquisition.
+      yield* Effect.interruptible(Deferred.await(changed));
     }
   });
 
