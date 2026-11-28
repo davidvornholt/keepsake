@@ -9,7 +9,10 @@ import {
 } from 'bun:test';
 import { appendFileSync, existsSync, readdirSync } from 'node:fs';
 import { copyFile } from 'node:fs/promises';
-import { changeUsedUp } from '../features/light-table/mark-answers.ts';
+import {
+  changeUsedUp,
+  takenOut,
+} from '../features/light-table/mark-answers.ts';
 import { inImmich, publishLisbon } from './choice-fixtures.ts';
 import {
   runOk,
@@ -24,6 +27,7 @@ import { handOver, marksOf, whileServing } from './light-table-fixtures.ts';
 import { whileHeld } from './lock-fixtures.ts';
 import {
   answeredOf,
+  busy,
   ended,
   endedOnce,
   finalDigestOf,
@@ -285,6 +289,34 @@ describe('a change mark of a photo another shoot published too', () => {
     expect(fakeTools.albums[0]?.assets.map(({ id }) => id)).toContain(
       'asset-3',
     );
+  });
+});
+
+describe('a change mark of a photo taken out of every album', () => {
+  it('is answered without an edit while the photo is still in an earlier album', async () => {
+    await publishLisbon();
+    await runOk('publish', 'lisbon', '--album', 'Second');
+    // Handed over while another command holds the shoot, so it waits.
+    keepsakeInProcess(() => busy);
+    await whileServing(async (address) => {
+      await markB(address);
+      await handOver(address, { dollars: 5 });
+      await endedOnce((args) => args.startsWith('edit'));
+    });
+    await runOk('take-out', 'lisbon', 'B', '--because', 'Keep private');
+    await runOk('publish', 'lisbon', '--album', 'Lisbon');
+    const before = keepsakeRuns().length;
+    keepsakeInProcess();
+    const [marks, carrying] = await whileServing(async (address) => [
+      await answeredOf(address),
+      await restingOf(address),
+    ]);
+    expect(marks[0].answer).toMatchObject({
+      outcome: 'not-done',
+      note: takenOut,
+    });
+    expect(carrying).toEqual({ since: null, stopped: null });
+    expect(keepsakeRuns().slice(before)).toEqual([]);
   });
 });
 
