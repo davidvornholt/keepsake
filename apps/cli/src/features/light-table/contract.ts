@@ -310,10 +310,11 @@ export type AlbumList = {
     readonly first: string | null;
     readonly last: string | null;
     /**
-     * Who shared it with the owner, null when it is the owner's own. A new
-     * album never joins one that someone else shared.
+     * Whose it is: the owner's own, one someone shared with them, or unknown
+     * when photos can't tell. A new album joins only the owner's own, and is
+     * published nowhere while one of its name is unknown.
      */
-    readonly sharedBy: string | null;
+    readonly whose: 'own' | 'unknown' | { readonly sharedBy: string };
   }>;
 };
 

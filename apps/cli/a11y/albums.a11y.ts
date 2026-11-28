@@ -26,6 +26,8 @@ const albumsAnswer = '**/api/albums';
 const looking = 'Looking for albums of this name in Immich.';
 const sharedLagos =
   /Friend shared an album called Lagos with you, with photos of 5 October 2025\. The photos go into a new album of your own instead\./u;
+const unknownSilves =
+  /Immich has an album called Silves, with photos of 6 October 2025, and Keepsake can’t tell whether it is yours or one shared with you, so it won’t publish the photos\. Give this album another name\./u;
 
 /** The name of a new album of the Tavira folder, as the page asks for it. */
 const nameTavira = async (page: Page) => {
@@ -123,6 +125,8 @@ test('says what Immich has of the name, however it is written', async ({
   // An album another account shares isn't joined.
   await named.fill('Lagos');
   await expect(named).toHaveAccessibleDescription(sharedLagos);
+  await named.fill('Silves');
+  await expect(named).toHaveAccessibleDescription(unknownSilves);
   await scan(page);
 });
 

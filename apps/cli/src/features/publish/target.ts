@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from 'effect';
 import { type Publication, Removed } from '../../shared/domain.ts';
 import { InvalidInput } from '../../shared/errors/errors.ts';
 import {
+  albumsNamed,
   isOwnAlbum,
   type NamedAlbum,
   signedInUser,
@@ -39,18 +40,39 @@ const fresh = (name: string, lookup: Lookup | null = null): Target => ({
   lookup,
 });
 
-/** The one album of this name a publish may take, if there is one. */
+/**
+ * The one album of this name a publish may take, if there is one. Where
+ * photos can't tell whose an album of the name is, a first publish takes
+ * none and makes none, since it may be someone else's or the owner's own.
+ */
 export const albumOfName = Effect.fn('albumOfName')(function* (
   albums: ReadonlyArray<NamedAlbum>,
   name: string,
   { isOwnOnly, otherwise }: Lookup,
 ) {
-  const user = isOwnOnly ? yield* signedInUser : null;
-  // Where photos can't tell whose an album is, it is taken as the owner's.
-  const allowed = isOwnOnly
-    ? albums.filter((album) => isOwnAlbum(album, user) !== false)
-    : albums;
-  return yield* uniqueNamed(allowed, name, otherwise);
+  if (!isOwnOnly) {
+    return yield* uniqueNamed(albums, name, otherwise);
+  }
+  const user = yield* signedInUser;
+  const same = albumsNamed(albums, name);
+  if (same.some((album) => isOwnAlbum(album, user) === undefined)) {
+    // --album can't name one of several, so the owner tells them apart first.
+    if (same.length > 1) {
+      return yield* uniqueNamed(same, name, otherwise);
+    }
+    const why =
+      user === null
+        ? "photos' key may not read which account it belongs to (`photos status` names the permissions it lacks)"
+        : "photos doesn't say who owns it";
+    return yield* new InvalidInput({
+      message: `Immich has an album called ${name}, and keepsake can't tell whether it is this account's own or one someone shared with it, because ${why}. So it published nothing. If the album is yours, publish to it with --album; if not, ${otherwise}.`,
+    });
+  }
+  return yield* uniqueNamed(
+    same.filter((album) => isOwnAlbum(album, user) === true),
+    name,
+    otherwise,
+  );
 });
 
 /**
