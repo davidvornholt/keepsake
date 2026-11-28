@@ -112,9 +112,9 @@ describe('withChoice', () => {
     expect(withChoice(shoot, back, working).choices).toEqual([]);
     const done = withChoice(shoot, back, idle);
     expect(done.choices).toEqual([]);
-    expect(done.photos.map(({ standing }) => standing.kind)).toEqual([
-      'picked',
-      'taken-out',
+    expect(done.photos.map(({ standing }) => standing)).toEqual([
+      chosen.standing,
+      behind.standing,
     ]);
   });
 

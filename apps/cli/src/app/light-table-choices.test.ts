@@ -340,7 +340,6 @@ describe('a choice that waited', () => {
         async () => {
           const putIn = await choose(address, { photo: 'A2', wants: 'in' });
           const waits = await choicesOf(address);
-          // The owner presses its pencil again, which takes the put-in back.
           const takeBack = await choose(address, { photo: 'A2', wants: 'out' });
           return [
             putIn.status,
