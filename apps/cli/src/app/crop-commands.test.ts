@@ -7,7 +7,7 @@ import {
   shootJson,
   tearDown,
 } from './command-fixtures.ts';
-import { fakeModels } from './fake-models.ts';
+import { assessment, fakeModels } from './fake-models.ts';
 import { fakeTools } from './fake-tools.ts';
 
 beforeEach(() => setUp(spyOn));
@@ -131,8 +131,21 @@ describe('keepsake edit, a panorama', () => {
       expect(
         runs.filter((args) => args[0] === 'png:-' && args.includes(kept)),
       ).toHaveLength(fakeModels.edits.length * 2);
-      // What the reviews see is the photo alone, so they hear of no grey.
       expect(asked('assessment')[0]?.texts.join()).not.toContain('grey area');
     },
   );
+
+  it('keeps every column of one that doesn’t divide evenly, also from the camera', async () => {
+    fakeTools.cameraSize = '12345 2048';
+    await pickLisbon();
+    fakeModels.answers.assessment = {
+      assessments: [assessment(1, { withoutErrors: false })],
+    };
+    await editLisbon('B');
+    const frames = fakeTools.runs
+      .filter(({ args }) => args.includes('-extent'))
+      .map(({ args }) => args[args.indexOf('-extent') + 1]);
+    expect(frames[0]).toBe('12345x2048+0+0');
+    expect(frames.at(-1)).toBe('12345x2048+0+0');
+  });
 });

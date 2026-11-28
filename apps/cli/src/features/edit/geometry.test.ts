@@ -137,6 +137,18 @@ describe('outputSize', () => {
       { width: 2000, height: 12_000 },
       { width: 640, height: 3840 },
     ],
+    [
+      { width: 12_345, height: 2000 },
+      { width: 3840, height: 624 },
+    ],
+    [
+      { width: 10_000, height: 31 },
+      { width: 3840, height: 12 },
+    ],
+    [
+      { width: 31, height: 10_000 },
+      { width: 12, height: 3840 },
+    ],
   ])('keeps all of a panorama of %o in its shape', (panorama, size) => {
     expect(outputSize(everything, panorama)).toEqual(size);
   });
@@ -164,12 +176,16 @@ describe('modelFrame', () => {
       { width: 3840, height: 528 },
       { left: 0, top: -376, width: 3840, height: 1280 },
     ],
+    [
+      { width: 3840, height: 12 },
+      { left: 0, top: -634, width: 3840, height: 1280 },
+    ],
   ])('adds as much grey to %o as the model needs', (size, frame) => {
     expect(modelFrame(size)).toEqual(frame);
   });
 
   it('makes a frame the model takes of any panorama', () => {
-    for (let height = 16; height <= 1280; height += 16) {
+    for (let height = 1; height <= 1280; height += 1) {
       const { width, height: frameHeight } = modelFrame({
         width: 3840,
         height,
@@ -182,6 +198,19 @@ describe('modelFrame', () => {
 });
 
 describe('editableSize', () => {
+  it.each([
+    [
+      { width: 10_000, height: 31 },
+      { width: 3840, height: 12 },
+    ],
+    [
+      { width: 31, height: 10_000 },
+      { width: 12, height: 3840 },
+    ],
+  ])('keeps the shape of a long panorama of %o', (panorama, size) => {
+    expect(editableSize(panorama)).toEqual(size);
+  });
+
   it('is a picture’s own if the model makes it', () => {
     const own = { width: 3520, height: 2352 };
     expect(editableSize(own)).toEqual(own);
@@ -204,8 +233,9 @@ describe('editableSize', () => {
 
 describe('exactFrame', () => {
   it('has the shape of the output and stays inside the crop', () => {
-    const output = outputSize(everything, camera);
-    const frame = exactFrame(everything, camera, output);
+    const almost = { left: 0, top: 0, right: 1, bottom: 0.999 };
+    const output = outputSize(almost, camera);
+    const frame = exactFrame(almost, camera, output);
     expect(frame.width / frame.height).toBeCloseTo(
       output.width / output.height,
       3,
@@ -213,6 +243,13 @@ describe('exactFrame', () => {
     expect(frame.left + frame.width).toBeLessThanOrEqual(camera.width);
     expect(frame.top + frame.height).toBeLessThanOrEqual(camera.height);
     expect(frame.width).toBeGreaterThan(camera.width * 0.99);
+  });
+
+  it('takes every pixel of the whole photo', () => {
+    const panorama = { width: 12_345, height: 2048 };
+    expect(
+      exactFrame(everything, panorama, outputSize(everything, panorama)),
+    ).toEqual({ left: 0, top: 0, ...panorama });
   });
 
   it.each(aspectNames)('is never a pixel outside a %s crop', (aspect) => {

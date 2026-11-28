@@ -115,10 +115,30 @@ const tolerance = 0.006;
 const fits = ({ width, height }: Size): boolean =>
   Math.max(width, height) <= longestSide && width * height <= mostPixels;
 
+/** The smallest multiple of the step that is at least the given length. */
+const stepsFor = (length: number): number => Math.ceil(length / step) * step;
+
 /**
- * The largest size in a shape of that width to height that an image model
- * makes, or, for a shape wider or taller than it makes, that fits into the
- * largest picture it makes.
+ * The frame the image model edits a picture of the given size in: the picture
+ * itself, or, when the model can't make its size, the picture with as much
+ * grey on both sides as that takes.
+ */
+export const modelFrame = ({ width, height }: Size): Frame => {
+  const frameWidth = Math.max(stepsFor(width), stepsFor(height / widestShape));
+  const frameHeight = Math.max(stepsFor(height), stepsFor(width / widestShape));
+  return {
+    left: Math.ceil((width - frameWidth) / half),
+    top: Math.ceil((height - frameHeight) / half),
+    width: frameWidth,
+    height: frameHeight,
+  };
+};
+
+/**
+ * The size a picture of that width to height is edited at: the largest the
+ * image model makes in its shape. A shape so long that sides in steps of 16
+ * can't come close to it in a large size has its short side to the pixel
+ * instead, and grey around it.
  */
 const largestSize = (ratio: number): Size => {
   let best: Size = { width: step, height: step };
@@ -134,7 +154,18 @@ const largestSize = (ratio: number): Size => {
       best = { width, height };
     }
   }
-  return best;
+  const short = Math.max(
+    1,
+    Math.round(ratio >= 1 ? longestSide / ratio : longestSide * ratio),
+  );
+  const long =
+    ratio >= 1
+      ? { width: longestSide, height: short }
+      : { width: short, height: longestSide };
+  return fits(modelFrame(long)) &&
+    Math.max(best.width, best.height) < longestSide
+    ? long
+    : best;
 };
 
 /** The size a crop is edited at, as large as the image model makes its shape. */
@@ -150,30 +181,18 @@ export const editableSize = (size: Size): Size =>
     ? size
     : largestSize(size.width / size.height);
 
-/** The smallest multiple of the step that is at least the given length. */
-const stepsFor = (length: number): number => Math.ceil(length / step) * step;
-
-/**
- * The frame the image model edits a picture of the given size in: the picture
- * itself, or, when it is wider or taller than the model makes pictures, the
- * picture with as much grey on both sides as that takes.
- */
-export const modelFrame = ({ width, height }: Size): Frame => {
-  const frameWidth = Math.max(width, stepsFor(height / widestShape));
-  const frameHeight = Math.max(height, stepsFor(width / widestShape));
-  return {
-    left: Math.ceil((width - frameWidth) / half),
-    top: Math.ceil((height - frameHeight) / half),
-    width: frameWidth,
-    height: frameHeight,
-  };
-};
+const isWholePicture = (box: Box): boolean =>
+  box.left === 0 && box.top === 0 && box.right === 1 && box.bottom === 1;
 
 /**
  * The pixels of a crop, trimmed by a hair so its shape is exactly that of the
- * output and nothing is stretched.
+ * output and nothing is stretched. All of the photo is never trimmed: its
+ * output has its shape too nearly to tell apart.
  */
 export const exactFrame = (box: Box, size: Size, output: Size): Frame => {
+  if (isWholePicture(box)) {
+    return { left: 0, top: 0, ...size };
+  }
   const ratio = output.width / output.height;
   const boxWidth = (box.right - box.left) * size.width;
   const boxHeight = (box.bottom - box.top) * size.height;
