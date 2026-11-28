@@ -116,22 +116,19 @@ export const renderExactly = (
     target,
   ]);
 
-/** Part of a PNG as a PNG, cut out once the PNG is made the given size. */
-export const cutPng = (
-  bytes: Uint8Array,
+/** Writes part of a picture, cut out once the picture is made the given size. */
+export const cutOut = (
+  source: string,
+  target: string,
   { size, frame }: { readonly size: Size; readonly frame: Frame },
 ) =>
-  toolBytes(
-    'magick',
-    [
-      'png:-',
-      '-resize',
-      `${size.width}x${size.height}!`,
-      ...cut(frame),
-      'png:-',
-    ],
-    { input: bytes },
-  );
+  toolBytes('magick', [
+    source,
+    '-resize',
+    `${size.width}x${size.height}!`,
+    ...cut(frame),
+    target,
+  ]);
 
 const bitDepth = ['-depth', '8'];
 const samplesPerPixel = 3;

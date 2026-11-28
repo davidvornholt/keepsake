@@ -13,7 +13,7 @@ import { flawless } from './flawless.ts';
 import { exactFrame, outOf } from './geometry.ts';
 import { ImageModel } from './image-model.ts';
 import { carriedOut, removedFrom } from './keep-originals.ts';
-import { editedVersions } from './padded.ts';
+import { pictureVersions } from './padded.ts';
 import {
   cameraQuality,
   type Prepared,
@@ -23,7 +23,7 @@ import {
 } from './prepare.ts';
 import { editPrompt } from './prompt.ts';
 import { Review, review } from './review.ts';
-import { mostAttempts, versionsOf, withOriginals } from './versions.ts';
+import { mostAttempts, withOriginals } from './versions.ts';
 
 /** A picked photo with everything needed to edit it. */
 export type Job = ToPrepare & {
@@ -42,11 +42,12 @@ const versionsFor = (
   { crop, size, removed, description }: Prepared,
   { number, problems }: Attempt,
 ) =>
-  versionsOf(files, { number, versions }, (count: number) =>
-    editedVersions({
+  pictureVersions(
+    files,
+    { number, versions },
+    {
       input: files.input,
       size,
-      versions: count,
       prompt: (shown) =>
         editPrompt({
           shoot: open.shoot,
@@ -57,7 +58,7 @@ const versionsFor = (
           wish,
           problems,
         }),
-    }),
+    },
   );
 
 type Outcome = {

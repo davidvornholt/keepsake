@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
   asked,
   editLisbon,
+  judge,
   pickLisbon,
+  run,
   setUp,
   shootJson,
   tearDown,
@@ -128,9 +130,9 @@ describe('keepsake edit, a panorama', () => {
       expect(
         runs.some((args) => args.at(-1) === 'jpg:-' && args.includes(grey)),
       ).toBe(true);
-      expect(
-        runs.filter((args) => args[0] === 'png:-' && args.includes(kept)),
-      ).toHaveLength(fakeModels.edits.length * 2);
+      expect(runs.filter((args) => args.includes(kept))).toHaveLength(
+        fakeModels.edits.length * 2,
+      );
       expect(asked('assessment')[0]?.texts.join()).not.toContain('grey area');
     },
   );
@@ -147,5 +149,29 @@ describe('keepsake edit, a panorama', () => {
       .map(({ args }) => args[args.indexOf('-extent') + 1]);
     expect(frames[0]).toBe('12345x2048+0+0');
     expect(frames.at(-1)).toBe('12345x2048+0+0');
+  });
+
+  it('pays once for versions it couldn’t cut back the first time', async () => {
+    fakeTools.cameraSize = '12000 2000';
+    await pickLisbon();
+    const kept = '3840x640+0+320';
+    let cuts = 0;
+    fakeTools.pause = ({ args }) => {
+      cuts += args.includes(kept) ? 1 : 0;
+      if (cuts === 2) {
+        fakeTools.broken.add(kept);
+      }
+    };
+    fakeTools.late = () => {
+      fakeTools.broken.delete(kept);
+    };
+    await run('edit', 'lisbon', 'B', '--review-model', judge);
+    expect(cuts).toBe(2);
+    fakeTools.pause = undefined;
+    await editLisbon('B');
+    expect(fakeModels.edits).toHaveLength(1);
+    expect(await shootJson('edits', 'B', 'edit.json')).toMatchObject({
+      version: 'ai',
+    });
   });
 });

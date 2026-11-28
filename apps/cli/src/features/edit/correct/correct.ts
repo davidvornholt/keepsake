@@ -8,9 +8,9 @@ import type { Job } from '../best-edit.ts';
 import { descriptionOf } from '../describe.ts';
 import { editableSize } from '../geometry.ts';
 import { keptOnFace } from '../keep-originals.ts';
-import { editedVersions } from '../padded.ts';
+import { pictureVersions } from '../padded.ts';
 import { peopleAndSigns, remembered } from '../prepare.ts';
-import { mostAttempts, versionsOf, withOriginals } from '../versions.ts';
+import { mostAttempts, withOriginals } from '../versions.ts';
 import { candidatesOf, type Taken, writeWith } from './candidates.ts';
 import { Choice, choose } from './choose.ts';
 import { correctionPrompt, type ToChange } from './correction-prompt.ts';
@@ -80,17 +80,15 @@ const attempt = Effect.fn('attempt')(function* (
   { number, base, changes }: Start,
   { size, about }: { readonly size: Size; readonly about: Known },
 ) {
-  const numbers = yield* versionsOf(
+  const numbers = yield* pictureVersions(
     files,
     { number, versions },
-    (count: number) =>
-      editedVersions({
-        input: files.input,
-        size,
-        versions: count,
-        prompt: (shown) =>
-          correctionPrompt(open.shoot, about.description, changes, shown),
-      }),
+    {
+      input: files.input,
+      size,
+      prompt: (shown) =>
+        correctionPrompt(open.shoot, about.description, changes, shown),
+    },
   );
   const made = yield* Effect.forEach(numbers, (version) =>
     withOriginals(files, about, version),
