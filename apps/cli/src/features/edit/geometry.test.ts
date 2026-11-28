@@ -180,6 +180,14 @@ describe('modelFrame', () => {
       { width: 3840, height: 12 },
       { left: 0, top: -634, width: 3840, height: 1280 },
     ],
+    [
+      { width: 3840, height: 1288 },
+      { left: 0, top: -4, width: 3840, height: 1296 },
+    ],
+    [
+      { width: 1288, height: 3840 },
+      { left: -4, top: 0, width: 1296, height: 3840 },
+    ],
   ])('adds as much grey to %o as the model needs', (size, frame) => {
     expect(modelFrame(size)).toEqual(frame);
   });
