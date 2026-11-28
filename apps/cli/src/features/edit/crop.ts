@@ -72,10 +72,6 @@ type Candidate = {
   readonly reason: string;
 };
 
-/**
- * All of the photo in its own shape, also one wider or taller than the image
- * model makes pictures, which it edits with grey beside it.
- */
 const whole: Candidate = {
   box: wholePicture,
   reason: 'The whole photo is best.',

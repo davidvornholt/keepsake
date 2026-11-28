@@ -87,7 +87,6 @@ const cameraPicture = Effect.fn('cameraPicture')(function* (job: ToPrepare) {
   }
 });
 
-/** The photo the image model gets: cropped, in the size it answers with. */
 const imageInput = Effect.fn('imageInput')(function* (
   files: EditFiles,
   crop: Crop,

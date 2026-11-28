@@ -115,7 +115,6 @@ const tolerance = 0.006;
 const fits = ({ width, height }: Size): boolean =>
   Math.max(width, height) <= longestSide && width * height <= mostPixels;
 
-/** The smallest multiple of the step that is at least the given length. */
 const stepsFor = (length: number): number => Math.ceil(length / step) * step;
 
 /**
