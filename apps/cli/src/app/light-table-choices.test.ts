@@ -332,6 +332,30 @@ describe('a choice that waited', () => {
     });
   });
 
+  it('leaves a photo as it was when its put-in is taken back', async () => {
+    await publishLisbon();
+    const before = await standingOf('A2');
+    const after = await serving(async (address) => {
+      await whileHeld(
+        async () => {
+          await choose(address, { photo: 'A2', wants: 'in' });
+          // The owner presses its pencil again, which takes the put-in back.
+          await choose(address, { photo: 'A2', wants: 'out' });
+        },
+        'lisbon',
+        withChoice,
+      );
+      return eventually(
+        () => choicesOf(address),
+        (choices) => choices.length === 0,
+        patiently,
+      );
+    });
+    expect(after).toEqual([]);
+    expect(inImmich()).toEqual(['A1', 'B', 'C']);
+    expect(await standingOf('A2')).toEqual(before);
+  });
+
   it('waits to publish a photo while it is edited', async () => {
     await publishLisbon();
     await editLisbon('A2');
